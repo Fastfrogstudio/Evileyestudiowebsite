@@ -16,15 +16,16 @@ This website embodies the following design principles:
 
 ### Homepage (`index.html`)
 
-- **Hero Section**: Full-screen hero with animated floating symbols and bold typography
-- **New Game Release**: Showcase for latest game with animated symbols and live statistics
-- **Company Intro**: Brief overview of EvilEyeStudio's mission and values
-- **Featured Games Carousel**: Interactive carousel showcasing top games
-- **Services Section**: Grid layout of studio services
-- **About Section**: Company information with statistics
-- **Latest News**: Recent announcements and updates
-- **Partners Section**: Showcase of casino partners
+Structured to closely mirror Hacksaw Gaming's homepage layout:
+
+- **Hero**: Full-bleed featured-game banner (Shadow Realm) with an animated slot-reel machine and a max-win multiplier badge
+- **Disruptive Gaming**: Tagline + three headline stats (+50 Games, +150 Operator Brands, +30 Regulated Markets)
+- **Latest Games**: One large featured game (Neon Rush) plus a four-tile game grid and a "View All Games" CTA
+- **What We Do**: Three product cards — Slots, Scratchcards, Instant Win — on a themed band
+- **OpenEye Partnership Program**: Partnership/distribution program section with CTA
+- **Latest Articles**: Dated list of partnership and release announcements
 - **Contact Section**: Contact form and company contact information
+- **Partner Strip**: Row of operator/partner logos
 - **Footer**: Comprehensive navigation and legal information
 
 ### Games Portfolio (`games.html`)
