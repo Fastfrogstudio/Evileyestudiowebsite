@@ -5,24 +5,24 @@
 
 /* ---------- Tokens ---------- */
 :root {
-  /* base / surfaces */
-  --bg: #07070c;
-  --bg-2: #0d0d16;
-  --surface: #14141f;
-  --surface-2: #1b1b2a;
+  /* base / surfaces (subtle purple-tinted near-black, from the logo) */
+  --bg: #08060e;
+  --bg-2: #0f0a18;
+  --surface: #16111f;
+  --surface-2: #1f1733;
   --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.16);
+  --line-strong: rgba(177, 92, 255, 0.20);
 
   /* text */
-  --text: #f5f5fb;
-  --muted: #9a9ab4;
-  --faint: #6a6a82;
+  --text: #f5f2fb;
+  --muted: #a79ec0;
+  --faint: #6f6685;
 
-  /* brand accents (slots division — default) */
-  --accent: #ff0a6c;       /* electric magenta */
-  --accent-2: #19e3ff;     /* cyan */
-  --accent-3: #ffc24b;     /* gold */
-  --glow: rgba(255, 10, 108, 0.55);
+  /* brand accents (slots division — Evil Eye logo: crimson eye + violet wordmark) */
+  --accent: #e11d3a;       /* crimson red (the eye) */
+  --accent-2: #b15cff;     /* vivid violet (wordmark) */
+  --accent-3: #7b3ff2;     /* royal purple */
+  --glow: rgba(225, 29, 58, 0.5);
 
   /* type */
   --font-display: 'Anton', 'Bebas Neue', Impact, sans-serif;
@@ -241,7 +241,7 @@ ul { list-style: none; }
 .game-thumb { position: absolute; inset: 0; display: grid; place-items: center; font-size: 4.5rem; background: linear-gradient(160deg, var(--surface-2), var(--bg)); transition: transform .5s var(--ease); }
 .game-card:hover .game-thumb { transform: scale(1.08); }
 .game-card .tag { position: absolute; top: 12px; left: 12px; z-index: 3; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; padding: 5px 10px; border-radius: 100px; background: var(--accent); color: #fff; }
-.game-card .tag.gold { background: var(--accent-3); color: #1a1300; }
+.game-card .tag.gold { background: var(--accent-3); color: #fff; }
 .game-overlay {
   position: absolute; inset: 0; z-index: 2; padding: 18px;
   display: flex; flex-direction: column; justify-content: flex-end;
@@ -268,7 +268,7 @@ ul { list-style: none; }
 .split-card:hover { transform: translateY(-6px); border-color: var(--line-strong); }
 .split-card .badge { position: absolute; top: 28px; left: clamp(28px,4vw,54px); font-size: 0.74rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent-2); }
 .split-card .glow { position: absolute; width: 300px; height: 300px; border-radius: 50%; filter: blur(80px); top: -60px; right: -60px; opacity: 0.4; }
-.split-card.slots .glow { background: #ff0a6c; }
+.split-card.slots .glow { background: #e11d3a; }
 .split-card.studio .glow { background: #8a5bff; }
 .split-card h3 { font-family: var(--font-display); font-size: clamp(2rem, 4vw, 3.2rem); margin-bottom: 12px; position: relative; }
 .split-card p { color: var(--muted); margin-bottom: 22px; position: relative; max-width: 42ch; }
