@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none" role="img" aria-label="Evil Eye Studio emblem">
+  <defs>
+    <radialGradient id="iris" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#ff5566"/>
+      <stop offset="50%" stop-color="#e11d3a"/>
+      <stop offset="100%" stop-color="#860f22"/>
+    </radialGradient>
+    <linearGradient id="ray" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b15cff"/>
+      <stop offset="100%" stop-color="#6d28d9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- starburst rays -->
+  <g fill="url(#ray)">
+    <polygon points="50,3 45.5,30 54.5,30"/>
+    <polygon points="50,97 45.5,70 54.5,70"/>
+    <polygon points="50,12 46.5,30 53.5,30" transform="rotate(45 50 50)"/>
+    <polygon points="50,12 46.5,30 53.5,30" transform="rotate(90 50 50)"/>
+    <polygon points="50,12 46.5,30 53.5,30" transform="rotate(135 50 50)"/>
+    <polygon points="50,12 46.5,30 53.5,30" transform="rotate(225 50 50)"/>
+    <polygon points="50,12 46.5,30 53.5,30" transform="rotate(270 50 50)"/>
+    <polygon points="50,12 46.5,30 53.5,30" transform="rotate(315 50 50)"/>
+  </g>
+
+  <!-- eye almond -->
+  <path d="M7,50 Q50,23 93,50 Q50,77 7,50 Z" fill="#120a1f" stroke="#b15cff" stroke-width="3.6" stroke-linejoin="round"/>
+
+  <!-- iris + cat-slit pupil -->
+  <circle cx="50" cy="50" r="15.5" fill="url(#iris)"/>
+  <ellipse cx="50" cy="50" rx="3" ry="11.5" fill="#190413"/>
+  <circle cx="44.5" cy="44.5" r="3" fill="#ffffff" opacity="0.85"/>
+</svg>
