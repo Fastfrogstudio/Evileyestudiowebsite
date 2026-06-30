@@ -1,927 +1,206 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Games Portfolio - EvilEyeStudio</title>
-    <meta name="description" content="Explore EvilEyeStudio's complete portfolio of premium slot games. Filter by theme, features, and volatility.">
-    <link rel="stylesheet" href="css/styles.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Games — Evil Eye Studio</title>
+  <meta name="description" content="Browse the full Evil Eye Studio slot portfolio. Filter by theme, feature, and volatility — play free demos of every game." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script>document.documentElement.className += " js";</script>
+  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='46' fill='%23ff0a6c'/%3E%3Ccircle cx='50' cy='50' r='16' fill='%2307070c'/%3E%3C/svg%3E" />
 </head>
-<body>
-    <!-- Navigation -->
-    <nav class="nav nav-dark" id="navbar">
-        <div class="nav-container">
-            <div class="nav-logo">
-                <a href="index.html">
-                    <span class="logo-icon">👁️</span>
-                    <span class="logo-text">EVIL<span class="logo-highlight">EYE</span>STUDIO</span>
-                </a>
-            </div>
-            <ul class="nav-menu" id="navMenu">
-                <li><a href="index.html" class="nav-link">Home</a></li>
-                <li><a href="games.html" class="nav-link active">Games</a></li>
-                <li><a href="index.html#services" class="nav-link">Services</a></li>
-                <li><a href="index.html#about" class="nav-link">About</a></li>
-                <li><a href="index.html#news" class="nav-link">News</a></li>
-                <li><a href="index.html#contact" class="nav-link">Contact</a></li>
-                <li><a href="index.html#partners" class="nav-link">Partners</a></li>
-            </ul>
-            <button class="nav-cta">Become a Partner</button>
-            <button class="hamburger" id="hamburger">
-                <span></span>
-                <span></span>
-                <span></span>
-            </button>
+<body data-division="slots">
+
+  <!-- ===== Header ===== -->
+  <header class="site-header">
+    <div class="wrap nav">
+      <a href="index.html" class="brand"><span class="eye"></span><b>EVIL</b>&nbsp;<span>EYE</span></a>
+
+      <div class="divisions" role="tablist" aria-label="Studio divisions">
+        <a href="index.html" class="active"><span class="dot"></span>Slots</a>
+        <a href="studio.html">Art &amp; Animation</a>
+      </div>
+
+      <nav class="nav-links" id="navLinks" aria-label="Primary">
+        <a href="games.html" class="active">Games</a>
+        <a href="index.html#release">New Release</a>
+        <a href="studio.html">Studio</a>
+        <a href="index.html#news">News</a>
+        <a href="index.html#about">About</a>
+        <a href="index.html#contact">Contact</a>
+        <div class="mobile-divisions">
+          <a href="index.html">Slots</a>
+          <a href="studio.html">Art &amp; Animation</a>
         </div>
-    </nav>
+      </nav>
 
-    <!-- Page Header -->
-    <section class="page-hero">
-        <div class="container">
-            <div class="breadcrumbs">
-                <a href="index.html">Home</a>
-                <span>/</span>
-                <span>Games</span>
-            </div>
-            <h1 class="page-title">OUR GAMES</h1>
-            <p class="page-subtitle">Explore our complete portfolio of premium slot games</p>
+      <div class="nav-cta">
+        <a href="studio.html" class="btn btn-primary btn-demo">Hire Our Studio <span class="arrow">→</span></a>
+        <button class="nav-toggle" aria-label="Menu" aria-expanded="false"><span></span><span></span><span></span></button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== Page hero ===== -->
+  <section class="page-hero" id="top">
+    <div class="orb"></div>
+    <div class="wrap">
+      <span class="eyebrow" data-reveal>The Portfolio</span>
+      <h1 class="display" data-reveal>ALL <span class="text-grad">GAMES</span></h1>
+      <p data-reveal data-reveal-delay="1">Every Evil Eye title — certified, mobile-first, and free to demo. Filter by theme, feature, or volatility to find your next favourite.</p>
+
+      <div class="filters" data-reveal data-reveal-delay="2">
+        <div class="search">
+          <span class="ic">⌕</span>
+          <input id="searchInput" type="search" placeholder="Search games…" aria-label="Search games" />
         </div>
-    </section>
+        <select id="themeFilter" aria-label="Theme">
+          <option value="">All Themes</option>
+          <option value="fantasy">Fantasy</option>
+          <option value="horror">Horror</option>
+          <option value="egyptian">Egyptian</option>
+          <option value="asian">Asian</option>
+          <option value="adventure">Adventure</option>
+          <option value="classic">Classic</option>
+        </select>
+        <select id="featureFilter" aria-label="Feature">
+          <option value="">All Features</option>
+          <option value="megaways">Megaways</option>
+          <option value="freespins">Free Spins</option>
+          <option value="multipliers">Multipliers</option>
+          <option value="jackpot">Jackpot</option>
+          <option value="bonusbuy">Bonus Buy</option>
+        </select>
+        <select id="volatilityFilter" aria-label="Volatility">
+          <option value="">All Volatility</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+        <select id="sortFilter" aria-label="Sort">
+          <option value="newest">Newest</option>
+          <option value="popular">Most Popular</option>
+          <option value="az">A → Z</option>
+          <option value="za">Z → A</option>
+          <option value="rtp">Highest RTP</option>
+        </select>
+        <button class="reset" id="resetFilters" type="button">Reset</button>
+      </div>
+      <p class="results-count" id="resultsCount" data-reveal data-reveal-delay="2">12 games</p>
+    </div>
+  </section>
 
-    <!-- Filters & Search -->
-    <section class="games-filters">
-        <div class="container">
-            <div class="filters-wrapper">
-                <div class="search-box">
-                    <input type="text" id="gameSearch" placeholder="Search games..." class="search-input">
-                    <span class="search-icon">🔍</span>
-                </div>
+  <!-- ===== Game grid ===== -->
+  <section class="section" style="padding-top:0;">
+    <div class="wrap">
+      <div class="game-grid" id="gameGrid">
 
-                <div class="filter-group">
-                    <label class="filter-label">Theme</label>
-                    <select id="themeFilter" class="filter-select">
-                        <option value="">All Themes</option>
-                        <option value="fantasy">Fantasy</option>
-                        <option value="egyptian">Egyptian</option>
-                        <option value="asian">Asian</option>
-                        <option value="mythology">Mythology</option>
-                        <option value="adventure">Adventure</option>
-                        <option value="horror">Horror</option>
-                        <option value="sci-fi">Sci-Fi</option>
-                        <option value="classic">Classic</option>
-                    </select>
-                </div>
+        <a class="game-card" href="#" data-name="Cursed Crown" data-theme="fantasy" data-features="megaways,freespins,bonusbuy" data-volatility="high" data-rtp="96.4" data-released="12" data-popularity="98">
+          <div class="game-thumb">👑</div><span class="tag">New</span>
+          <div class="game-overlay"><h3>Cursed Crown</h3><div class="game-meta"><span>RTP <b>96.4%</b></span><span>Vol <b>High</b></span><span><b>25,000×</b></span></div><div class="game-play"><span class="btn btn-primary">Demo</span><span class="btn btn-ghost">Info</span></div></div>
+        </a>
 
-                <div class="filter-group">
-                    <label class="filter-label">Features</label>
-                    <select id="featuresFilter" class="filter-select">
-                        <option value="">All Features</option>
-                        <option value="free-spins">Free Spins</option>
-                        <option value="multipliers">Multipliers</option>
-                        <option value="bonus-rounds">Bonus Rounds</option>
-                        <option value="cascading">Cascading Wins</option>
-                        <option value="wilds">Wild Symbols</option>
-                        <option value="mega-symbols">Mega Symbols</option>
-                    </select>
-                </div>
+        <a class="game-card" href="#" data-name="Blood Moon Bonanza" data-theme="horror" data-features="freespins,multipliers,bonusbuy" data-volatility="high" data-rtp="96.1" data-released="11" data-popularity="95">
+          <div class="game-thumb">🌙</div><span class="tag gold">Hot</span>
+          <div class="game-overlay"><h3>Blood Moon Bonanza</h3><div class="game-meta"><span>RTP <b>96.1%</b></span><span>Vol <b>High</b></span><span><b>15,000×</b></span></div><div class="game-play"><span class="btn btn-primary">Demo</span><span class="btn btn-ghost">Info</span></div></div>
+        </a>
 
-                <div class="filter-group">
-                    <label class="filter-label">Volatility</label>
-                    <select id="volatilityFilter" class="filter-select">
-                        <option value="">All Volatility</option>
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                    </select>
-                </div>
+        <a class="game-card" href="#" data-name="Neon Fortune" data-theme="classic" data-features="multipliers,freespins" data-volatility="medium" data-rtp="96.5" data-released="10" data-popularity="92">
+          <div class="game-thumb">⚡</div>
+          <div class="game-overlay"><h3>Neon Fortune</h3><div class="game-meta"><span>RTP <b>96.5%</b></span><span>Vol <b>Med</b></span><span><b>12,000×</b></span></div><div class="game-play"><span class="btn btn-primary">Demo</span><span class="btn btn-ghost">Info</span></div></div>
+        </a>
 
-                <div class="filter-group">
-                    <label class="filter-label">RTP Range</label>
-                    <select id="rtpFilter" class="filter-select">
-                        <option value="">All RTP</option>
-                        <option value="97+">97%+</option>
-                        <option value="96-97">96% - 97%</option>
-                        <option value="95-96">95% - 96%</option>
-                    </select>
-                </div>
+        <a class="game-card" href="#" data-name="Mayan Mirrors" data-theme="adventure" data-features="megaways,freespins" data-volatility="high" data-rtp="95.9" data-released="9" data-popularity="80">
+          <div class="game-thumb">🗿</div>
+          <div class="game-overlay"><h3>Mayan Mirrors</h3><div class="game-meta"><span>RTP <b>95.9%</b></span><span>Vol <b>High</b></span><span><b>10,000×</b></span></div><div class="game-play"><span class="btn btn-primary">Demo</span><span class="btn btn-ghost">Info</span></div></div>
+        </a>
 
-                <div class="filter-group">
-                    <label class="filter-label">Sort By</label>
-                    <select id="sortFilter" class="filter-select">
-                        <option value="newest">Newest First</option>
-                        <option value="popular">Most Popular</option>
-                        <option value="az">A-Z</option>
-                        <option value="za">Z-A</option>
-                        <option value="rtp-high">RTP High to Low</option>
-                        <option value="rtp-low">RTP Low to High</option>
-                    </select>
-                </div>
+        <a class="game-card" href="#" data-name="Golden Ghoul" data-theme="horror" data-features="freespins,jackpot" data-volatility="medium" data-rtp="96.2" data-released="8" data-popularity="85">
+          <div class="game-thumb">👻</div>
+          <div class="game-overlay"><h3>Golden Ghoul</h3><div class="game-meta"><span>RTP <b>96.2%</b></span><span>Vol <b>Med</b></span><span><b>8,000×</b></span></div><div class="game-play"><span class="btn btn-primary">Demo</span><span class="btn btn-ghost">Info</span></div></div>
+        </a>
 
-                <button class="btn-reset" id="resetFilters">Reset Filters</button>
-            </div>
-            <div class="results-count">
-                Showing <span id="resultsCount">24</span> games
-            </div>
+        <a class="game-card" href="#" data-name="Temple of Tides" data-theme="adventure" data-features="multipliers,bonusbuy" data-volatility="medium" data-rtp="96.0" data-released="7" data-popularity="78">
+          <div class="game-thumb">🌊</div>
+          <div class="game-overlay"><h3>Temple of Tides</h3><div class="game-meta"><span>RTP <b>96.0%</b></span><span>Vol <b>Med</b></span><span><b>9,500×</b></span></div><div class="game-play"><span class="btn btn-primary">Demo</span><span class="btn btn-ghost">Info</span></div></div>
+        </a>
+
+        <a class="game-card" href="#" data-name="Jade Dragon" data-theme="asian" data-features="megaways,multipliers,jackpot" data-volatility="high" data-rtp="96.3" data-released="6" data-popularity="90">
+          <div class="game-thumb">🐉</div><span class="tag gold">Jackpot</span>
+          <div class="game-overlay"><h3>Jade Dragon</h3><div class="game-meta"><span>RTP <b>96.3%</b></span><span>Vol <b>High</b></span><span><b>18,000×</b></span></div><div class="game-play"><span class="btn btn-primary">Demo</span><span class="btn btn-ghost">Info</span></div></div>
+        </a>
+
+        <a class="game-card" href="#" data-name="Inferno Sevens" data-theme="classic" data-features="multipliers" data-volatility="low" data-rtp="95.8" data-released="5" data-popularity="70">
+          <div class="game-thumb">🔥</div>
+          <div class="game-overlay"><h3>Inferno Sevens</h3><div class="game-meta"><span>RTP <b>95.8%</b></span><span>Vol <b>Low</b></span><span><b>7,500×</b></span></div><div class="game-play"><span class="btn btn-primary">Demo</span><span class="btn btn-ghost">Info</span></div></div>
+        </a>
+
+        <a class="game-card" href="#" data-name="Pharaoh's Eye" data-theme="egyptian" data-features="freespins,multipliers,bonusbuy" data-volatility="high" data-rtp="96.2" data-released="4" data-popularity="83">
+          <div class="game-thumb">𓂀</div>
+          <div class="game-overlay"><h3>Pharaoh's Eye</h3><div class="game-meta"><span>RTP <b>96.2%</b></span><span>Vol <b>High</b></span><span><b>14,000×</b></span></div><div class="game-play"><span class="btn btn-primary">Demo</span><span class="btn btn-ghost">Info</span></div></div>
+        </a>
+
+        <a class="game-card" href="#" data-name="Frost Wolf" data-theme="fantasy" data-features="freespins,megaways" data-volatility="medium" data-rtp="96.1" data-released="3" data-popularity="74">
+          <div class="game-thumb">🐺</div>
+          <div class="game-overlay"><h3>Frost Wolf</h3><div class="game-meta"><span>RTP <b>96.1%</b></span><span>Vol <b>Med</b></span><span><b>11,000×</b></span></div><div class="game-play"><span class="btn btn-primary">Demo</span><span class="btn btn-ghost">Info</span></div></div>
+        </a>
+
+        <a class="game-card" href="#" data-name="Lucky Lanterns" data-theme="asian" data-features="freespins,jackpot" data-volatility="low" data-rtp="96.0" data-released="2" data-popularity="68">
+          <div class="game-thumb">🏮</div>
+          <div class="game-overlay"><h3>Lucky Lanterns</h3><div class="game-meta"><span>RTP <b>96.0%</b></span><span>Vol <b>Low</b></span><span><b>5,000×</b></span></div><div class="game-play"><span class="btn btn-primary">Demo</span><span class="btn btn-ghost">Info</span></div></div>
+        </a>
+
+        <a class="game-card" href="#" data-name="Voodoo Gold" data-theme="horror" data-features="megaways,multipliers,bonusbuy" data-volatility="high" data-rtp="96.4" data-released="1" data-popularity="76">
+          <div class="game-thumb">💀</div>
+          <div class="game-overlay"><h3>Voodoo Gold</h3><div class="game-meta"><span>RTP <b>96.4%</b></span><span>Vol <b>High</b></span><span><b>20,000×</b></span></div><div class="game-play"><span class="btn btn-primary">Demo</span><span class="btn btn-ghost">Info</span></div></div>
+        </a>
+
+      </div>
+
+      <div class="no-results" id="noResults">
+        <p style="font-size:1.2rem;">No games match those filters.</p>
+        <p>Try clearing a filter or resetting your search.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== CTA ===== -->
+  <section class="section cta-band" style="padding-top:0;">
+    <div class="wrap">
+      <div class="cta-inner" data-reveal>
+        <span class="glow1"></span><span class="glow2"></span>
+        <h2 class="display">Want a game like these?</h2>
+        <p>Our art &amp; animation studio builds custom slots for operators and providers — concept to certified release.</p>
+        <div class="hero-ctas"><a href="studio.html" class="btn btn-primary btn-lg">Hire Our Studio <span class="arrow">→</span></a></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Footer ===== -->
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="footer-top">
+        <div class="footer-brand">
+          <a href="index.html" class="brand"><span class="eye"></span><b>EVIL</b>&nbsp;<span>EYE</span></a>
+          <p>An iGaming slot provider and creative studio for hire. Two divisions, one eye.</p>
+          <div class="socials">
+            <a href="#" aria-label="X">𝕏</a><a href="#" aria-label="LinkedIn">in</a><a href="#" aria-label="Instagram">◎</a><a href="#" aria-label="YouTube">▶</a>
+          </div>
         </div>
-    </section>
+        <div class="footer-col"><h4>Games</h4><a href="games.html">All Games</a><a href="index.html#release">New Releases</a><a href="games.html">Megaways</a><a href="games.html">Jackpots</a></div>
+        <div class="footer-col"><h4>Studio</h4><a href="studio.html">Art &amp; Animation</a><a href="studio.html#services">Services</a><a href="studio.html#process">Process</a><a href="studio.html#hire">Hire Us</a></div>
+        <div class="footer-col"><h4>Company</h4><a href="index.html#about">About</a><a href="index.html#news">News</a><a href="index.html#contact">Contact</a><a href="#">Careers</a></div>
+      </div>
+      <div class="footer-bottom">
+        <span>© <span data-year>2026</span> Evil Eye Studio. All rights reserved.</span>
+        <div class="legal"><a href="#">Responsible Gaming</a><a href="#">Privacy</a><a href="#">Terms</a><span class="age">18+</span></div>
+      </div>
+    </div>
+  </footer>
 
-    <!-- Games Grid -->
-    <section class="games-portfolio">
-        <div class="container">
-            <div class="games-grid" id="gamesGrid">
-                <!-- Game 1 -->
-                <div class="portfolio-game-card" data-theme="horror" data-features="free-spins,cascading" data-volatility="high" data-rtp="96.5" data-name="Shadow Realm">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-dark">
-                            <span class="game-icon">💀</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Shadow Realm</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.5%</span>
-                                <span class="meta-item volatility-high">High Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 10,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Free Spins</span>
-                            <span class="feature-tag-small">Cascading</span>
-                            <span class="feature-tag-small">Multipliers</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 2 -->
-                <div class="portfolio-game-card" data-theme="fantasy" data-features="free-spins,wilds" data-volatility="high" data-rtp="96.8" data-name="Mystic Fortune">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-purple">
-                            <span class="game-icon">🔮</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Mystic Fortune</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.8%</span>
-                                <span class="meta-item volatility-high">High Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 10,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Free Spins</span>
-                            <span class="feature-tag-small">Wilds</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 3 -->
-                <div class="portfolio-game-card" data-theme="mythology" data-features="multipliers,bonus-rounds" data-volatility="medium" data-rtp="96.4" data-name="Thunder Strike">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-blue">
-                            <span class="game-icon">⚡</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Thunder Strike</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.4%</span>
-                                <span class="meta-item volatility-medium">Med Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 5,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Multipliers</span>
-                            <span class="feature-tag-small">Bonus Round</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 4 -->
-                <div class="portfolio-game-card" data-theme="asian" data-features="cascading,mega-symbols" data-volatility="high" data-rtp="97.1" data-name="Dragon's Gold">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-red">
-                            <span class="game-icon">🐉</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Dragon's Gold</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 97.1%</span>
-                                <span class="meta-item volatility-high">High Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 15,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Cascading</span>
-                            <span class="feature-tag-small">Mega Symbols</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 5 -->
-                <div class="portfolio-game-card" data-theme="adventure" data-features="bonus-rounds" data-volatility="medium" data-rtp="96.2" data-name="Vault Heist">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-gold">
-                            <span class="game-icon">💰</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Vault Heist</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.2%</span>
-                                <span class="meta-item volatility-medium">Med Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 8,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Pick Bonus</span>
-                            <span class="feature-tag-small">Progressive</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 6 -->
-                <div class="portfolio-game-card" data-theme="sci-fi" data-features="wilds" data-volatility="low" data-rtp="96.6" data-name="Cosmic Spins">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-cosmic">
-                            <span class="game-icon">🌟</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Cosmic Spins</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.6%</span>
-                                <span class="meta-item volatility-low">Low Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 3,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Stacked Wilds</span>
-                            <span class="feature-tag-small">Re-spins</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 7 -->
-                <div class="portfolio-game-card" data-theme="egyptian" data-features="free-spins,multipliers" data-volatility="high" data-rtp="96.9" data-name="Pharaoh's Treasure">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-egyptian">
-                            <span class="game-icon">🏺</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Pharaoh's Treasure</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.9%</span>
-                                <span class="meta-item volatility-high">High Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 12,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Free Spins</span>
-                            <span class="feature-tag-small">Multipliers</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 8 -->
-                <div class="portfolio-game-card" data-theme="fantasy" data-features="cascading,wilds" data-volatility="medium" data-rtp="96.3" data-name="Magic Kingdom">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-magic">
-                            <span class="game-icon">🏰</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Magic Kingdom</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.3%</span>
-                                <span class="meta-item volatility-medium">Med Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 6,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Cascading</span>
-                            <span class="feature-tag-small">Wilds</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 9 -->
-                <div class="portfolio-game-card" data-theme="classic" data-features="wilds" data-volatility="low" data-rtp="95.8" data-name="Lucky Sevens">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-classic">
-                            <span class="game-icon">🎰</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Lucky Sevens</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 95.8%</span>
-                                <span class="meta-item volatility-low">Low Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 2,500x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Classic</span>
-                            <span class="feature-tag-small">Wilds</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 10 -->
-                <div class="portfolio-game-card" data-theme="mythology" data-features="free-spins,bonus-rounds" data-volatility="high" data-rtp="97.2" data-name="Gods of Olympus">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-olympus">
-                            <span class="game-icon">⚡</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Gods of Olympus</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 97.2%</span>
-                                <span class="meta-item volatility-high">High Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 20,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Free Spins</span>
-                            <span class="feature-tag-small">Bonus Round</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 11 -->
-                <div class="portfolio-game-card" data-theme="adventure" data-features="multipliers,cascading" data-volatility="medium" data-rtp="96.5" data-name="Jungle Quest">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-jungle">
-                            <span class="game-icon">🌴</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Jungle Quest</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.5%</span>
-                                <span class="meta-item volatility-medium">Med Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 7,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Multipliers</span>
-                            <span class="feature-tag-small">Cascading</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 12 -->
-                <div class="portfolio-game-card" data-theme="asian" data-features="free-spins,wilds" data-volatility="medium" data-rtp="96.7" data-name="Sakura Fortune">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-sakura">
-                            <span class="game-icon">🌸</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Sakura Fortune</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.7%</span>
-                                <span class="meta-item volatility-medium">Med Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 8,500x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Free Spins</span>
-                            <span class="feature-tag-small">Wilds</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 13 -->
-                <div class="portfolio-game-card" data-theme="horror" data-features="bonus-rounds,multipliers" data-volatility="high" data-rtp="96.4" data-name="Haunted Manor">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-haunted">
-                            <span class="game-icon">🏚️</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Haunted Manor</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.4%</span>
-                                <span class="meta-item volatility-high">High Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 9,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Bonus Round</span>
-                            <span class="feature-tag-small">Multipliers</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 14 -->
-                <div class="portfolio-game-card" data-theme="sci-fi" data-features="mega-symbols,cascading" data-volatility="high" data-rtp="96.8" data-name="Cyber City">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-cyber">
-                            <span class="game-icon">🤖</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Cyber City</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.8%</span>
-                                <span class="meta-item volatility-high">High Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 11,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Mega Symbols</span>
-                            <span class="feature-tag-small">Cascading</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 15 -->
-                <div class="portfolio-game-card" data-theme="fantasy" data-features="free-spins,multipliers" data-volatility="medium" data-rtp="96.6" data-name="Enchanted Forest">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-forest">
-                            <span class="game-icon">🧚</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Enchanted Forest</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.6%</span>
-                                <span class="meta-item volatility-medium">Med Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 7,500x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Free Spins</span>
-                            <span class="feature-tag-small">Multipliers</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 16 -->
-                <div class="portfolio-game-card" data-theme="egyptian" data-features="cascading,bonus-rounds" data-volatility="high" data-rtp="97.0" data-name="Book of Secrets">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-book">
-                            <span class="game-icon">📖</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Book of Secrets</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 97.0%</span>
-                                <span class="meta-item volatility-high">High Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 13,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Cascading</span>
-                            <span class="feature-tag-small">Bonus Round</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 17 -->
-                <div class="portfolio-game-card" data-theme="adventure" data-features="free-spins,wilds" data-volatility="low" data-rtp="95.9" data-name="Pirate Bay">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-pirate">
-                            <span class="game-icon">🏴‍☠️</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Pirate Bay</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 95.9%</span>
-                                <span class="meta-item volatility-low">Low Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 4,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Free Spins</span>
-                            <span class="feature-tag-small">Wilds</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 18 -->
-                <div class="portfolio-game-card" data-theme="mythology" data-features="multipliers,mega-symbols" data-volatility="high" data-rtp="96.9" data-name="Viking Rage">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-viking">
-                            <span class="game-icon">⚔️</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Viking Rage</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.9%</span>
-                                <span class="meta-item volatility-high">High Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 14,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Multipliers</span>
-                            <span class="feature-tag-small">Mega Symbols</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 19 -->
-                <div class="portfolio-game-card" data-theme="asian" data-features="bonus-rounds,cascading" data-volatility="medium" data-rtp="96.5" data-name="Lucky Koi">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-koi">
-                            <span class="game-icon">🐠</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Lucky Koi</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.5%</span>
-                                <span class="meta-item volatility-medium">Med Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 6,500x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Bonus Round</span>
-                            <span class="feature-tag-small">Cascading</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 20 -->
-                <div class="portfolio-game-card" data-theme="sci-fi" data-features="free-spins,wilds" data-volatility="medium" data-rtp="96.4" data-name="Alien Invasion">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-alien">
-                            <span class="game-icon">👽</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Alien Invasion</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.4%</span>
-                                <span class="meta-item volatility-medium">Med Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 7,800x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Free Spins</span>
-                            <span class="feature-tag-small">Wilds</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 21 -->
-                <div class="portfolio-game-card" data-theme="classic" data-features="wilds" data-volatility="low" data-rtp="95.5" data-name="Diamond Rush">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-diamond">
-                            <span class="game-icon">💎</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Diamond Rush</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 95.5%</span>
-                                <span class="meta-item volatility-low">Low Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 2,000x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Classic</span>
-                            <span class="feature-tag-small">Wilds</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 22 -->
-                <div class="portfolio-game-card" data-theme="fantasy" data-features="free-spins,bonus-rounds" data-volatility="high" data-rtp="96.7" data-name="Wizard's Tower">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-wizard">
-                            <span class="game-icon">🧙</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Wizard's Tower</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.7%</span>
-                                <span class="meta-item volatility-high">High Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 10,500x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Free Spins</span>
-                            <span class="feature-tag-small">Bonus Round</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 23 -->
-                <div class="portfolio-game-card" data-theme="horror" data-features="multipliers,cascading" data-volatility="high" data-rtp="96.6" data-name="Vampire Night">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-vampire">
-                            <span class="game-icon">🧛</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Vampire Night</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.6%</span>
-                                <span class="meta-item volatility-high">High Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 11,500x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Multipliers</span>
-                            <span class="feature-tag-small">Cascading</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Game 24 -->
-                <div class="portfolio-game-card" data-theme="adventure" data-features="mega-symbols,free-spins" data-volatility="medium" data-rtp="96.3" data-name="Wild Safari">
-                    <div class="portfolio-game-thumbnail">
-                        <div class="game-placeholder game-safari">
-                            <span class="game-icon">🦁</span>
-                        </div>
-                        <div class="game-hover-overlay">
-                            <button class="btn-play-demo">Play Demo</button>
-                            <button class="btn-play-real">Play for Real</button>
-                        </div>
-                    </div>
-                    <div class="portfolio-game-info">
-                        <h3 class="portfolio-game-title">Wild Safari</h3>
-                        <div class="portfolio-game-meta">
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>RTP:</strong> 96.3%</span>
-                                <span class="meta-item volatility-medium">Med Vol.</span>
-                            </div>
-                            <div class="meta-row">
-                                <span class="meta-item"><strong>Max Win:</strong> 8,200x</span>
-                            </div>
-                        </div>
-                        <div class="portfolio-game-features">
-                            <span class="feature-tag-small">Mega Symbols</span>
-                            <span class="feature-tag-small">Free Spins</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Pagination -->
-            <div class="pagination">
-                <button class="pagination-btn" id="prevPage" disabled>← Previous</button>
-                <div class="pagination-numbers">
-                    <button class="pagination-number active">1</button>
-                    <button class="pagination-number">2</button>
-                    <button class="pagination-number">3</button>
-                    <span class="pagination-dots">...</span>
-                    <button class="pagination-number">8</button>
-                </div>
-                <button class="pagination-btn" id="nextPage">Next →</button>
-            </div>
-        </div>
-    </section>
-
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="container">
-            <div class="footer-content">
-                <div class="footer-section">
-                    <div class="footer-logo">
-                        <a href="index.html">
-                            <span class="logo-icon">👁️</span>
-                            <span class="logo-text">EVIL<span class="logo-highlight">EYE</span>STUDIO</span>
-                        </a>
-                    </div>
-                    <p class="footer-description">Creating legendary slot experiences that captivate players worldwide.</p>
-                    <div class="footer-social">
-                        <a href="#" class="social-icon">Twitter</a>
-                        <a href="#" class="social-icon">LinkedIn</a>
-                        <a href="#" class="social-icon">Instagram</a>
-                        <a href="#" class="social-icon">YouTube</a>
-                    </div>
-                </div>
-                <div class="footer-section">
-                    <h4 class="footer-title">Games</h4>
-                    <ul class="footer-links">
-                        <li><a href="games.html">All Games</a></li>
-                        <li><a href="games.html#new">New Releases</a></li>
-                        <li><a href="games.html#popular">Most Popular</a></li>
-                        <li><a href="games.html#high-rtp">High RTP</a></li>
-                    </ul>
-                </div>
-                <div class="footer-section">
-                    <h4 class="footer-title">Company</h4>
-                    <ul class="footer-links">
-                        <li><a href="index.html#about">About Us</a></li>
-                        <li><a href="index.html#services">Services</a></li>
-                        <li><a href="index.html#partners">Partners</a></li>
-                        <li><a href="index.html#news">News</a></li>
-                        <li><a href="#">Careers</a></li>
-                    </ul>
-                </div>
-                <div class="footer-section">
-                    <h4 class="footer-title">Support</h4>
-                    <ul class="footer-links">
-                        <li><a href="index.html#contact">Contact</a></li>
-                        <li><a href="#">Documentation</a></li>
-                        <li><a href="#">API Reference</a></li>
-                        <li><a href="#">Integration Guide</a></li>
-                    </ul>
-                </div>
-                <div class="footer-section">
-                    <h4 class="footer-title">Legal</h4>
-                    <ul class="footer-links">
-                        <li><a href="#">Privacy Policy</a></li>
-                        <li><a href="#">Terms of Service</a></li>
-                        <li><a href="#">Responsible Gaming</a></li>
-                        <li><a href="#">Licenses</a></li>
-                    </ul>
-                </div>
-            </div>
-            <div class="footer-bottom">
-                <p class="footer-copyright">&copy; 2026 EvilEyeStudio. All rights reserved.</p>
-                <div class="footer-certifications">
-                    <span class="cert-badge">GLI Certified</span>
-                    <span class="cert-badge">eCOGRA</span>
-                    <span class="cert-badge">MGA Licensed</span>
-                </div>
-                <div class="language-selector">
-                    <select id="language">
-                        <option value="en">English</option>
-                        <option value="es">Español</option>
-                        <option value="de">Deutsch</option>
-                        <option value="fr">Français</option>
-                        <option value="ja">日本語</option>
-                    </select>
-                </div>
-            </div>
-        </div>
-    </footer>
-
-    <script src="js/main.js"></script>
+  <script src="js/main.js"></script>
 </body>
 </html>

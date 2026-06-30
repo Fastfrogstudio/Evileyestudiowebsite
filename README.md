@@ -1,183 +1,69 @@
-# EvilEyeStudio Website
+# Evil Eye Studio — Website
 
-A bold, dynamic slot provider website inspired by Hacksaw Gaming's design approach. Features aggressive typography, strong visual hierarchy, and creative use of space.
+A bold, dark, Hacksaw-inspired website for **Evil Eye Studio** — an iGaming slot
+provider **and** an art & animation studio for hire. Two divisions, one eye.
 
-## Design Philosophy
+## Concept
 
-This website embodies the following design principles:
+Evil Eye runs two divisions, and the site is built around that split:
 
-- **Bold Typography**: Using Bebas Neue for display text and Inter for body content
-- **Dynamic Layouts**: Grid-based responsive design with creative spacing
-- **Strong Visual Hierarchy**: Clear distinction between primary and secondary content
-- **Dark Color Scheme**: Deep blacks with vibrant accent colors (pink, cyan, gold)
-- **Creative Animations**: Floating symbols, parallax effects, and smooth transitions
+- **Slots** — a B2B slot provider showcasing original, certified games.
+- **Art & Animation** — a creative studio for hire (concept art, characters,
+  symbols, 2D/3D animation, UI, sound) that builds slot games for operators and
+  other providers.
 
-## Features
+A **division switcher** in the header (Slots ⇄ Art & Animation) re-themes the
+accent palette and routes between the two sides. The studio page has its **own
+sub-navigation bar** dedicated to creative services.
 
-### Homepage (`index.html`)
+## Pages
 
-- **Hero Section**: Full-screen hero with animated floating symbols and bold typography
-- **New Game Release**: Showcase for latest game with animated symbols and live statistics
-- **Company Intro**: Brief overview of EvilEyeStudio's mission and values
-- **Featured Games Carousel**: Interactive carousel showcasing top games
-- **Services Section**: Grid layout of studio services
-- **About Section**: Company information with statistics
-- **Latest News**: Recent announcements and updates
-- **Partners Section**: Showcase of casino partners
-- **Contact Section**: Contact form and company contact information
-- **Footer**: Comprehensive navigation and legal information
+| File          | Purpose                                                            |
+|---------------|-------------------------------------------------------------------|
+| `index.html`  | Slots home — hero, ticker, new release, portfolio, divisions, stats, about, news, partners, contact |
+| `studio.html` | Art & Animation studio — own sub-nav, showreel, services, gallery, process, hire form |
+| `games.html`  | Full games portfolio with live search / filter / sort            |
 
-### Games Portfolio (`games.html`)
+## Stack
 
-- **Advanced Filtering System**:
-  - Search by game name
-  - Filter by theme (Fantasy, Egyptian, Asian, etc.)
-  - Filter by features (Free Spins, Multipliers, etc.)
-  - Filter by volatility (Low, Medium, High)
-  - Filter by RTP range
-  - Sort by newest, popular, A-Z, or RTP
-  - Reset filters functionality
+- **HTML5 + CSS3 + vanilla JS** — no build step, no dependencies. Open any
+  `.html` file in a browser (or serve the folder) and it just works.
+- **Fonts:** Anton (display) + Space Grotesk (body) via Google Fonts, with
+  system fallbacks.
+- **JS** (`js/main.js`): sticky header, mobile menu, scroll-reveal, animated
+  counters, hero parallax, games filtering, mock forms. Progressive enhancement —
+  content stays visible if JS doesn't run.
 
-- **Game Grid**: Responsive grid layout with hover effects
-- **Game Cards**: Display RTP, volatility, max win, and features
-- **Play Demo/Real Buttons**: Interactive CTAs on hover
-- **Pagination**: Navigate through large game portfolio
-- **Results Counter**: Shows number of games matching filters
+## Design tokens
 
-## Technical Stack
-
-- **HTML5**: Semantic markup
-- **CSS3**: Custom properties, Grid, Flexbox, animations
-- **Vanilla JavaScript**: No dependencies, pure JS for all interactions
-- **Google Fonts**: Bebas Neue and Inter
-
-## File Structure
-
-```
-Evileyestudiowebsite/
-├── index.html              # Homepage
-├── games.html              # Games portfolio page
-├── css/
-│   └── styles.css          # Complete styling
-├── js/
-│   └── main.js            # All JavaScript functionality
-├── images/
-│   ├── games/             # Game thumbnails (placeholders)
-│   └── symbols/           # Animated symbols (placeholders)
-└── README.md              # This file
-```
-
-## Key Design Elements
-
-### Color Palette
-
-- **Primary**: #FF0066 (Hot Pink)
-- **Secondary**: #00FFFF (Cyan)
-- **Accent**: #FFD700 (Gold)
-- **Background Dark**: #0A0A0F
-- **Background Secondary**: #151520
-- **Background Tertiary**: #1F1F2E
-
-### Typography Scale
-
-- **Display (Bebas Neue)**: Used for headlines, titles, and CTAs
-- **Body (Inter)**: Used for paragraphs and UI text
-
-### Animations
-
-1. **Floating Symbols**: Gentle float animation on hero section
-2. **Scroll Animations**: Fade-in and slide-up on scroll
-3. **Hover Effects**: Scale, glow, and transform on interactive elements
-4. **Carousel**: Smooth horizontal scrolling
-5. **Parallax**: Subtle parallax effect on hero symbols
-
-## Browser Support
-
-- Chrome (latest)
-- Firefox (latest)
-- Safari (latest)
-- Edge (latest)
-- Mobile browsers (iOS Safari, Chrome Mobile)
-
-## Responsive Breakpoints
-
-- **Desktop**: 1200px and above
-- **Tablet**: 768px - 1199px
-- **Mobile**: Below 768px
-
-## Features Checklist
-
-### Homepage Elements
-- [x] Hero section with striking visuals
-- [x] New game release promo with animated symbols
-- [x] Featured games carousel (3-5 games)
-- [x] Company intro (2-3 sentences)
-- [x] Key statistics (games, markets, partners)
-- [x] Call-to-action buttons
-- [x] Latest news/updates section
-- [x] Partner logos
-- [x] Footer with navigation and social links
-
-### Navigation & Structure
-- [x] Clear main menu
-- [x] Sticky header
-- [x] Mobile hamburger menu
-- [x] Smooth scroll navigation
-
-### Games Portfolio Page
-- [x] Grid/card layout
-- [x] Filter by theme
-- [x] Filter by features
-- [x] Filter by volatility
-- [x] Filter by RTP range
-- [x] Sort functionality
-- [x] Search functionality
-- [x] Game cards with RTP, volatility, max win
-- [x] Hover effects
-- [x] "Play Demo" buttons
-- [x] Pagination
-
-## Performance Optimizations
-
-- CSS custom properties for consistent theming
-- Efficient CSS Grid and Flexbox layouts
-- Minimal JavaScript dependencies
-- Smooth scroll behavior
-- Optimized animations using transforms
-- Lazy loading ready for images
-
-## Future Enhancements
-
-- Add actual game images
-- Implement backend API for dynamic game data
-- Add multi-language support
-- Integrate with casino platforms
-- Add game preview videos
-- Implement user reviews and ratings
-- Add live game statistics integration
-- Create admin panel for content management
-
-## Customization
-
-To customize colors, update the CSS variables in `css/styles.css`:
+Edit the CSS custom properties at the top of `css/styles.css`:
 
 ```css
 :root {
-    --color-primary: #FF0066;
-    --color-secondary: #00FFFF;
-    --color-accent: #FFD700;
-    /* ... */
+  --accent:   #ff0a6c;  /* slots: electric magenta */
+  --accent-2: #19e3ff;  /* cyan */
+  --accent-3: #ffc24b;  /* gold */
+}
+body[data-division='studio'] {
+  --accent:   #8a5bff;  /* studio: violet */
+  --accent-2: #2bf0c8;  /* mint */
 }
 ```
 
-## Credits
+## Placeholders to swap as we iterate
 
-Design inspired by Hacksaw Gaming's bold and dynamic approach to slot provider websites.
+- Game/symbol **emoji** stand in for real key art and thumbnails.
+- The **showreel** and **gallery** are placeholders for real video/frames.
+- Game stats, news, partners, and contact details are sample copy.
 
-## License
+## Local preview
 
-© 2026 EvilEyeStudio. All rights reserved.
+```bash
+# any static server works, e.g.
+python3 -m http.server 8000
+# then open http://localhost:8000
+```
 
 ---
 
-**Built with 👁️ by EvilEyeStudio**
+© Evil Eye Studio. Built with 👁️ — bold slots, made by artists.
