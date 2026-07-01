@@ -192,6 +192,7 @@ ul { list-style: none; }
 }
 .hero .wrap { position: relative; z-index: 2; width: 100%; }
 .hero-inner { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 40px; align-items: center; }
+.hero-copy { position: relative; z-index: 2; }
 .hero h1 { font-size: clamp(3.4rem, 9vw, 8rem); margin: 22px 0; }
 .hero h1 .line { display: block; overflow: hidden; padding-block: 0.06em; }
 .hero h1 .line > span { display: block; animation: rise .9s var(--ease) both; }
@@ -207,18 +208,19 @@ ul { list-style: none; }
 
 /* floating card scenes — reusable 3D-tilt clusters */
 .hero-visual, .float-scene { position: relative; }
-.hero-visual { height: 620px; }
+.hero-visual { position: absolute; top: 50%; right: 1%; transform: translateY(-50%); width: min(38vw, 520px); height: min(86vh, 760px); z-index: 1; }
 .reel {
-  position: absolute; width: 336px; height: 372px;
+  position: absolute; width: 220px; height: 244px;
   animation: floaty 6s ease-in-out infinite;
 }
-.reel .ph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 7rem; }
+.reel .ph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 4.4rem; }
 .reel .art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; filter: drop-shadow(0 22px 26px rgba(0, 0, 0, 0.55)); }
 
 /* floating card scene for interior page heroes */
 .page-hero .float-scene {
-  position: absolute; right: 0; top: 54%; transform: translateY(-50%);
-  width: 620px; height: 560px; z-index: 1;
+  position: absolute; right: 0; top: 50%;
+  transform: translateY(-50%) scale(0.7); transform-origin: center right;
+  width: 600px; height: 780px; z-index: 1;
 }
 .page-hero .wrap { position: relative; z-index: 2; }
 
@@ -230,12 +232,13 @@ ul { list-style: none; }
 .feature-art::before { content: ''; position: absolute; inset: -12%; z-index: -1; background: radial-gradient(circle, var(--glow), transparent 66%); filter: blur(22px); opacity: .7; }
 .feature-art .ph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 6rem; }
 .feature-art .art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 24px 28px rgba(0, 0, 0, 0.5)); }
-.reel.r1 { top: 0; left: -6%; z-index: 1; animation-delay: 0s; }
-.reel.r2 { top: 26%; left: 24%; z-index: 3; animation-name: floaty2; animation-delay: .8s; }
-.reel.r2::before { content: ''; position: absolute; inset: -16%; z-index: -1; background: radial-gradient(circle, var(--glow), transparent 66%); filter: blur(18px); }
-.reel.r3 { top: 2%; right: -4%; z-index: 2; animation-delay: 1.6s; }
-.reel.r4 { bottom: 0; left: 2%; z-index: 2; animation-delay: 2.2s; }
-.reel.r5 { bottom: 6%; right: 2%; z-index: 1; animation-delay: 1.2s; }
+/* two-column staggered layout — no overlap, clear of the headline */
+.reel.r1 { top: 0; left: 0; z-index: 1; animation-delay: 0s; }
+.reel.r2 { top: 35%; left: 4%; z-index: 3; animation-name: floaty2; animation-delay: .8s; }
+.reel.r2::before { content: ''; position: absolute; inset: -18%; z-index: -1; background: radial-gradient(circle, var(--glow), transparent 66%); filter: blur(20px); }
+.reel.r3 { top: 15%; right: 0; z-index: 2; animation-delay: 1.6s; }
+.reel.r4 { bottom: 0; left: 0; z-index: 1; animation-delay: 2.2s; }
+.reel.r5 { bottom: 14%; right: 0; z-index: 1; animation-delay: 1.2s; }
 @keyframes floaty { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-22px) rotate(3deg); } }
 @keyframes floaty2 { 0%,100% { transform: scale(1.15) translateY(0); } 50% { transform: scale(1.15) translateY(-26px); } }
 
