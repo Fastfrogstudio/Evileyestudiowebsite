@@ -87,21 +87,23 @@
     counters.forEach((el) => (el.textContent = el.dataset.count + (el.dataset.suffix || '')));
   }
 
-  /* ---------- Hero parallax on floating reels ---------- */
-  const heroVisual = document.querySelector('.hero-visual');
-  if (heroVisual && window.matchMedia('(pointer:fine)').matches) {
-    const reels = heroVisual.querySelectorAll('.reel');
-    heroVisual.addEventListener('mousemove', (e) => {
-      const r = heroVisual.getBoundingClientRect();
-      const x = (e.clientX - r.left) / r.width - 0.5;
-      const y = (e.clientY - r.top) / r.height - 0.5;
-      reels.forEach((reel, i) => {
-        const depth = (i + 1) * 6;
-        reel.style.translate = `${x * depth}px ${y * depth}px`;
+  /* ---------- Parallax on floating card scenes ---------- */
+  if (window.matchMedia('(pointer:fine)').matches) {
+    document.querySelectorAll('.hero-visual, .float-scene').forEach((scene) => {
+      const reels = scene.querySelectorAll('.reel');
+      if (!reels.length) return;
+      scene.addEventListener('mousemove', (e) => {
+        const r = scene.getBoundingClientRect();
+        const x = (e.clientX - r.left) / r.width - 0.5;
+        const y = (e.clientY - r.top) / r.height - 0.5;
+        reels.forEach((reel, i) => {
+          const depth = (i + 1) * 6;
+          reel.style.translate = `${x * depth}px ${y * depth}px`;
+        });
       });
-    });
-    heroVisual.addEventListener('mouseleave', () => {
-      reels.forEach((reel) => (reel.style.translate = '0 0'));
+      scene.addEventListener('mouseleave', () => {
+        reels.forEach((reel) => (reel.style.translate = '0 0'));
+      });
     });
   }
 
