@@ -207,35 +207,35 @@ ul { list-style: none; }
 
 /* floating card scenes — reusable 3D-tilt clusters */
 .hero-visual, .float-scene { position: relative; }
-.hero-visual { height: 460px; }
+.hero-visual { height: 620px; }
 .reel {
-  position: absolute; width: 168px; height: 186px;
+  position: absolute; width: 336px; height: 372px;
   animation: floaty 6s ease-in-out infinite;
 }
-.reel .ph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 3.6rem; }
+.reel .ph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 7rem; }
 .reel .art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; filter: drop-shadow(0 22px 26px rgba(0, 0, 0, 0.55)); }
 
 /* floating card scene for interior page heroes */
 .page-hero .float-scene {
-  position: absolute; right: 2%; top: 54%; transform: translateY(-50%);
-  width: 440px; height: 440px; z-index: 1;
+  position: absolute; right: 0; top: 54%; transform: translateY(-50%);
+  width: 620px; height: 560px; z-index: 1;
 }
 .page-hero .wrap { position: relative; z-index: 2; }
 
 /* single floating art card (used in content sections) */
 .feature-art {
-  position: relative; width: 230px; height: 250px;
+  position: relative; width: 400px; height: 430px; max-width: 100%;
   animation: floaty 6s ease-in-out infinite;
 }
 .feature-art::before { content: ''; position: absolute; inset: -12%; z-index: -1; background: radial-gradient(circle, var(--glow), transparent 66%); filter: blur(22px); opacity: .7; }
 .feature-art .ph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 6rem; }
 .feature-art .art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 24px 28px rgba(0, 0, 0, 0.5)); }
-.reel.r1 { top: 10%; left: 8%; animation-delay: 0s; }
-.reel.r2 { top: 34%; left: 42%; z-index: 2; animation-name: floaty2; animation-delay: .8s; }
+.reel.r1 { top: 0; left: -6%; z-index: 1; animation-delay: 0s; }
+.reel.r2 { top: 26%; left: 24%; z-index: 3; animation-name: floaty2; animation-delay: .8s; }
 .reel.r2::before { content: ''; position: absolute; inset: -16%; z-index: -1; background: radial-gradient(circle, var(--glow), transparent 66%); filter: blur(18px); }
-.reel.r3 { top: 8%; right: 4%; animation-delay: 1.6s; }
-.reel.r4 { bottom: 4%; left: 24%; animation-delay: 2.2s; }
-.reel.r5 { bottom: 12%; right: 12%; animation-delay: 1.2s; }
+.reel.r3 { top: 2%; right: -4%; z-index: 2; animation-delay: 1.6s; }
+.reel.r4 { bottom: 0; left: 2%; z-index: 2; animation-delay: 2.2s; }
+.reel.r5 { bottom: 6%; right: 2%; z-index: 1; animation-delay: 1.2s; }
 @keyframes floaty { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-22px) rotate(3deg); } }
 @keyframes floaty2 { 0%,100% { transform: scale(1.15) translateY(0); } 50% { transform: scale(1.15) translateY(-26px); } }
 
