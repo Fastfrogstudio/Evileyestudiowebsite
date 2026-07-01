@@ -193,7 +193,7 @@ ul { list-style: none; }
 .hero .wrap { position: relative; z-index: 2; width: 100%; }
 .hero-inner { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 40px; align-items: center; }
 .hero-copy { position: relative; z-index: 2; }
-.hero h1 { font-size: clamp(3.4rem, 9vw, 8rem); margin: 22px 0; }
+.hero h1 { font-size: clamp(2.5rem, 5.2vw, 4.7rem); margin: 0 0 24px; }
 .hero h1 .line { display: block; overflow: hidden; padding-block: 0.06em; }
 .hero h1 .line > span { display: block; animation: rise .9s var(--ease) both; }
 .hero h1 .line:nth-child(2) > span { animation-delay: .12s; }
