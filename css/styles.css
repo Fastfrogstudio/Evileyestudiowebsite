@@ -213,25 +213,35 @@ ul { list-style: none; }
 .hero-sub { font-size: 1.15rem; color: var(--muted); max-width: 520px; margin-bottom: 34px; }
 .hero-ctas { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 48px; }
 .hero-stats { display: flex; gap: 40px; flex-wrap: wrap; }
+.hero-stats-bottom {
+  position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%);
+  z-index: 3; width: 100%; max-width: var(--maxw); padding-inline: var(--gutter);
+  justify-content: center; gap: 72px; text-align: center;
+}
+.hero-stats-bottom .stat { text-align: center; }
+@media (max-width: 560px) {
+  .hero-stats-bottom { gap: 26px; bottom: 22px; }
+  .hero-stats-bottom .stat .num { font-size: 2rem; }
+}
 .hero-stats .stat .num { font-family: var(--font-display); font-size: 2.6rem; color: var(--text); line-height: 1; }
 .hero-stats .stat .num span { color: var(--accent); }
 .hero-stats .stat .lbl { font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); margin-top: 6px; }
 
 /* floating card scenes — reusable 3D-tilt clusters */
 .hero-visual, .float-scene { position: relative; }
-.hero-visual { position: absolute; top: 50%; right: 1%; transform: translateY(-50%); width: min(38vw, 520px); height: min(86vh, 760px); z-index: 1; }
+.hero-visual { position: absolute; top: 90px; right: 1%; width: min(44vw, 600px); height: 500px; z-index: 1; }
 .reel {
-  position: absolute; width: 220px; height: 244px;
+  position: absolute; width: 188px; height: 208px;
   animation: floaty 6s ease-in-out infinite;
 }
-.reel .ph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 4.4rem; }
+.reel .ph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 3.8rem; }
 .reel .art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; filter: drop-shadow(0 22px 26px rgba(0, 0, 0, 0.55)); }
 
 /* floating card scene for interior page heroes */
 .page-hero .float-scene {
-  position: absolute; right: 0; top: 50%;
-  transform: translateY(-50%) scale(0.7); transform-origin: center right;
-  width: 600px; height: 780px; z-index: 1;
+  position: absolute; right: 0; top: 56%;
+  transform: translateY(-50%) scale(0.72); transform-origin: center right;
+  width: 600px; height: 560px; z-index: 1;
 }
 .page-hero .wrap { position: relative; z-index: 2; }
 
@@ -243,13 +253,13 @@ ul { list-style: none; }
 .feature-art::before { content: ''; position: absolute; inset: -12%; z-index: -1; background: radial-gradient(circle, var(--glow), transparent 66%); filter: blur(22px); opacity: .7; }
 .feature-art .ph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 6rem; }
 .feature-art .art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 24px 28px rgba(0, 0, 0, 0.5)); }
-/* two-column staggered layout — no overlap, clear of the headline */
+/* 2-row layout (3 up top, 2 below) — no overlap, clear of headline & bottom stats */
 .reel.r1 { top: 0; left: 0; z-index: 1; animation-delay: 0s; }
-.reel.r2 { top: 35%; left: 4%; z-index: 3; animation-name: floaty2; animation-delay: .8s; }
+.reel.r2 { top: 44%; left: 17%; z-index: 3; animation-name: floaty2; animation-delay: .8s; }
 .reel.r2::before { content: ''; position: absolute; inset: -18%; z-index: -1; background: radial-gradient(circle, var(--glow), transparent 66%); filter: blur(20px); }
-.reel.r3 { top: 15%; right: 0; z-index: 2; animation-delay: 1.6s; }
-.reel.r4 { bottom: 0; left: 0; z-index: 1; animation-delay: 2.2s; }
-.reel.r5 { bottom: 14%; right: 0; z-index: 1; animation-delay: 1.2s; }
+.reel.r3 { top: 0; left: 34%; z-index: 2; animation-delay: 1.6s; }
+.reel.r4 { top: 44%; right: 17%; z-index: 1; animation-delay: 2.2s; }
+.reel.r5 { top: 0; right: 0; z-index: 1; animation-delay: 1.2s; }
 @keyframes floaty { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-22px) rotate(3deg); } }
 @keyframes floaty2 { 0%,100% { transform: scale(1.15) translateY(0); } 50% { transform: scale(1.15) translateY(-26px); } }
 
