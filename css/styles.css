@@ -214,8 +214,8 @@ ul { list-style: none; }
 .hero-ctas { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 48px; }
 .hero-stats { display: flex; gap: 40px; flex-wrap: wrap; }
 .hero-stats-bottom {
-  position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%);
-  z-index: 3; width: 100%; max-width: var(--maxw); padding-inline: var(--gutter);
+  position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%);
+  z-index: 5; width: 100%; max-width: var(--maxw); padding-inline: var(--gutter);
   justify-content: center; gap: 72px; text-align: center;
 }
 .hero-stats-bottom .stat { text-align: center; }
@@ -229,7 +229,7 @@ ul { list-style: none; }
 
 /* floating card scenes — reusable 3D-tilt clusters */
 .hero-visual, .float-scene { position: relative; }
-.hero-visual { position: absolute; top: 90px; right: 1%; width: min(44vw, 600px); height: 500px; z-index: 1; }
+.hero-visual { position: absolute; top: 50%; right: 3%; transform: translateY(-50%); width: min(43vw, 600px); height: 452px; z-index: 1; }
 .reel {
   position: absolute; width: 188px; height: 208px;
   animation: floaty 6s ease-in-out infinite;
@@ -253,13 +253,13 @@ ul { list-style: none; }
 .feature-art::before { content: ''; position: absolute; inset: -12%; z-index: -1; background: radial-gradient(circle, var(--glow), transparent 66%); filter: blur(22px); opacity: .7; }
 .feature-art .ph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 6rem; }
 .feature-art .art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 24px 28px rgba(0, 0, 0, 0.5)); }
-/* 2-row layout (3 up top, 2 below) — no overlap, clear of headline & bottom stats */
-.reel.r1 { top: 0; left: 0; z-index: 1; animation-delay: 0s; }
-.reel.r2 { top: 44%; left: 17%; z-index: 3; animation-name: floaty2; animation-delay: .8s; }
+/* balanced 3-over-2 cluster — symmetric, centred, clear of headline & bottom stats */
+.reel.r1 { top: 3%; left: 1%; z-index: 1; animation-delay: 0s; }
+.reel.r3 { top: 0; left: 35%; z-index: 2; animation-delay: 1.6s; }
+.reel.r5 { top: 3%; right: 1%; z-index: 1; animation-delay: 1.2s; }
+.reel.r2 { top: 49%; left: 14%; z-index: 3; animation-name: floaty2; animation-delay: .8s; }
 .reel.r2::before { content: ''; position: absolute; inset: -18%; z-index: -1; background: radial-gradient(circle, var(--glow), transparent 66%); filter: blur(20px); }
-.reel.r3 { top: 0; left: 34%; z-index: 2; animation-delay: 1.6s; }
-.reel.r4 { top: 44%; right: 17%; z-index: 1; animation-delay: 2.2s; }
-.reel.r5 { top: 0; right: 0; z-index: 1; animation-delay: 1.2s; }
+.reel.r4 { top: 49%; right: 14%; z-index: 1; animation-delay: 2.2s; }
 @keyframes floaty { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-22px) rotate(3deg); } }
 @keyframes floaty2 { 0%,100% { transform: scale(1.15) translateY(0); } 50% { transform: scale(1.15) translateY(-26px); } }
 
