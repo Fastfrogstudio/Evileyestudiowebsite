@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script>document.documentElement.className += " js";</script>
-  <link rel="stylesheet" href="css/styles.css?v=17" />
+  <link rel="stylesheet" href="css/styles.css?v=18" />
   <link rel="icon" type="image/svg+xml" href="images/evil-eye-mark.svg" />
 </head>
 <body data-division="slots">
@@ -80,41 +80,59 @@
     </div>
   </section>
 
-  <!-- ===== New Release ===== -->
-  <section class="section" id="release">
+  <!-- ===== Latest Games ===== -->
+  <section class="section latest" id="release">
     <div class="wrap">
-      <div class="games-head" data-reveal>
-        <div>
-          <span class="eyebrow">New Release</span>
-          <h2 class="display" style="font-size:clamp(2.4rem,6vw,4.6rem);margin-top:14px;">Blood King</h2>
-        </div>
-        <a href="games.html" class="btn btn-ghost">All Games <span class="arrow">→</span></a>
+      <div class="section-head center" data-reveal>
+        <span class="eyebrow">New Release</span>
+        <h2 class="display">Latest Games</h2>
+        <p>Bold themes, original maths, and art that earns the screen — with a fresh title dropping every month. Take the newest for a spin.</p>
       </div>
-      <div class="split" style="margin-top:40px;">
-        <div class="split-card slots" data-reveal style="min-height:480px;">
-          <span class="glow"></span>
-          <span class="badge">Featured · 6×5 Megaways</span>
-          <div class="feature-art" style="margin-bottom:auto;margin-top:20px;">
-            <span class="ph">🧛</span>
-            <img class="art" src="images/reels/blood-king.png" alt="Blood King" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'">
-          </div>
+
+      <!-- Featured banner -->
+      <article class="feature-banner slots" data-reveal>
+        <span class="fb-glow"></span>
+        <div class="fb-copy">
+          <span class="badge">Featured · New Release</span>
           <h3 class="display">Blood King</h3>
           <p>Enter the vampire lord's crypt where every spin can summon the Blood Moon feature and a 25,000× max win. Tumbling reels, expanding wilds, and a buy-feature for the brave.</p>
-          <div class="game-meta" style="margin-bottom:20px;"><span>RTP <b>96.4%</b></span><span>Volatility <b>High</b></span><span>Max Win <b>25,000×</b></span></div>
-          <a href="games.html" class="btn btn-primary">Play Demo <span class="arrow">→</span></a>
-        </div>
-        <div style="display:grid;gap:22px;">
-          <div class="split-card" data-reveal data-reveal-delay="1" style="min-height:0;">
-            <span class="badge">Why operators choose us</span>
-            <h3 class="display" style="font-size:1.8rem;margin-top:30px;">Certified &amp; ready to launch</h3>
-            <p>Every title ships with certified RNG, multi-jurisdiction compliance, and a lightning-fast HTML5 client tuned for mobile-first play.</p>
-          </div>
-          <div class="split-card" data-reveal data-reveal-delay="2" style="min-height:0;">
-            <span class="badge">Player engagement</span>
-            <h3 class="display" style="font-size:1.8rem;margin-top:30px;">Built-in promo tools</h3>
-            <p>Tournaments, prize drops, and free-round campaigns baked into every game to drive retention from day one.</p>
+          <div class="fb-ctas">
+            <a href="games.html" class="btn btn-primary">Try It <span class="arrow">→</span></a>
+            <a href="games.html" class="btn btn-ghost">Read More</a>
           </div>
         </div>
+        <div class="fb-art" aria-hidden="true">
+          <span class="ph">🧛</span>
+          <img src="images/reels/blood-king.png" alt="" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'">
+        </div>
+        <div class="fb-footer">
+          <span class="fb-name">Blood King</span>
+          <span class="rating" aria-label="Rated 5 out of 5">★★★★★</span>
+        </div>
+      </article>
+
+      <!-- Tile row -->
+      <div class="latest-grid">
+        <a class="latest-tile" href="games.html" data-reveal>
+          <div class="lt-art"><span class="ph">🐉</span><img src="images/reels/dragon.png" alt="Jade Dragon" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
+          <div class="lt-bar"><span class="lt-name">Jade Dragon</span><span class="rating">★★★★★</span></div>
+        </a>
+        <a class="latest-tile" href="games.html" data-reveal data-reveal-delay="1">
+          <div class="lt-art"><span class="ph">📖</span><img src="images/reels/book.png" alt="Golden Grimoire" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
+          <div class="lt-bar"><span class="lt-name">Golden Grimoire</span><span class="rating">★★★★★</span></div>
+        </a>
+        <a class="latest-tile" href="games.html" data-reveal data-reveal-delay="2">
+          <div class="lt-art"><span class="ph">🐡</span><img src="images/reels/puffer.png" alt="Puffer Payday" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
+          <div class="lt-bar"><span class="lt-name">Puffer Payday</span><span class="rating">★★★★★</span></div>
+        </a>
+        <a class="latest-tile" href="games.html" data-reveal data-reveal-delay="3">
+          <div class="lt-art"><span class="ph">🪱</span><img src="images/reels/worms.png" alt="Bait &amp; Booty" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
+          <div class="lt-bar"><span class="lt-name">Bait &amp; Booty</span><span class="rating">★★★★★</span></div>
+        </a>
+      </div>
+
+      <div class="latest-cta">
+        <a href="games.html" class="btn btn-primary btn-lg">View All Games <span class="arrow">→</span></a>
       </div>
     </div>
   </section>
