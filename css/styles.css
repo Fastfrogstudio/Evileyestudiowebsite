@@ -323,6 +323,16 @@ ul { list-style: none; }
 .split-card:hover .link .arrow { transform: translateX(5px); }
 
 /* ---------- Latest Games (featured banner + tile row) ---------- */
+.latest { position: relative; overflow: hidden; }
+/* themed backdrop (upload images/latest-bg.jpg to activate) */
+.latest::before {
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    linear-gradient(to bottom, var(--bg) 0%, rgba(8,6,14,0.74) 20%, rgba(8,6,14,0.72) 80%, var(--bg) 100%),
+    url('../images/latest-bg.jpg') center / cover no-repeat;
+}
+.latest .wrap { position: relative; z-index: 1; }
+
 .section-head.center { margin-inline: auto; text-align: center; }
 .section-head.center .eyebrow { justify-content: center; }
 
