@@ -5,6 +5,37 @@
 (function () {
   'use strict';
 
+  /* ---------- Game catalog: render both grids from one list ---------- */
+  const GAMES = window.EVIL_EYE_GAMES || [];
+  if (GAMES.length) {
+    const cardHTML = (g, i) => {
+      const tagClass = g.tag && g.tag.toLowerCase() === 'hot' ? 'tag gold' : 'tag';
+      const tag = g.tag ? `<span class="${tagClass}">${g.tag}</span>` : '';
+      const delay = i % 4 ? ` data-reveal-delay="${i % 4}"` : '';
+      return `<a class="game-card has-cover" href="games.html" data-reveal${delay}>
+        <div class="game-cover"><span class="cover-fallback">${g.title}</span><img src="${g.cover}" alt="${g.title}" loading="lazy" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
+        ${tag}
+        <div class="game-overlay"><div class="game-play"><span class="btn btn-primary">Play Demo</span></div></div>
+      </a>`;
+    };
+    const html = GAMES.map(cardHTML).join('');
+    document.querySelectorAll('.latest-grid, #games .game-grid').forEach((grid) => {
+      grid.innerHTML = html;
+    });
+    // featured banner spotlights the newest game (first in the list)
+    const feat = GAMES[0];
+    const fb = document.querySelector('.feature-banner');
+    if (fb && feat) {
+      const h = fb.querySelector('.fb-copy h3');
+      const name = fb.querySelector('.fb-name');
+      const img = fb.querySelector('.fb-art img');
+      const ph = fb.querySelector('.fb-art .ph');
+      if (h) h.textContent = feat.title;
+      if (name) name.textContent = feat.title;
+      if (img) { img.src = feat.cover; img.alt = feat.title; if (ph) ph.style.display = 'none'; }
+    }
+  }
+
   /* ---------- Sticky header ---------- */
   const header = document.querySelector('.site-header');
   const onScroll = () => {

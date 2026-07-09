@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script>document.documentElement.className += " js";</script>
-  <link rel="stylesheet" href="css/styles.css?v=24" />
+  <link rel="stylesheet" href="css/styles.css?v=25" />
   <link rel="icon" type="image/svg+xml" href="images/evil-eye-mark.svg" />
 </head>
 <body data-division="slots">
@@ -93,43 +93,26 @@
       <article class="feature-banner slots" data-reveal>
         <span class="fb-glow"></span>
         <div class="fb-copy">
-          <span class="badge">Featured · New Release</span>
-          <h3 class="display">Blood King</h3>
-          <p>Enter the vampire lord's crypt where every spin can summon the Blood Moon feature and a 25,000× max win. Tumbling reels, expanding wilds, and a buy-feature for the brave.</p>
+          <span class="badge">Featured · Latest Release</span>
+          <h3 class="display">Trash Bandits 1000</h3>
+          <p>The newest drop from Evil Eye Studio — original art, animation, and math, engineered to keep players spinning. Take it for a spin.</p>
           <div class="fb-ctas">
             <a href="games.html" class="btn btn-primary">Try It <span class="arrow">→</span></a>
             <a href="games.html" class="btn btn-ghost">Read More</a>
           </div>
         </div>
         <div class="fb-art" aria-hidden="true">
-          <span class="ph">🧛</span>
-          <img src="images/reels/blood-king.png" alt="" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'">
+          <span class="ph">🎰</span>
+          <img src="images/games/trashbandits1000.webp" alt="" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'">
         </div>
         <div class="fb-footer">
-          <span class="fb-name">Blood King</span>
+          <span class="fb-name">Trash Bandits 1000</span>
           <span class="rating" aria-label="Rated 5 out of 5">★★★★★</span>
         </div>
       </article>
 
-      <!-- Tile row -->
-      <div class="latest-grid">
-        <a class="latest-tile" href="games.html" data-reveal>
-          <div class="lt-art"><span class="ph">🐉</span><img src="images/reels/dragon.png" alt="Jade Dragon" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
-          <div class="lt-bar"><span class="lt-name">Jade Dragon</span><span class="rating">★★★★★</span></div>
-        </a>
-        <a class="latest-tile" href="games.html" data-reveal data-reveal-delay="1">
-          <div class="lt-art"><span class="ph">📖</span><img src="images/reels/book.png" alt="Golden Grimoire" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
-          <div class="lt-bar"><span class="lt-name">Golden Grimoire</span><span class="rating">★★★★★</span></div>
-        </a>
-        <a class="latest-tile" href="games.html" data-reveal data-reveal-delay="2">
-          <div class="lt-art"><span class="ph">🐡</span><img src="images/reels/puffer.png" alt="Puffer Payday" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
-          <div class="lt-bar"><span class="lt-name">Puffer Payday</span><span class="rating">★★★★★</span></div>
-        </a>
-        <a class="latest-tile" href="games.html" data-reveal data-reveal-delay="3">
-          <div class="lt-art"><span class="ph">🪱</span><img src="images/reels/worms.png" alt="Bait &amp; Booty" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
-          <div class="lt-bar"><span class="lt-name">Bait &amp; Booty</span><span class="rating">★★★★★</span></div>
-        </a>
-      </div>
+      <!-- Tile row — rendered from js/games-data.js -->
+      <div class="latest-grid"></div>
 
       <div class="latest-cta">
         <a href="games.html" class="btn btn-primary btn-lg">View All Games <span class="arrow">→</span></a>
@@ -145,20 +128,8 @@
         <h2 class="display">Games that hit different</h2>
         <p>Bold themes, original maths, and art that earns the screen. Here's a taste of what's spinning.</p>
       </div>
-      <div class="game-grid">
-        <a class="game-card has-cover" href="games.html" data-reveal>
-          <div class="game-cover"><span class="cover-fallback">Trash Bandits</span><img src="images/games/trashbandits.webp" alt="Trash Bandits" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
-          <div class="game-overlay"><div class="game-play"><span class="btn btn-primary">Play Demo</span></div></div>
-        </a>
-        <a class="game-card has-cover" href="games.html" data-reveal data-reveal-delay="1">
-          <div class="game-cover"><span class="cover-fallback">Rat Attack</span><img src="images/games/ratattack.webp" alt="Rat Attack" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
-          <div class="game-overlay"><div class="game-play"><span class="btn btn-primary">Play Demo</span></div></div>
-        </a>
-        <a class="game-card has-cover" href="games.html" data-reveal data-reveal-delay="2">
-          <div class="game-cover"><span class="cover-fallback">Trash Bandits 1000</span><img src="images/games/trashbandits1000.webp" alt="Trash Bandits 1000" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
-          <div class="game-overlay"><div class="game-play"><span class="btn btn-primary">Play Demo</span></div></div>
-        </a>
-      </div>
+      <!-- Grid — rendered from js/games-data.js -->
+      <div class="game-grid"></div>
     </div>
   </section>
 
@@ -308,6 +279,7 @@
     </div>
   </footer>
 
-  <script src="js/main.js?v=15"></script>
+  <script src="js/games-data.js?v=1"></script>
+  <script src="js/main.js?v=16"></script>
 </body>
 </html>
