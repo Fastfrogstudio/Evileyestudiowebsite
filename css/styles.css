@@ -332,13 +332,12 @@ ul { list-style: none; }
 
 /* ---------- Latest Games (featured banner + tile row) ---------- */
 .latest { position: relative; overflow: hidden; }
-/* themed backdrop — full width so the flanking statues stay in frame */
+/* themed backdrop */
 .latest::before {
   content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background:
-    linear-gradient(to bottom, var(--bg) 0%, rgba(8,6,14,0.70) 24%, rgba(8,6,14,0.70) 74%, var(--bg) 100%),
-    url('../images/greekbackground.png') center center / 100% auto no-repeat,
-    var(--bg);
+    linear-gradient(to bottom, var(--bg) 0%, rgba(8,6,14,0.74) 20%, rgba(8,6,14,0.72) 80%, var(--bg) 100%),
+    url('../images/greekbackground.png') center / cover no-repeat;
 }
 .latest .wrap { position: relative; z-index: 1; }
 
