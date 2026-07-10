@@ -1,16 +1,48 @@
 /* =========================================================
    EVIL EYE STUDIO — GAME CATALOG (single source of truth)
 
-   To add a game: copy one line block below, set the title and
-   cover, then upload the cover image to images/games/.
-   Both the "Latest Games" row and "The Portfolio" grid rebuild
-   themselves from this list — no HTML editing needed.
+   To add a game: copy one block below, set the title + cover,
+   and paste the game's Stake.com and Stake.us links. Then
+   upload the cover image to images/games/. Both the "Latest
+   Games" row and "The Portfolio" grid rebuild from this list.
 
-   Newest first. Add `tag: 'New'` (purple) or `tag: 'Hot'` (red)
-   to flag a game; omit `tag` for none.
+   Fields:
+     title    — game name (shown as the fallback if the cover fails)
+     cover    — path to the cover image in images/games/
+     tag      — 'New' (purple) or 'Hot' (red); omit for none
+     stakeCom — this game's page on Stake.com  (hover "Stake.com" button)
+     stakeUs  — this game's page on Stake.us   (hover "Stake.us" button)
+
+   If a game has no stakeCom/stakeUs yet, it falls back to the
+   studio pages set in EVIL_EYE_STAKE below.
+
+   Newest first.
    ========================================================= */
+
+// Fallback studio links (used for any game missing its own stakeCom/stakeUs)
+window.EVIL_EYE_STAKE = {
+  com: 'https://stake.com/casino/group/evil-eye-studio',
+  us:  'https://stake.us/casino/group/evil-eye-studio',
+};
+
 window.EVIL_EYE_GAMES = [
-  { title: 'Trash Bandits 1000', cover: 'images/games/trashbandits1000.webp', tag: 'New' },
-  { title: 'Rat Attack',         cover: 'images/games/ratattack.webp' },
-  { title: 'Trash Bandits',      cover: 'images/games/trashbandits.webp' },
+  {
+    title: 'Trash Bandits 1000',
+    cover: 'images/games/trashbandits1000.webp',
+    tag: 'New',
+    stakeCom: '', // paste this game's Stake.com link
+    stakeUs:  '', // paste this game's Stake.us link
+  },
+  {
+    title: 'Rat Attack',
+    cover: 'images/games/ratattack.webp',
+    stakeCom: '',
+    stakeUs:  '',
+  },
+  {
+    title: 'Trash Bandits',
+    cover: 'images/games/trashbandits.webp',
+    stakeCom: '',
+    stakeUs:  '',
+  },
 ];

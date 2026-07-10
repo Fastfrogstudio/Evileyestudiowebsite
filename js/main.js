@@ -7,16 +7,24 @@
 
   /* ---------- Game catalog: render both grids from one list ---------- */
   const GAMES = window.EVIL_EYE_GAMES || [];
+  // fallbacks used until a game specifies its own stakeCom / stakeUs link
+  const STAKE_COM_DEFAULT = (window.EVIL_EYE_STAKE && window.EVIL_EYE_STAKE.com) || 'https://stake.com/casino/group/evil-eye-studio';
+  const STAKE_US_DEFAULT = (window.EVIL_EYE_STAKE && window.EVIL_EYE_STAKE.us) || 'https://stake.us/casino/group/evil-eye-studio';
   if (GAMES.length) {
     const cardHTML = (g, i) => {
       const tagClass = g.tag && g.tag.toLowerCase() === 'hot' ? 'tag gold' : 'tag';
       const tag = g.tag ? `<span class="${tagClass}">${g.tag}</span>` : '';
       const delay = i % 4 ? ` data-reveal-delay="${i % 4}"` : '';
-      return `<a class="game-card has-cover" href="games.html" data-reveal${delay}>
+      const com = g.stakeCom || STAKE_COM_DEFAULT;
+      const us = g.stakeUs || STAKE_US_DEFAULT;
+      return `<div class="game-card has-cover" data-reveal${delay}>
         <div class="game-cover"><span class="cover-fallback">${g.title}</span><img src="${g.cover}" alt="${g.title}" loading="lazy" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
         ${tag}
-        <div class="game-overlay"><div class="game-play"><span class="btn btn-primary">Play Demo</span></div></div>
-      </a>`;
+        <div class="game-overlay"><div class="game-play">
+          <a class="btn btn-primary" href="${com}" target="_blank" rel="noopener">Stake.com</a>
+          <a class="btn btn-stake-us" href="${us}" target="_blank" rel="noopener">Stake.us</a>
+        </div></div>
+      </div>`;
     };
     const html = GAMES.map(cardHTML).join('');
     document.querySelectorAll('.latest-grid, #games .game-grid').forEach((grid) => {

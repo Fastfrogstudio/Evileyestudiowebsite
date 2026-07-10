@@ -311,6 +311,16 @@ ul { list-style: none; }
 .game-card.has-cover .game-overlay { background: transparent; transition: background .35s; }
 .game-card.has-cover:hover .game-overlay { background: linear-gradient(to top, rgba(7,7,12,0.9), transparent 55%); }
 
+/* dual play buttons — Stake.com / Stake.us */
+.game-play { gap: 8px; }
+.btn-stake-us { border: 1px solid var(--accent-2); color: var(--text); background: rgba(177, 92, 255, 0.12); transition: background .2s, color .2s; }
+.btn-stake-us:hover { background: var(--accent-2); color: #fff; }
+/* touch devices have no hover — keep the play buttons visible */
+@media (hover: none) {
+  .game-card .game-play { opacity: 1; transform: none; }
+  .game-card.has-cover .game-overlay { background: linear-gradient(to top, rgba(7,7,12,0.9), transparent 55%); }
+}
+
 /* ---------- Split / divisions feature ---------- */
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 .split-card {
