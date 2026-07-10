@@ -30,19 +30,19 @@ window.EVIL_EYE_GAMES = [
     title: 'Trash Bandits 1000',
     cover: 'images/games/trashbandits1000.webp',
     tag: 'New',
-    stakeCom: '', // paste this game's Stake.com link
-    stakeUs:  '', // paste this game's Stake.us link
+    stakeCom: 'https://stake.com/casino/games/evileyestudio-trash-bandits-1000',
+    stakeUs:  'https://stake.us/casino/games/evileyestudio-trash-bandits-1000',
   },
   {
     title: 'Rat Attack',
     cover: 'images/games/ratattack.webp',
-    stakeCom: '',
-    stakeUs:  '',
+    stakeCom: 'https://stake.com/casino/games/evileyestudio-rat-attack',
+    stakeUs:  'https://stake.us/casino/games/evileyestudio-rat-attack',
   },
   {
     title: 'Trash Bandits',
     cover: 'images/games/trashbandits.webp',
-    stakeCom: '',
-    stakeUs:  '',
+    stakeCom: 'https://stake.com/casino/games/evileyestudio-trash-bandits',
+    stakeUs:  'https://stake.us/casino/games/evileyestudio-trash-bandits',
   },
 ];
