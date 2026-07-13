@@ -118,11 +118,13 @@ ul { list-style: none; }
 .brand { display: flex; align-items: center; gap: 12px; font-family: var(--font-display); font-size: 1.5rem; letter-spacing: 0.04em; }
 .brand .eye {
   width: 44px; height: 44px; flex: none;
-  background: url('../images/evil-eye-mark.svg') center / contain no-repeat;
+  background: url('../images/evil-eye-logo.png') center / contain no-repeat;
   filter: drop-shadow(0 0 9px var(--glow));
   transition: transform .4s var(--ease);
 }
 .brand:hover .eye { transform: scale(1.08) rotate(-4deg); }
+/* image-only nav logo (no wordmark) — a touch larger */
+.brand-logo .eye { width: 52px; height: 52px; }
 .brand b { color: var(--text); }
 .brand span { color: var(--accent); }
 @keyframes spin { to { transform: rotate(360deg); } }
