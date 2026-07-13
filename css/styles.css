@@ -356,15 +356,15 @@ ul { list-style: none; }
 }
 .latest .wrap { position: relative; z-index: 1; }
 
-/* About section — dungeon backdrop */
-#about { position: relative; overflow: hidden; }
-#about::before {
+/* Divisions section — dungeon backdrop */
+#divisions { position: relative; overflow: hidden; }
+#divisions::before {
   content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background:
     linear-gradient(to bottom, var(--bg) 0%, rgba(8,6,14,0.78) 22%, rgba(8,6,14,0.78) 78%, var(--bg) 100%),
     url('../images/games/dungeonbg1.png') center / cover no-repeat;
 }
-#about .wrap { position: relative; z-index: 1; }
+#divisions .wrap { position: relative; z-index: 1; }
 
 .section-head.center { margin-inline: auto; text-align: center; }
 .section-head.center .eyebrow { justify-content: center; }
