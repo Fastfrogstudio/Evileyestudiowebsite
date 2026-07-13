@@ -8,11 +8,11 @@ provider **and** an art & animation studio for hire. Two divisions, one eye.
 Evil Eye runs two divisions, and the site is built around that split:
 
 - **Slots** — a B2B slot provider showcasing original, certified games.
-- **Art & Animation** — a creative studio for hire (concept art, characters,
+- **Design & Development** — a creative studio for hire (concept art, characters,
   symbols, 2D/3D animation, UI, sound) that builds slot games for operators and
   other providers.
 
-A **division switcher** in the header (Slots ⇄ Art & Animation) re-themes the
+A **division switcher** in the header (Slots ⇄ Design & Development) re-themes the
 accent palette and routes between the two sides. The studio page has its **own
 sub-navigation bar** dedicated to creative services.
 
@@ -21,7 +21,7 @@ sub-navigation bar** dedicated to creative services.
 | File          | Purpose                                                            |
 |---------------|-------------------------------------------------------------------|
 | `index.html`  | Slots home — hero, latest games, portfolio, divisions, partners, contact |
-| `studio.html` | Art & Animation studio — own sub-nav, showreel, services, gallery, process, hire form |
+| `studio.html` | Design & Development studio — own sub-nav, showreel, services, gallery, process, hire form |
 | `js/games-data.js` | Game catalog (single source of truth) — drives the Latest Games row, Portfolio grid, and featured banner |
 
 ## Stack
