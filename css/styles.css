@@ -330,10 +330,12 @@ ul { list-style: none; }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 .split-card {
   position: relative; overflow: hidden; border-radius: var(--radius); padding: clamp(28px, 4vw, 54px);
-  min-height: 420px; display: flex; flex-direction: column; justify-content: flex-end;
+  padding-top: clamp(72px, 8vw, 104px);
+  min-height: 360px; display: flex; flex-direction: column; justify-content: flex-start;
   border: 1px solid var(--line); background: var(--surface);
   transition: transform .4s var(--ease), border-color .4s;
 }
+.split-card .link { margin-top: auto; }
 .split-card:hover { transform: translateY(-6px); border-color: var(--line-strong); }
 .split-card .badge { position: absolute; top: 28px; left: clamp(28px,4vw,54px); font-size: 0.74rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent-2); }
 .split-card .glow { position: absolute; width: 300px; height: 300px; border-radius: 50%; filter: blur(80px); top: -60px; right: -60px; opacity: 0.4; }
