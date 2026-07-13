@@ -49,7 +49,7 @@ window.EVIL_EYE_GAMES = [
   },
   {
     title: 'Dog Father',
-    cover: 'images/games/dogfather.webp',
+    cover: 'images/games/evil-eye-studio_dogfather_tile.png',
     tag: 'Coming Soon',
     // no Stake links yet — unreleased. Card shows a "Coming Soon" button.
   },
