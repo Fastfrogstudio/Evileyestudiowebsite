@@ -20,9 +20,9 @@ sub-navigation bar** dedicated to creative services.
 
 | File          | Purpose                                                            |
 |---------------|-------------------------------------------------------------------|
-| `index.html`  | Slots home — hero, ticker, new release, portfolio, divisions, stats, about, news, partners, contact |
+| `index.html`  | Slots home — hero, latest games, portfolio, divisions, stats, about, news, partners, contact |
 | `studio.html` | Art & Animation studio — own sub-nav, showreel, services, gallery, process, hire form |
-| `games.html`  | Full games portfolio with live search / filter / sort            |
+| `js/games-data.js` | Game catalog (single source of truth) — drives the Latest Games row, Portfolio grid, and featured banner |
 
 ## Stack
 
