@@ -27,17 +27,17 @@ window.EVIL_EYE_STAKE = {
 
 window.EVIL_EYE_GAMES = [
   {
+    title: 'Rat Attack',
+    cover: 'images/games/ratattack.webp',
+    stakeCom: 'https://stake.com/casino/games/evileyestudio-rat-attack',
+    stakeUs:  'https://stake.us/casino/games/evileyestudio-rat-attack',
+  },
+  {
     title: 'Trash Bandits 1000',
     cover: 'images/games/trashbandits1000.webp',
     tag: 'New',
     stakeCom: 'https://stake.com/casino/games/evileyestudio-trash-bandits-1000',
     stakeUs:  'https://stake.us/casino/games/evileyestudio-trash-bandits-1000',
-  },
-  {
-    title: 'Rat Attack',
-    cover: 'images/games/ratattack.webp',
-    stakeCom: 'https://stake.com/casino/games/evileyestudio-rat-attack',
-    stakeUs:  'https://stake.us/casino/games/evileyestudio-rat-attack',
   },
   {
     title: 'Trash Bandits',
