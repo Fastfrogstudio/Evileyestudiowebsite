@@ -375,7 +375,7 @@ ul { list-style: none; }
 .feature-banner .fb-bg {
   position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background: center / cover no-repeat;
-  filter: blur(13px) saturate(1.2); transform: scale(1.12); opacity: 0.7;
+  filter: blur(10px) saturate(1.2); transform: scale(1.1); opacity: 0.7;
 }
 .feature-banner::after {
   content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
