@@ -12,18 +12,22 @@
   const STAKE_US_DEFAULT = (window.EVIL_EYE_STAKE && window.EVIL_EYE_STAKE.us) || 'https://stake.us/casino/group/evil-eye-studio';
   if (GAMES.length) {
     const cardHTML = (g, i) => {
-      const tagClass = g.tag && g.tag.toLowerCase() === 'hot' ? 'tag gold' : 'tag';
-      const tag = g.tag ? `<span class="${tagClass}">${g.tag}</span>` : '';
+      const tagKey = (g.tag || '').toLowerCase();
+      const soon = tagKey === 'coming soon' || g.comingSoon === true;
+      const tagClass = tagKey === 'hot' ? 'tag gold' : soon ? 'tag soon' : 'tag';
+      const tagText = g.tag || (soon ? 'Coming Soon' : '');
+      const tag = tagText ? `<span class="${tagClass}">${tagText}</span>` : '';
       const delay = i % 4 ? ` data-reveal-delay="${i % 4}"` : '';
       const com = g.stakeCom || STAKE_COM_DEFAULT;
       const us = g.stakeUs || STAKE_US_DEFAULT;
-      return `<div class="game-card has-cover" data-reveal${delay}>
+      const actions = soon
+        ? `<span class="btn btn-soon" aria-disabled="true">Coming Soon</span>`
+        : `<a class="btn btn-primary" href="${com}" target="_blank" rel="noopener">Stake.com</a>
+          <a class="btn btn-stake-us" href="${us}" target="_blank" rel="noopener">Stake.us</a>`;
+      return `<div class="game-card has-cover${soon ? ' is-soon' : ''}" data-reveal${delay}>
         <div class="game-cover"><span class="cover-fallback">${g.title}</span><img src="${g.cover}" alt="${g.title}" loading="lazy" onload="this.previousElementSibling.style.display='none'" onerror="this.style.display='none'"></div>
         ${tag}
-        <div class="game-overlay"><div class="game-play">
-          <a class="btn btn-primary" href="${com}" target="_blank" rel="noopener">Stake.com</a>
-          <a class="btn btn-stake-us" href="${us}" target="_blank" rel="noopener">Stake.us</a>
-        </div></div>
+        <div class="game-overlay"><div class="game-play">${actions}</div></div>
       </div>`;
     };
     const html = GAMES.map(cardHTML).join('');

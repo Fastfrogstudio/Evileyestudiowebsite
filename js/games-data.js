@@ -47,4 +47,10 @@ window.EVIL_EYE_GAMES = [
     stakeCom: 'https://stake.com/casino/games/evileyestudio-trash-bandits',
     stakeUs:  'https://stake.us/casino/games/evileyestudio-trash-bandits',
   },
+  {
+    title: 'Dog Father',
+    cover: 'images/games/dogfather.webp',
+    tag: 'Coming Soon',
+    // no Stake links yet — unreleased. Card shows a "Coming Soon" button.
+  },
 ];

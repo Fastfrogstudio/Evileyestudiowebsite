@@ -315,6 +315,11 @@ ul { list-style: none; }
 .game-play { gap: 8px; }
 .btn-stake-us { border: 1px solid var(--accent-2); color: var(--text); background: rgba(177, 92, 255, 0.12); transition: background .2s, color .2s; }
 .btn-stake-us:hover { background: var(--accent-2); color: #fff; }
+
+/* Coming Soon state */
+.tag.soon { background: #f2b53c; color: #1a1206; }
+.btn-soon { background: rgba(255, 255, 255, 0.08); color: var(--muted); border: 1px solid var(--line); cursor: default; }
+.game-card.is-soon .game-cover img { filter: drop-shadow(0 16px 22px rgba(0,0,0,0.5)) grayscale(0.15) brightness(0.92); }
 /* touch devices have no hover — keep the play buttons visible */
 @media (hover: none) {
   .game-card .game-play { opacity: 1; transform: none; }
