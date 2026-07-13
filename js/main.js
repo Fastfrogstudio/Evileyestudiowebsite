@@ -42,11 +42,13 @@
       const name = fb.querySelector('.fb-name');
       const img = fb.querySelector('.fb-art img');
       const ph = fb.querySelector('.fb-art .ph');
+      const bg = fb.querySelector('.fb-bg');
       const tryBtn = fb.querySelector('.fb-try');
       const featSoon = (feat.tag || '').toLowerCase() === 'coming soon' || feat.comingSoon === true;
       if (h) h.textContent = feat.title;
       if (name) name.textContent = feat.title;
       if (img) { img.src = feat.cover; img.alt = feat.title; if (ph) ph.style.display = 'none'; }
+      if (bg) bg.style.backgroundImage = `url('${feat.cover}')`;
       if (tryBtn && !featSoon) {
         tryBtn.href = feat.stakeCom || STAKE_COM_DEFAULT;
         tryBtn.target = '_blank';

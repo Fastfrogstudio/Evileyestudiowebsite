@@ -365,13 +365,22 @@ ul { list-style: none; }
 .feature-banner {
   position: relative; margin-top: 44px; overflow: hidden;
   border: 1px solid var(--line); border-radius: var(--radius);
-  background: linear-gradient(115deg, var(--surface-2) 0%, var(--surface) 45%, var(--bg) 100%);
+  background: var(--surface);
   min-height: 440px; display: grid; grid-template-columns: 1.1fr 0.9fr;
   align-items: center; gap: 24px; padding: clamp(30px, 4vw, 56px) clamp(28px, 4vw, 60px) 78px;
   transition: transform .4s var(--ease), border-color .4s;
 }
 .feature-banner:hover { border-color: var(--line-strong); }
-.feature-banner .fb-glow { position: absolute; width: 460px; height: 460px; border-radius: 50%; filter: blur(90px); opacity: 0.4; top: -120px; right: -80px; background: var(--accent); pointer-events: none; }
+/* blurred cover art as the backdrop (set to the featured game's cover via JS) */
+.feature-banner .fb-bg {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: center / cover no-repeat;
+  filter: blur(30px) saturate(1.25); transform: scale(1.2); opacity: 0.75;
+}
+.feature-banner::after {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(100deg, rgba(8,6,14,0.92) 0%, rgba(8,6,14,0.60) 48%, rgba(8,6,14,0.22) 100%);
+}
 .fb-copy { position: relative; z-index: 2; max-width: 540px; }
 .fb-copy .badge { display: inline-block; font-size: 0.74rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent-2); margin-bottom: 16px; }
 .fb-copy h3 { font-family: var(--font-display); font-size: clamp(2.6rem, 5.5vw, 4.6rem); line-height: 0.98; margin-bottom: 16px; }
