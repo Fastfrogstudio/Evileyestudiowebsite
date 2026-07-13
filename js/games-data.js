@@ -1,10 +1,12 @@
 /* =========================================================
    EVIL EYE STUDIO — GAME CATALOG (single source of truth)
 
-   To add a game: copy one block below, set the title + cover,
-   and paste the game's Stake.com and Stake.us links. Then
-   upload the cover image to images/games/. Both the "Latest
-   Games" row and "The Portfolio" grid rebuild from this list.
+   To add a game: paste a new block at the TOP of the list (new
+   games lead the row, front-left) with tag: 'New'. Set the title
+   + cover, and paste the game's Stake.com and Stake.us links, then
+   upload the cover image to images/games/. Both the "Latest Games"
+   row and "The Portfolio" grid rebuild from this list, and the
+   featured banner spotlights whatever is first here.
 
    Fields:
      title    — game name (shown as the fallback if the cover fails)
@@ -29,13 +31,13 @@ window.EVIL_EYE_GAMES = [
   {
     title: 'Rat Attack',
     cover: 'images/games/ratattack.webp',
+    tag: 'New',
     stakeCom: 'https://stake.com/casino/games/evileyestudio-rat-attack',
     stakeUs:  'https://stake.us/casino/games/evileyestudio-rat-attack',
   },
   {
     title: 'Trash Bandits 1000',
     cover: 'images/games/trashbandits1000.webp',
-    tag: 'New',
     stakeCom: 'https://stake.com/casino/games/evileyestudio-trash-bandits-1000',
     stakeUs:  'https://stake.us/casino/games/evileyestudio-trash-bandits-1000',
   },
