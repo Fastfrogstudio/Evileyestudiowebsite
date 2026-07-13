@@ -12,6 +12,8 @@
      title    — game name (shown as the fallback if the cover fails)
      cover    — path to the cover image in images/games/
      tag      — 'New' (purple) or 'Hot' (red); omit for none
+     bg       — optional in-game scene image for the featured banner's
+                blurred backdrop; falls back to the cover if omitted
      stakeCom — this game's page on Stake.com  (hover "Stake.com" button)
      stakeUs  — this game's page on Stake.us   (hover "Stake.us" button)
 
@@ -31,6 +33,7 @@ window.EVIL_EYE_GAMES = [
   {
     title: 'Rat Attack',
     cover: 'images/games/ratattack.webp',
+    bg: 'images/games/ratattackgame.png',
     tag: 'New',
     stakeCom: 'https://stake.com/casino/games/evileyestudio-rat-attack',
     stakeUs:  'https://stake.us/casino/games/evileyestudio-rat-attack',

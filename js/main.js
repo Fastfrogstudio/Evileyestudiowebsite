@@ -48,7 +48,7 @@
       if (h) h.textContent = feat.title;
       if (name) name.textContent = feat.title;
       if (img) { img.src = feat.cover; img.alt = feat.title; if (ph) ph.style.display = 'none'; }
-      if (bg) bg.style.backgroundImage = `url('${feat.cover}')`;
+      if (bg) bg.style.backgroundImage = `url('${feat.bg || feat.cover}')`;
       if (tryBtn && !featSoon) {
         tryBtn.href = feat.stakeCom || STAKE_COM_DEFAULT;
         tryBtn.target = '_blank';
