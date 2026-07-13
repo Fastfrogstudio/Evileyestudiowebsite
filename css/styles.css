@@ -481,10 +481,6 @@ ul { list-style: none; }
 
 
 /* ---------- Partners ---------- */
-.partners { border-block: 1px solid var(--line); overflow: hidden; }
-.partners-track { display: flex; gap: 64px; width: max-content; animation: marquee 30s linear infinite; align-items: center; padding: 40px 0; }
-.partners-track span { font-family: var(--font-display); font-size: 1.7rem; color: var(--faint); white-space: nowrap; transition: color .3s; }
-.partners-track span:hover { color: var(--text); }
 
 /* ---------- CTA band ---------- */
 .cta-band { position: relative; overflow: hidden; }
