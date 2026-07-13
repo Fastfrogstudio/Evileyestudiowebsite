@@ -14,6 +14,8 @@
      tag      — 'New' (purple) or 'Hot' (red); omit for none
      bg       — optional in-game scene image for the featured banner's
                 blurred backdrop; falls back to the cover if omitted
+     maxWin   — optional; when featured, shows "TITLE | {maxWin} MAX WIN"
+                in the banner's bottom caption
      stakeCom — this game's page on Stake.com  (hover "Stake.com" button)
      stakeUs  — this game's page on Stake.us   (hover "Stake.us" button)
 
@@ -34,6 +36,7 @@ window.EVIL_EYE_GAMES = [
     title: 'Rat Attack',
     cover: 'images/games/ratattack.webp',
     bg: 'images/games/ratattackgame.png',
+    maxWin: '50,000x',
     tag: 'New',
     stakeCom: 'https://stake.com/casino/games/evileyestudio-rat-attack',
     stakeUs:  'https://stake.us/casino/games/evileyestudio-rat-attack',

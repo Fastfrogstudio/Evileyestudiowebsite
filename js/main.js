@@ -47,7 +47,7 @@
       const usBtn = fb.querySelector('.fb-us');
       const featSoon = (feat.tag || '').toLowerCase() === 'coming soon' || feat.comingSoon === true;
       if (h) h.textContent = feat.title;
-      if (name) name.textContent = feat.title;
+      if (name) name.textContent = feat.maxWin ? `${feat.title} | ${feat.maxWin} max win` : feat.title;
       if (img) { img.src = feat.cover; img.alt = feat.title; if (ph) ph.style.display = 'none'; }
       if (bg) bg.style.backgroundImage = `url('${feat.bg || feat.cover}')`;
       const setLink = (btn, url) => { if (!btn) return; btn.href = url; btn.target = '_blank'; btn.rel = 'noopener'; };
