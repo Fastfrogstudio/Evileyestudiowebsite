@@ -43,16 +43,21 @@
       const img = fb.querySelector('.fb-art img');
       const ph = fb.querySelector('.fb-art .ph');
       const bg = fb.querySelector('.fb-bg');
-      const tryBtn = fb.querySelector('.fb-try');
+      const comBtn = fb.querySelector('.fb-try');
+      const usBtn = fb.querySelector('.fb-us');
       const featSoon = (feat.tag || '').toLowerCase() === 'coming soon' || feat.comingSoon === true;
       if (h) h.textContent = feat.title;
       if (name) name.textContent = feat.title;
       if (img) { img.src = feat.cover; img.alt = feat.title; if (ph) ph.style.display = 'none'; }
       if (bg) bg.style.backgroundImage = `url('${feat.bg || feat.cover}')`;
-      if (tryBtn && !featSoon) {
-        tryBtn.href = feat.stakeCom || STAKE_COM_DEFAULT;
-        tryBtn.target = '_blank';
-        tryBtn.rel = 'noopener';
+      const setLink = (btn, url) => { if (!btn) return; btn.href = url; btn.target = '_blank'; btn.rel = 'noopener'; };
+      if (featSoon) {
+        // unreleased featured game — no Stake pages yet
+        if (comBtn) { comBtn.textContent = 'Coming Soon'; comBtn.removeAttribute('href'); comBtn.classList.add('btn-soon'); comBtn.classList.remove('btn-primary'); }
+        if (usBtn) usBtn.style.display = 'none';
+      } else {
+        setLink(comBtn, feat.stakeCom || STAKE_COM_DEFAULT);
+        setLink(usBtn, feat.stakeUs || STAKE_US_DEFAULT);
       }
     }
   }
