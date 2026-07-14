@@ -472,13 +472,20 @@ ul { list-style: none; }
 .step h3 { font-size: 1.2rem; margin-bottom: 8px; }
 .step p { color: var(--muted); font-size: 0.92rem; }
 
-/* portfolio gallery */
-.gallery { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 200px; gap: 14px; }
-.gallery-item { border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--line); display: grid; place-items: center; font-size: 3rem; background: linear-gradient(150deg, var(--surface-2), var(--bg)); position: relative; transition: transform .35s var(--ease), border-color .35s; }
-.gallery-item:hover { transform: scale(1.02); border-color: var(--accent); }
-.gallery-item.tall { grid-row: span 2; }
-.gallery-item.wide { grid-column: span 2; }
-.gallery-item .cap { position: absolute; bottom: 12px; left: 14px; font-size: 0.78rem; color: var(--muted); }
+/* studio showcase carousels — auto-scrolling asset rows */
+.asset-carousel { overflow: hidden; margin-top: 34px; }
+.asset-track { display: flex; gap: 18px; width: max-content; animation: marquee 60s linear infinite; will-change: transform; }
+.asset-carousel.reverse .asset-track { animation-direction: reverse; }
+.asset-carousel:hover .asset-track { animation-play-state: paused; }
+.asset-card { flex: none; margin: 0; width: 340px; }
+.asset-card img {
+  width: 100%; height: 240px; object-fit: cover; display: block;
+  border-radius: var(--radius-sm); border: 1px solid var(--line);
+  transition: transform .35s var(--ease), border-color .35s;
+}
+.asset-card:hover img { transform: scale(1.03); border-color: var(--accent); }
+.asset-card figcaption { margin-top: 10px; font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+@media (max-width: 560px) { .asset-card { width: 240px; } .asset-card img { height: 170px; } }
 
 
 /* ---------- Partners ---------- */
@@ -559,7 +566,6 @@ html.js [data-reveal].in { opacity: 1; transform: none; }
   .hero-visual { display: none; }
   .page-hero .float-scene { display: none; }
   .footer-top { grid-template-columns: 1fr 1fr; }
-  .gallery { grid-template-columns: repeat(2, 1fr); }
   .nav-links {
     position: fixed; inset: var(--header-h) 0 auto 0; flex-direction: column; gap: 0;
     background: rgba(7,7,12,0.97); backdrop-filter: blur(20px); border-bottom: 1px solid var(--line);
@@ -580,8 +586,6 @@ html.js [data-reveal].in { opacity: 1; transform: none; }
   .footer-top { grid-template-columns: 1fr; }
 }
 @media (max-width: 560px) {
-  .gallery { grid-template-columns: 1fr; }
-  .gallery-item.wide { grid-column: span 1; }
   .hero-stats { gap: 26px; }
   .game-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 }

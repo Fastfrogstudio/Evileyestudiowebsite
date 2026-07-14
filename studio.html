@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script>document.documentElement.className += " js";</script>
-  <link rel="stylesheet" href="css/styles.css?v=37" />
+  <link rel="stylesheet" href="css/styles.css?v=38" />
   <link rel="icon" type="image/svg+xml" href="images/evil-eye-mark.svg" />
 </head>
 <body data-division="studio">
@@ -76,23 +76,26 @@
     </div>
   </section>
 
-  <!-- ===== Capabilities / portfolio ===== -->
+  <!-- ===== Capabilities / showcase carousels ===== -->
   <section class="section" id="capabilities" style="padding-top:0;">
     <div class="wrap">
       <div class="section-head" data-reveal>
         <span class="eyebrow">Selected Work</span>
-        <h2 class="display">A look at the craft</h2>
-        <p>Placeholder gallery — drop in real frames, characters, and reel art as the studio fills out.</p>
+        <h2 class="display">Art</h2>
+        <p>Key art, characters, symbols, and environments from our own titles and client work.</p>
       </div>
-      <div class="gallery">
-        <div class="gallery-item tall" data-reveal>👑<span class="cap">Cursed Crown — key art</span></div>
-        <div class="gallery-item wide" data-reveal data-reveal-delay="1">🐉<span class="cap">Jade Dragon — boss reveal</span></div>
-        <div class="gallery-item" data-reveal data-reveal-delay="2">👻<span class="cap">Golden Ghoul — symbol set</span></div>
-        <div class="gallery-item" data-reveal>⚡<span class="cap">Neon Fortune — FX</span></div>
-        <div class="gallery-item wide" data-reveal data-reveal-delay="1">🌊<span class="cap">Temple of Tides — environment</span></div>
-        <div class="gallery-item tall" data-reveal data-reveal-delay="2">🗿<span class="cap">Mayan Mirrors — character</span></div>
-        <div class="gallery-item" data-reveal>🌙<span class="cap">Blood Moon — UI</span></div>
+    </div>
+    <div class="asset-carousel" data-assets="art" data-reveal>
+      <div class="asset-track"></div>
+    </div>
+    <div class="wrap" style="margin-top:70px;">
+      <div class="section-head" data-reveal>
+        <h2 class="display">Animation</h2>
+        <p>Win cycles, feature transitions, and motion work that brings the reels to life.</p>
       </div>
+    </div>
+    <div class="asset-carousel reverse" data-assets="animation" data-reveal>
+      <div class="asset-track"></div>
     </div>
   </section>
 
@@ -231,6 +234,7 @@
     </div>
   </footer>
 
-  <script src="js/main.js?v=25"></script>
+  <script src="js/studio-assets.js?v=1"></script>
+  <script src="js/main.js?v=26"></script>
 </body>
 </html>

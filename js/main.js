@@ -62,6 +62,19 @@
     }
   }
 
+  /* ---------- Studio showcase carousels (auto-scrolling) ---------- */
+  const ASSETS = window.EVIL_EYE_ASSETS || {};
+  document.querySelectorAll('.asset-carousel').forEach((car) => {
+    const items = ASSETS[car.dataset.assets] || [];
+    const track = car.querySelector('.asset-track');
+    if (!track || !items.length) { car.style.display = 'none'; return; }
+    const cardHTML = items.map((a) =>
+      `<figure class="asset-card"><img src="${a.src}" alt="${a.caption || ''}" loading="lazy"><figcaption>${a.caption || ''}</figcaption></figure>`
+    ).join('');
+    track.innerHTML = cardHTML + cardHTML; // duplicate for a seamless loop
+    track.style.animationDuration = Math.max(items.length * 6, 18) + 's';
+  });
+
   /* ---------- Sticky header ---------- */
   const header = document.querySelector('.site-header');
   const onScroll = () => {
