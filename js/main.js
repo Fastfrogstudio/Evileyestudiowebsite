@@ -179,6 +179,36 @@
     });
   });
 
+  /* ---------- Package "Get a Quote" → scroll to form + prefill ---------- */
+  const quoteBtns = document.querySelectorAll('.pkg-quote');
+  if (quoteBtns.length) {
+    quoteBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const pkg = btn.dataset.package || '';
+        const msg = document.getElementById('cmsg');
+        if (msg) {
+          const line = `Package of interest: ${pkg}\n\n`;
+          msg.value = /^Package of interest:.*\n\n/.test(msg.value)
+            ? msg.value.replace(/^Package of interest:.*\n\n/, line)
+            : line + msg.value;
+        }
+        const scope = document.getElementById('cscope');
+        if (scope && pkg) {
+          const opt = Array.from(scope.options).find((o) => o.text === pkg);
+          if (opt) scope.value = opt.value;
+        }
+        const form = document.getElementById('hire');
+        if (form) {
+          const subnav = document.querySelector('.subnav');
+          const offset = (header ? header.offsetHeight : 0) + (subnav ? subnav.offsetHeight : 0) + 12;
+          const top = form.getBoundingClientRect().top + window.scrollY - offset;
+          window.scrollTo({ top, behavior: 'smooth' });
+          setTimeout(() => msg && msg.focus({ preventScroll: true }), 550);
+        }
+      });
+    });
+  }
+
   /* ---------- Contact form (mock) ---------- */
   document.querySelectorAll('form.contact-form').forEach((form) => {
     form.addEventListener('submit', (e) => {
