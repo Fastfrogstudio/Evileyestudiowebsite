@@ -478,8 +478,9 @@ ul { list-style: none; }
 .asset-slider .slide { position: absolute; inset: 0; margin: 0; opacity: 0; transition: opacity .8s var(--ease); pointer-events: none; }
 .asset-slider .slide.active { opacity: 1; pointer-events: auto; }
 .asset-slider .slide img {
-  width: 100%; height: 100%; object-fit: cover; display: block;
+  width: 100%; height: 100%; object-fit: contain; display: block; padding: 28px;
   border-radius: var(--radius); border: 1px solid var(--line);
+  background: radial-gradient(120% 120% at 50% 30%, var(--surface-2), var(--bg) 75%);
 }
 .asset-slider .slide figcaption {
   position: absolute; left: 0; right: 0; bottom: 0;
