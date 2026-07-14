@@ -472,20 +472,25 @@ ul { list-style: none; }
 .step h3 { font-size: 1.2rem; margin-bottom: 8px; }
 .step p { color: var(--muted); font-size: 0.92rem; }
 
-/* studio showcase carousels — auto-scrolling asset rows */
-.asset-carousel { overflow: hidden; margin-top: 34px; }
-.asset-track { display: flex; gap: 18px; width: max-content; animation: marquee 60s linear infinite; will-change: transform; }
-.asset-carousel.reverse .asset-track { animation-direction: reverse; }
-.asset-carousel:hover .asset-track { animation-play-state: paused; }
-.asset-card { flex: none; margin: 0; width: 340px; }
-.asset-card img {
-  width: 100%; height: 240px; object-fit: cover; display: block;
-  border-radius: var(--radius-sm); border: 1px solid var(--line);
-  transition: transform .35s var(--ease), border-color .35s;
+/* studio showcase sliders — one large image, auto-advancing */
+.asset-slider { position: relative; }
+.asset-slider .slides { position: relative; aspect-ratio: 16 / 9; }
+.asset-slider .slide { position: absolute; inset: 0; margin: 0; opacity: 0; transition: opacity .8s var(--ease); pointer-events: none; }
+.asset-slider .slide.active { opacity: 1; pointer-events: auto; }
+.asset-slider .slide img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  border-radius: var(--radius); border: 1px solid var(--line);
 }
-.asset-card:hover img { transform: scale(1.03); border-color: var(--accent); }
-.asset-card figcaption { margin-top: 10px; font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-@media (max-width: 560px) { .asset-card { width: 240px; } .asset-card img { height: 170px; } }
+.asset-slider .slide figcaption {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 44px 28px 20px; border-radius: 0 0 var(--radius) var(--radius);
+  background: linear-gradient(to top, rgba(7,7,12,0.85), transparent);
+  font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text);
+}
+.asset-slider .slider-dots { display: flex; justify-content: center; gap: 10px; margin-top: 18px; }
+.asset-slider .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); transition: background .25s, transform .25s; }
+.asset-slider .dot:hover { transform: scale(1.3); }
+.asset-slider .dot.active { background: var(--accent); }
 
 
 /* ---------- Partners ---------- */

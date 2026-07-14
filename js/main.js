@@ -62,17 +62,36 @@
     }
   }
 
-  /* ---------- Studio showcase carousels (auto-scrolling) ---------- */
+  /* ---------- Studio showcase sliders (one large image, auto-advancing) ---------- */
   const ASSETS = window.EVIL_EYE_ASSETS || {};
-  document.querySelectorAll('.asset-carousel').forEach((car) => {
-    const items = ASSETS[car.dataset.assets] || [];
-    const track = car.querySelector('.asset-track');
-    if (!track || !items.length) { car.style.display = 'none'; return; }
-    const cardHTML = items.map((a) =>
-      `<figure class="asset-card"><img src="${a.src}" alt="${a.caption || ''}" loading="lazy"><figcaption>${a.caption || ''}</figcaption></figure>`
-    ).join('');
-    track.innerHTML = cardHTML + cardHTML; // duplicate for a seamless loop
-    track.style.animationDuration = Math.max(items.length * 6, 18) + 's';
+  document.querySelectorAll('.asset-slider').forEach((slider) => {
+    const items = ASSETS[slider.dataset.assets] || [];
+    if (!items.length) { slider.style.display = 'none'; return; }
+    slider.innerHTML = `
+      <div class="slides">${items.map((a, i) =>
+        `<figure class="slide${i === 0 ? ' active' : ''}"><img src="${a.src}" alt="${a.caption || ''}" loading="lazy"><figcaption>${a.caption || ''}</figcaption></figure>`
+      ).join('')}</div>
+      ${items.length > 1 ? `<div class="slider-dots">${items.map((_, i) =>
+        `<button class="dot${i === 0 ? ' active' : ''}" data-slide="${i}" aria-label="Slide ${i + 1}"></button>`
+      ).join('')}</div>` : ''}`;
+    if (items.length < 2) return;
+
+    const slides = slider.querySelectorAll('.slide');
+    const dots = slider.querySelectorAll('.dot');
+    let current = 0;
+    let timer;
+    const show = (i) => {
+      slides[current].classList.remove('active');
+      dots[current].classList.remove('active');
+      current = (i + slides.length) % slides.length;
+      slides[current].classList.add('active');
+      dots[current].classList.add('active');
+    };
+    const play = () => { timer = setInterval(() => show(current + 1), 4500); };
+    dots.forEach((d) => d.addEventListener('click', () => { clearInterval(timer); show(+d.dataset.slide); play(); }));
+    slider.addEventListener('mouseenter', () => clearInterval(timer));
+    slider.addEventListener('mouseleave', play);
+    play();
   });
 
   /* ---------- Sticky header ---------- */
