@@ -465,27 +465,6 @@ ul { list-style: none; }
 .stat-band .num span { color: var(--accent); }
 .stat-band .lbl { color: var(--muted); font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; margin-top: 10px; }
 
-/* ---------- Services (studio) ---------- */
-.service-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
-.service-card {
-  padding: 32px 28px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line);
-  transition: transform .35s var(--ease), border-color .35s, background .35s;
-}
-.service-card:hover { transform: translateY(-6px); border-color: var(--accent); background: var(--surface-2); }
-.service-card .ico { width: 56px; height: 56px; border-radius: 14px; display: grid; place-items: center; font-size: 1.7rem; background: var(--surface-2); border: 1px solid var(--line); margin-bottom: 20px; transition: background .3s, border-color .3s; }
-.service-card:hover .ico { background: var(--accent); border-color: var(--accent); }
-.service-card h3 { font-size: 1.35rem; margin-bottom: 10px; }
-.service-card p { color: var(--muted); font-size: 0.95rem; }
-.service-card .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-.service-card .tags span { font-size: 0.72rem; color: var(--faint); border: 1px solid var(--line); padding: 4px 10px; border-radius: 100px; }
-
-/* showreel */
-.showreel { position: relative; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); aspect-ratio: 16 / 7; display: grid; place-items: center; background: radial-gradient(ellipse at center, var(--surface-2), var(--bg)); }
-.showreel .play-btn { width: 92px; height: 92px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; box-shadow: 0 0 0 0 var(--glow); animation: pulse 2.4s infinite; }
-.showreel .play-btn::after { content: ''; border-left: 22px solid #fff; border-top: 13px solid transparent; border-bottom: 13px solid transparent; margin-left: 6px; }
-@keyframes pulse { 0% { box-shadow: 0 0 0 0 var(--glow); } 70% { box-shadow: 0 0 0 28px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
-.showreel .reel-label { position: absolute; bottom: 24px; left: 28px; font-family: var(--font-display); font-size: 1.4rem; letter-spacing: 0.06em; }
-
 /* process steps */
 .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; counter-reset: step; }
 .step { padding: 28px; border-radius: var(--radius); border: 1px solid var(--line); position: relative; background: var(--surface); }

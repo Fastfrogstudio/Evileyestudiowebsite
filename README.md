@@ -21,7 +21,7 @@ sub-navigation bar** dedicated to creative services.
 | File          | Purpose                                                            |
 |---------------|-------------------------------------------------------------------|
 | `index.html`  | Slots home — hero, latest games, portfolio, divisions, partners, contact |
-| `studio.html` | Design & Development studio — own sub-nav, showreel, services, gallery, process, hire form |
+| `studio.html` | Design & Development studio — own sub-nav, capabilities gallery, packages, process, hire form |
 | `js/games-data.js` | Game catalog (single source of truth) — drives the Latest Games row, Portfolio grid, and featured banner |
 
 ## Stack
@@ -53,7 +53,7 @@ body[data-division='studio'] {
 ## Placeholders to swap as we iterate
 
 - Game/symbol **emoji** stand in for real key art and thumbnails.
-- The **showreel** and **gallery** are placeholders for real video/frames.
+- The **gallery** is a placeholder for real frames.
 - Game stats, news, partners, and contact details are sample copy.
 
 ## Local preview

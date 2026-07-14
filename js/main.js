@@ -219,14 +219,6 @@
     });
   });
 
-  /* ---------- Showreel play (mock) ---------- */
-  document.querySelectorAll('.showreel .play-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const label = btn.closest('.showreel').querySelector('.reel-label');
-      if (label) label.textContent = '▶ Reel coming soon';
-    });
-  });
-
   /* =============================================================
      GAMES PAGE — filtering, search, sort
      ============================================================= */
