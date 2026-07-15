@@ -107,6 +107,15 @@
     play();
   });
 
+  /* ---------- Square animated-symbol grid ---------- */
+  document.querySelectorAll('.symbol-grid').forEach((grid) => {
+    const items = ASSETS[grid.dataset.symbols] || [];
+    if (!items.length) { grid.style.display = 'none'; return; }
+    grid.innerHTML = items.map((a) =>
+      `<figure class="sym-tile"><img src="${a.src}" alt="${a.caption || ''}" loading="lazy"><figcaption>${a.caption || ''}</figcaption></figure>`
+    ).join('');
+  });
+
   /* ---------- Sticky header ---------- */
   const header = document.querySelector('.site-header');
   const onScroll = () => {
