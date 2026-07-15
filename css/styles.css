@@ -247,13 +247,20 @@ ul { list-style: none; }
 }
 .page-hero .wrap { position: relative; z-index: 2; }
 
-/* studio hero — auto-scrolling reel wall of square art tiles */
-.page-hero .hero-reels {
-  position: absolute; right: clamp(0px, 2vw, 40px); top: 50%; transform: translateY(-50%);
+/* auto-scrolling reel wall of square art tiles (shared: studio + slots hero) */
+.hero-reels {
   z-index: 1; display: flex; gap: 18px; justify-content: flex-end; align-items: flex-start;
-  width: min(32vw, 400px); height: 660px; overflow: hidden;
+  overflow: hidden;
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
   mask-image: linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+}
+.page-hero .hero-reels {
+  position: absolute; right: clamp(0px, 2vw, 40px); top: 50%; transform: translateY(-50%);
+  width: min(32vw, 400px); height: 660px;
+}
+.hero .hero-reels {
+  position: absolute; right: clamp(0px, 2vw, 44px); top: 50%; transform: translateY(-52%);
+  width: min(34vw, 430px); height: 500px;
 }
 .reel-col { flex: 1; display: flex; flex-direction: column; will-change: transform; }
 .reel-col.up { animation: reel-up 34s linear infinite; }
@@ -591,7 +598,7 @@ html.js [data-reveal].in { opacity: 1; transform: none; }
 }
 @media (max-width: 1024px) {
   .hero-inner { grid-template-columns: 1fr; }
-  .hero-visual { display: none; }
+  .hero-visual, .hero .hero-reels { display: none; }
   .page-hero .float-scene, .page-hero .hero-reels { display: none; }
   .footer-top { grid-template-columns: 1fr 1fr; }
   .nav-links {
