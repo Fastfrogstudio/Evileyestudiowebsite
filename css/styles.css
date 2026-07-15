@@ -535,6 +535,7 @@ ul { list-style: none; }
 }
 .art-tile--wide { grid-column: span 2; }
 .art-tile--wide img { aspect-ratio: 2 / 1; }
+.art-grid--lg { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
 .art-tile:hover { border-color: var(--accent); }
 .art-tile:hover img { transform: scale(1.06); }
 @media (max-width: 640px) { .art-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; } }
