@@ -95,15 +95,11 @@ window.EVIL_EYE_ASSETS = {
     { src: 'images/showcase/art/image_2271.png',     caption: 'J — bone symbol' },
     { src: 'images/showcase/art/image_2281.png',     caption: '10 — bone symbol' },
   ],
-  // Wide (16:9) motion clips for the large Animation slider.
   animation: [
-    { src: 'images/showcase/animation/BG_RA.gif',       caption: 'Rat Attack — background' },
-    { src: 'images/showcase/animation/background4.gif', caption: 'Environment — background' },
-    { src: 'images/showcase/animation/bg_dog_1.gif',    caption: 'Dog Father — background' },
-    { src: 'images/showcase/animation/bg_dog_2.gif',    caption: 'Dog Father — background' },
-  ],
-  // Square animated symbols, shown in a tile grid below the slider.
-  animationSymbols: [
+    { src: 'images/showcase/animation/BG_RA.gif',                caption: 'Rat Attack — background' },
+    { src: 'images/showcase/animation/background4.gif',          caption: 'Environment — background' },
+    { src: 'images/showcase/animation/bg_dog_1.gif',             caption: 'Dog Father — background' },
+    { src: 'images/showcase/animation/bg_dog_2.gif',             caption: 'Dog Father — background' },
     { src: 'images/showcase/animation/mob_money.gif',            caption: 'Mob money — feature' },
     { src: 'images/showcase/animation/box.gif',                  caption: 'Mystery box — feature' },
     { src: 'images/showcase/animation/top.gif',                  caption: 'Top frame — UI' },
@@ -114,5 +110,6 @@ window.EVIL_EYE_ASSETS = {
     { src: 'images/showcase/animation/symbol_1_kunai34.gif',    caption: 'Kunai — symbol' },
     { src: 'images/showcase/animation/symbol_2_mask34.gif',     caption: 'Mask — symbol' },
     { src: 'images/showcase/animation/symbol_head_robot123.gif', caption: 'Robot head — symbol' },
+    { src: 'images/hero-bg.gif',                                 caption: 'Evil Eye — logo motion' },
   ],
 };
