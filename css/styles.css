@@ -570,7 +570,7 @@ form.contact-form textarea { resize: vertical; min-height: 120px; }
 .page-hero { padding: calc(var(--header-h) + 70px) 0 60px; position: relative; overflow: hidden; }
 .page-hero.with-subnav { padding-top: calc(var(--header-h) + 52px + 70px); }
 .page-hero .orb { position: absolute; width: 420px; height: 420px; border-radius: 50%; filter: blur(90px); opacity: 0.35; background: var(--accent); top: -150px; right: -80px; }
-.page-hero h1 { font-size: clamp(3rem, 8vw, 6.5rem); margin: 18px 0; position: relative; }
+.page-hero h1 { font-size: clamp(2.8rem, 6.4vw, 5.2rem); margin: 18px 0; position: relative; max-width: min(62%, 760px); }
 .page-hero p { color: var(--muted); max-width: 560px; font-size: 1.1rem; position: relative; }
 
 /* ---------- Filters (games page) ---------- */
