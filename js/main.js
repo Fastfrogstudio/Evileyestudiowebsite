@@ -82,7 +82,7 @@
     if (!items.length) { slider.style.display = 'none'; return; }
     slider.innerHTML = `
       <div class="slides">${items.map((a, i) =>
-        `<figure class="slide${i === 0 ? ' active' : ''}"><img src="${a.src}" alt="${a.caption || ''}" loading="lazy"><figcaption>${a.caption || ''}</figcaption></figure>`
+        `<figure class="slide${i === 0 ? ' active' : ''}"><img src="${a.src}" alt="${a.caption || ''}" loading="lazy"></figure>`
       ).join('')}</div>
       ${items.length > 1 ? `<div class="slider-dots">${items.map((_, i) =>
         `<button class="dot${i === 0 ? ' active' : ''}" data-slide="${i}" aria-label="Slide ${i + 1}"></button>`
@@ -100,7 +100,7 @@
       slides[current].classList.add('active');
       dots[current].classList.add('active');
     };
-    const play = () => { timer = setInterval(() => show(current + 1), 4500); };
+    const play = () => { timer = setInterval(() => show(current + 1), 3600); };
     dots.forEach((d) => d.addEventListener('click', () => { clearInterval(timer); show(+d.dataset.slide); play(); }));
     slider.addEventListener('mouseenter', () => clearInterval(timer));
     slider.addEventListener('mouseleave', play);
