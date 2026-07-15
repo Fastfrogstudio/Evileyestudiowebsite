@@ -538,7 +538,10 @@ ul { list-style: none; }
 .art-grid--lg { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; }
 .art-tile:hover { border-color: var(--accent); }
 .art-tile:hover img { transform: scale(1.06); }
-@media (max-width: 640px) { .art-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; } }
+@media (max-width: 640px) {
+  .art-grid { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .art-grid--lg { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+}
 
 
 /* ---------- Partners ---------- */
