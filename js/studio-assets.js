@@ -11,21 +11,41 @@
 /* Square art tiles for the studio hero's auto-scrolling reel wall.
    Add/remove square-canvas images here to change what spins. */
 window.EVIL_EYE_HERO_REEL = [
-  'images/showcase/art/15.png',
-  'images/showcase/art/Group_2.png',
-  'images/showcase/art/4.png',
-  'images/showcase/art/bk.png',
-  'images/showcase/art/12.png',
-  'images/showcase/art/Group_1.png',
-  'images/showcase/art/16.png',
-  'images/showcase/art/spooked.png',
-  'images/showcase/art/6.png',
-  'images/showcase/art/Group_3.png',
-  'images/showcase/art/10.png',
-  'images/showcase/art/14.png',
-  'images/showcase/art/8.png',
-  'images/showcase/art/Group_4.png',
-  'images/showcase/art/puff.png',
+  'images/showcase/art/15.png',        // dragon
+  'images/showcase/art/Group_2.png',   // zeus
+  'images/showcase/art/4.png',         // viking
+  'images/showcase/art/bk.png',        // blood king
+  'images/showcase/art/puff.png',      // puffer
+  'images/showcase/art/12.png',        // sorceress
+  'images/showcase/art/Group_1.png',   // athena
+  'images/showcase/art/16.png',        // grimoire
+  'images/showcase/art/imagez.png',    // dog father
+  'images/showcase/art/spooked.png',   // spooked
+  'images/showcase/art/6.png',         // goblin
+  'images/showcase/art/Group_3.png',   // poseidon
+  'images/showcase/art/image_75.png',  // angler eel
+  'images/showcase/art/10.png',        // orc
+  'images/showcase/art/14.png',        // d20
+  'images/showcase/art/8.png',         // thief
+  'images/showcase/art/Group_4.png',   // medusa
+  'images/showcase/art/image_76.png',  // reef fish
+  'images/showcase/art/fox.png',       // fox statue
+  'images/showcase/art/image_77.png',  // barracuda
+  'images/showcase/art/rf.png',        // red fish
+  'images/showcase/art/image_73.png',  // fish
+  'images/showcase/art/ca.png',        // coral letter
+  'images/showcase/art/fsw.png',       // bait bucket
+  'images/showcase/art/image_370.png', // life ring
+  'images/showcase/art/image_224.png', // K royal
+  'images/showcase/art/image_2241.png',// A bone
+  'images/showcase/art/image_225.png', // A royal
+  'images/showcase/art/image_2251.png',// K bone
+  'images/showcase/art/image_226.png', // 10 royal
+  'images/showcase/art/image_2261.png',// Q bone
+  'images/showcase/art/image_227.png', // Q royal
+  'images/showcase/art/image_2271.png',// J bone
+  'images/showcase/art/image_228.png', // J royal
+  'images/showcase/art/image_2281.png',// 10 bone
 ];
 
 window.EVIL_EYE_ASSETS = {
