@@ -112,7 +112,7 @@
     const items = ASSETS[grid.dataset.assets] || [];
     if (!items.length) { grid.style.display = 'none'; return; }
     grid.innerHTML = items.map((a) =>
-      `<figure class="art-tile"><img src="${a.src}" alt="${a.caption || ''}" loading="lazy"></figure>`
+      `<figure class="art-tile${a.wide ? ' art-tile--wide' : ''}"><img src="${a.src}" alt="${a.caption || ''}" loading="lazy"></figure>`
     ).join('');
   });
 

@@ -525,6 +525,7 @@ ul { list-style: none; }
 /* even-tile art gallery grid */
 .art-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px;
+  grid-auto-flow: dense;
 }
 .art-tile { margin: 0; overflow: hidden; border-radius: var(--radius); border: 1px solid var(--line);
   background: radial-gradient(120% 120% at 50% 30%, var(--surface-2), var(--bg) 75%); }
@@ -532,6 +533,8 @@ ul { list-style: none; }
   width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
   transition: transform .4s var(--ease);
 }
+.art-tile--wide { grid-column: span 2; }
+.art-tile--wide img { aspect-ratio: 2 / 1; }
 .art-tile:hover { border-color: var(--accent); }
 .art-tile:hover img { transform: scale(1.06); }
 @media (max-width: 640px) { .art-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; } }
