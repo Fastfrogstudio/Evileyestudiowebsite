@@ -107,6 +107,15 @@
     play();
   });
 
+  /* ---------- Art gallery grid (one even tile per piece) ---------- */
+  document.querySelectorAll('.art-grid').forEach((grid) => {
+    const items = ASSETS[grid.dataset.assets] || [];
+    if (!items.length) { grid.style.display = 'none'; return; }
+    grid.innerHTML = items.map((a) =>
+      `<figure class="art-tile"><img src="${a.src}" alt="${a.caption || ''}" loading="lazy"></figure>`
+    ).join('');
+  });
+
   /* ---------- Sticky header ---------- */
   const header = document.querySelector('.site-header');
   const onScroll = () => {
