@@ -62,6 +62,19 @@
     }
   }
 
+  /* ---------- Studio hero reel wall (auto-scrolling columns) ---------- */
+  const reelWall = document.querySelector('.hero-reels');
+  if (reelWall && Array.isArray(window.EVIL_EYE_HERO_REEL) && window.EVIL_EYE_HERO_REEL.length) {
+    const imgs = window.EVIL_EYE_HERO_REEL;
+    const cols = reelWall.querySelectorAll('.reel-col');
+    const tile = (src) => `<div class="reel-tile"><img src="${src}" alt="" loading="lazy"></div>`;
+    cols.forEach((col, ci) => {
+      const colItems = imgs.filter((_, i) => i % cols.length === ci);
+      const html = colItems.map(tile).join('');
+      col.innerHTML = html + html; // duplicate for a seamless loop
+    });
+  }
+
   /* ---------- Studio showcase sliders (one large image, auto-advancing) ---------- */
   const ASSETS = window.EVIL_EYE_ASSETS || {};
   document.querySelectorAll('.asset-slider').forEach((slider) => {

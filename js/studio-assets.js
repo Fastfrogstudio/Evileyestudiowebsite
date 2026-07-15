@@ -8,6 +8,26 @@
    one line below with its path and a short caption.
    Order here = slide order.
    ========================================================= */
+/* Square art tiles for the studio hero's auto-scrolling reel wall.
+   Add/remove square-canvas images here to change what spins. */
+window.EVIL_EYE_HERO_REEL = [
+  'images/showcase/art/15.png',
+  'images/showcase/art/Group_2.png',
+  'images/showcase/art/4.png',
+  'images/showcase/art/bk.png',
+  'images/showcase/art/12.png',
+  'images/showcase/art/Group_1.png',
+  'images/showcase/art/16.png',
+  'images/showcase/art/spooked.png',
+  'images/showcase/art/6.png',
+  'images/showcase/art/Group_3.png',
+  'images/showcase/art/10.png',
+  'images/showcase/art/14.png',
+  'images/showcase/art/8.png',
+  'images/showcase/art/Group_4.png',
+  'images/showcase/art/puff.png',
+];
+
 window.EVIL_EYE_ASSETS = {
   art: [
     { src: 'images/showcase/art/Dragon1.png',        caption: "Dragon's hoard — environment" },
