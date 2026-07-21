@@ -263,13 +263,38 @@
     });
   }
 
-  /* ---------- Contact form (mock) ---------- */
+  /* ---------- Contact / hire forms (Formspree AJAX) ---------- */
   document.querySelectorAll('form.contact-form').forEach((form) => {
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const note = form.querySelector('.form-note');
-      if (note) note.textContent = 'Thanks — your message is in. Our team will be in touch within 1–2 business days.';
-      form.reset();
+      const btn = form.querySelector('button[type="submit"]');
+      if (!form.action || form.action.indexOf('formspree.io') === -1) {
+        if (note) note.textContent = 'Thanks — your message is in. Our team will be in touch within 1–2 business days.';
+        form.reset();
+        return;
+      }
+      if (btn) btn.disabled = true;
+      if (note) { note.style.color = ''; note.textContent = 'Sending…'; }
+      try {
+        const res = await fetch(form.action, {
+          method: 'POST',
+          body: new FormData(form),
+          headers: { Accept: 'application/json' },
+        });
+        if (res.ok) {
+          if (note) note.textContent = 'Thanks — your message is in. Our team will be in touch within 1–2 business days.';
+          form.reset();
+        } else {
+          const data = await res.json().catch(() => ({}));
+          const msg = data.errors ? data.errors.map((x) => x.message).join(', ') : 'Something went wrong. Please email hello@evileye.studio directly.';
+          if (note) { note.style.color = '#ff6b6b'; note.textContent = msg; }
+        }
+      } catch (err) {
+        if (note) { note.style.color = '#ff6b6b'; note.textContent = 'Network error. Please email hello@evileye.studio directly.'; }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     });
   });
 
