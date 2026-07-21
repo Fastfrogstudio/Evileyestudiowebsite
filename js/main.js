@@ -116,6 +116,19 @@
     ).join('');
   });
 
+  /* ---------- Collapsible gallery ("See more" toggle) ---------- */
+  document.querySelectorAll('.gallery-toggle').forEach((btn) => {
+    const more = btn.closest('.gallery-more');
+    const gallery = more && more.previousElementSibling;
+    if (!gallery || !gallery.classList.contains('gallery')) return;
+    btn.addEventListener('click', () => {
+      const collapsed = gallery.classList.toggle('is-collapsed');
+      btn.setAttribute('aria-expanded', String(!collapsed));
+      if (btn.firstChild) btn.firstChild.textContent = collapsed ? 'See more ' : 'See less ';
+      if (collapsed) gallery.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
   /* ---------- Sticky header ---------- */
   const header = document.querySelector('.site-header');
   const onScroll = () => {
