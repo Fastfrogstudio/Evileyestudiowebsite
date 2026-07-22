@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script>document.documentElement.className += " js";</script>
-  <link rel="stylesheet" href="css/styles.css?v=51" />
+  <link rel="stylesheet" href="css/styles.css?v=52" />
   <link rel="icon" type="image/svg+xml" href="images/evil-eye-mark.svg" />
 </head>
 <body data-division="studio">
@@ -89,13 +89,17 @@
         <button type="button" class="gallery-toggle" aria-expanded="false">See more <span class="chev">▾</span></button>
       </div>
 
-      <!-- Animation gallery hidden until new GIFs are uploaded
       <div class="section-head" data-reveal style="margin-top:90px;">
         <h2 class="display">Animation</h2>
         <p>A selection of our eye catching IP driven animations ranging from pop-ups to backgrounds.</p>
       </div>
-      <div class="art-grid art-grid--lg" data-assets="animation" data-reveal></div>
-      -->
+      <div class="gallery is-collapsed">
+        <div class="art-grid art-grid--lg" data-assets="animation" data-reveal></div>
+        <span class="gallery-fade" aria-hidden="true"></span>
+      </div>
+      <div class="gallery-more">
+        <button type="button" class="gallery-toggle" aria-expanded="false">See more <span class="chev">▾</span></button>
+      </div>
     </div>
   </section>
 
@@ -246,7 +250,7 @@
     </div>
   </footer>
 
-  <script src="js/studio-assets.js?v=11"></script>
+  <script src="js/studio-assets.js?v=12"></script>
   <script src="js/main.js?v=35"></script>
 </body>
 </html>

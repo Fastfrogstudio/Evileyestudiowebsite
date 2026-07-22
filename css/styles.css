@@ -540,6 +540,7 @@ ul { list-style: none; }
 /* collapsible gallery — show ~3 rows then fade + "See more" */
 .gallery { position: relative; }
 .gallery.is-collapsed .art-grid { max-height: 640px; overflow: hidden; }
+.gallery.is-collapsed .art-grid--lg { max-height: 800px; }
 .gallery-fade { display: none; }
 .gallery.is-collapsed .gallery-fade {
   display: block; position: absolute; left: 0; right: 0; bottom: 0; height: 220px;
@@ -559,7 +560,10 @@ ul { list-style: none; }
 .gallery-toggle:hover { border-color: var(--accent); transform: translateY(-2px); background: linear-gradient(135deg, rgba(124,92,255,0.35), rgba(124,92,255,0.12)); }
 .gallery-toggle .chev { transition: transform .3s var(--ease); font-size: 0.8rem; }
 .gallery-toggle[aria-expanded="true"] .chev { transform: rotate(180deg); }
-@media (max-width: 640px) { .gallery.is-collapsed .art-grid { max-height: 400px; } }
+@media (max-width: 640px) {
+  .gallery.is-collapsed .art-grid { max-height: 400px; }
+  .gallery.is-collapsed .art-grid--lg { max-height: 520px; }
+}
 .art-tile:hover { border-color: var(--accent); }
 .art-tile:hover img { transform: scale(1.06); }
 @media (max-width: 640px) {
