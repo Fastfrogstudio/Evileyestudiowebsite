@@ -77,6 +77,7 @@
 
   /* ---------- Studio showcase sliders (one large image, auto-advancing) ---------- */
   const ASSETS = window.EVIL_EYE_ASSETS || {};
+  const BLANK_GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
   document.querySelectorAll('.asset-slider').forEach((slider) => {
     const items = ASSETS[slider.dataset.assets] || [];
     if (!items.length) { slider.style.display = 'none'; return; }
@@ -112,12 +113,35 @@
     const items = ASSETS[grid.dataset.assets] || [];
     if (!items.length) { grid.style.display = 'none'; return; }
     grid.innerHTML = items.map((a) => {
-      const media = /\.(mp4|webm)$/i.test(a.src)
-        ? `<video src="${a.src}" autoplay muted loop playsinline preload="metadata" aria-label="${a.caption || ''}"></video>`
-        : `<img src="${a.src}" alt="${a.caption || ''}" loading="lazy">`;
+      let media;
+      if (/\.(mp4|webm)$/i.test(a.src)) {
+        media = `<video src="${a.src}" muted loop playsinline preload="none" aria-label="${a.caption || ''}"></video>`;
+      } else if (/\.gif$/i.test(a.src)) {
+        media = `<img class="anim-lazy" data-src="${a.src}" src="${BLANK_GIF}" alt="${a.caption || ''}">`;
+      } else {
+        media = `<img src="${a.src}" alt="${a.caption || ''}" loading="lazy">`;
+      }
       return `<figure class="art-tile${a.wide ? ' art-tile--wide' : ''}">${media}</figure>`;
     }).join('');
   });
+
+  /* Only animate media that's on screen — pause GIFs/videos out of view (perf) */
+  const animEls = document.querySelectorAll('.art-tile video, .art-tile img.anim-lazy');
+  if (animEls.length && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        const el = e.target;
+        if (el.tagName === 'VIDEO') {
+          if (e.isIntersecting) { const p = el.play(); if (p) p.catch(() => {}); } else { el.pause(); }
+        } else if (e.isIntersecting) {
+          if (el.src !== el.dataset.src) el.src = el.dataset.src;
+        } else if (el.getAttribute('src') !== BLANK_GIF) {
+          el.src = BLANK_GIF;
+        }
+      });
+    }, { rootMargin: '150px 0px' });
+    animEls.forEach((el) => io.observe(el));
+  }
 
   /* ---------- Collapsible gallery ("See more" toggle) ---------- */
   document.querySelectorAll('.gallery-toggle').forEach((btn) => {
