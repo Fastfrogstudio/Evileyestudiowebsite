@@ -111,9 +111,12 @@
   document.querySelectorAll('.art-grid').forEach((grid) => {
     const items = ASSETS[grid.dataset.assets] || [];
     if (!items.length) { grid.style.display = 'none'; return; }
-    grid.innerHTML = items.map((a) =>
-      `<figure class="art-tile${a.wide ? ' art-tile--wide' : ''}"><img src="${a.src}" alt="${a.caption || ''}" loading="lazy"></figure>`
-    ).join('');
+    grid.innerHTML = items.map((a) => {
+      const media = /\.(mp4|webm)$/i.test(a.src)
+        ? `<video src="${a.src}" autoplay muted loop playsinline preload="metadata" aria-label="${a.caption || ''}"></video>`
+        : `<img src="${a.src}" alt="${a.caption || ''}" loading="lazy">`;
+      return `<figure class="art-tile${a.wide ? ' art-tile--wide' : ''}">${media}</figure>`;
+    }).join('');
   });
 
   /* ---------- Collapsible gallery ("See more" toggle) ---------- */
