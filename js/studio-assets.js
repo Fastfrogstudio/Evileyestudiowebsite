@@ -95,10 +95,10 @@ window.EVIL_EYE_ASSETS = {
     // { src: 'images/showcase/animation/total_win1.gif',                   caption: 'Total Win', wide: true },  // hidden
     // { src: 'images/showcase/animation/alien_symbol-h1.gif',              caption: 'Alien — high symbol' },  // hidden
     // { src: 'images/showcase/animation/alien_symbol-h4.gif',              caption: 'Alien — high symbol' },  // hidden
-    { src: 'images/showcase/animation/alien_symbol-h5.gif',              caption: 'Alien — high symbol' },
-    { src: 'images/showcase/animation/alien_symbol-l1.gif',              caption: 'Alien — low symbol' },
-    { src: 'images/showcase/animation/alien_symbol-l2.gif',              caption: 'Alien — low symbol' },
-    { src: 'images/showcase/animation/alien_symbol-l3.gif',              caption: 'Alien — low symbol' },
+    // { src: 'images/showcase/animation/alien_symbol-h5.gif',              caption: 'Alien — high symbol' },  // hidden
+    // { src: 'images/showcase/animation/alien_symbol-l1.gif',              caption: 'Alien — low symbol' },  // hidden
+    // { src: 'images/showcase/animation/alien_symbol-l2.gif',              caption: 'Alien — low symbol' },  // hidden
+    // { src: 'images/showcase/animation/alien_symbol-l3.gif',              caption: 'Alien — low symbol' },  // hidden
     { src: 'images/showcase/animation/dog_symbols-chihuahua.gif',        caption: 'Chihuahua — symbol' },
     { src: 'images/showcase/animation/dog_symbols-wiskey.gif',           caption: 'Whiskey — symbol' },
     { src: 'images/showcase/animation/dog_symbols-fs.gif',               caption: 'Free spins — symbol' },
