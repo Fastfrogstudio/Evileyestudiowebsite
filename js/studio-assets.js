@@ -83,18 +83,18 @@ window.EVIL_EYE_ASSETS = {
     { src: 'images/showcase/animation/background_duck_02-animation.gif', caption: 'Duck — background', wide: true },
     { src: 'images/showcase/animation/venus.gif',                        caption: 'Venus — character' },
     { src: 'images/showcase/animation/Radscorpion.gif',                  caption: 'Radscorpion — character' },
-    { src: 'images/showcase/animation/popups_alien-mega_win.gif',        caption: 'Alien mega win — pop-up', wide: true },
+    // { src: 'images/showcase/animation/popups_alien-mega_win.gif',        caption: 'Alien mega win — pop-up', wide: true },  // hidden
     { src: 'images/showcase/animation/eye_wild.gif',                     caption: 'Evil Eye — wild' },
     { src: 'images/showcase/animation/pure_malica.gif',                  caption: 'Pure Malica — feature', wide: true },
     { src: 'images/showcase/animation/barn.gif',                         caption: 'Barn — symbol' },
     { src: 'images/showcase/animation/Symbol_Bunny_Costume_Duck.gif',    caption: 'Bunny costume duck — symbol' },
     { src: 'images/showcase/animation/total_win.gif',                    caption: 'Total Win', wide: true },
     { src: 'images/showcase/animation/swirl_lightning.gif',              caption: 'Lightning swirl — FX' },
-    { src: 'images/showcase/animation/Scatter.gif',                      caption: 'Scatter — symbol' },
+    // { src: 'images/showcase/animation/Scatter.gif',                      caption: 'Scatter — symbol' },  // hidden
     { src: 'images/showcase/animation/badge.gif',                        caption: 'Badge — symbol' },
-    { src: 'images/showcase/animation/total_win1.gif',                   caption: 'Total Win', wide: true },
-    { src: 'images/showcase/animation/alien_symbol-h1.gif',              caption: 'Alien — high symbol' },
-    { src: 'images/showcase/animation/alien_symbol-h4.gif',              caption: 'Alien — high symbol' },
+    // { src: 'images/showcase/animation/total_win1.gif',                   caption: 'Total Win', wide: true },  // hidden
+    // { src: 'images/showcase/animation/alien_symbol-h1.gif',              caption: 'Alien — high symbol' },  // hidden
+    // { src: 'images/showcase/animation/alien_symbol-h4.gif',              caption: 'Alien — high symbol' },  // hidden
     { src: 'images/showcase/animation/alien_symbol-h5.gif',              caption: 'Alien — high symbol' },
     { src: 'images/showcase/animation/alien_symbol-l1.gif',              caption: 'Alien — low symbol' },
     { src: 'images/showcase/animation/alien_symbol-l2.gif',              caption: 'Alien — low symbol' },
