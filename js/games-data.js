@@ -33,6 +33,13 @@ window.EVIL_EYE_STAKE = {
 
 window.EVIL_EYE_GAMES = [
   {
+    title: 'Dog Father',
+    cover: 'images/games/evil-eye-studio_dogfather_tile.png',
+    tag: 'New',
+    stakeCom: 'https://stake.com/casino/games/evileyestudio-dog-father',
+    stakeUs:  'https://stake.us/casino/games/evileyestudio-dog-father',
+  },
+  {
     title: 'Rat Attack',
     cover: 'images/games/ratattack.webp',
     bg: 'images/games/ratattackgame.png',
@@ -52,11 +59,5 @@ window.EVIL_EYE_GAMES = [
     cover: 'images/games/trashbandits.webp',
     stakeCom: 'https://stake.com/casino/games/evileyestudio-trash-bandits',
     stakeUs:  'https://stake.us/casino/games/evileyestudio-trash-bandits',
-  },
-  {
-    title: 'Dog Father',
-    cover: 'images/games/evil-eye-studio_dogfather_tile.png',
-    tag: 'Coming Soon',
-    // no Stake links yet — unreleased. Card shows a "Coming Soon" button.
   },
 ];
