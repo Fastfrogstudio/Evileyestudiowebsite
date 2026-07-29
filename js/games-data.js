@@ -44,7 +44,6 @@ window.EVIL_EYE_GAMES = [
     cover: 'images/games/ratattack.webp',
     bg: 'images/games/ratattackgame.png',
     maxWin: '50,000x',
-    tag: 'New',
     stakeCom: 'https://stake.com/casino/games/evileyestudio-rat-attack',
     stakeUs:  'https://stake.us/casino/games/evileyestudio-rat-attack',
   },
