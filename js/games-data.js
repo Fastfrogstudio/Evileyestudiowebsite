@@ -36,8 +36,8 @@ window.EVIL_EYE_GAMES = [
     title: 'Dog Father',
     cover: 'images/games/evil-eye-studio_dogfather_tile.png',
     tag: 'New',
-    stakeCom: 'https://stake.com/casino/games/evileyestudio-dog-father',
-    stakeUs:  'https://stake.us/casino/games/evileyestudio-dog-father',
+    stakeCom: 'https://stake.com/casino/games/evileyestudio-dogfather',
+    stakeUs:  'https://stake.us/casino/games/evileyestudio-dogfather',
   },
   {
     title: 'Rat Attack',
