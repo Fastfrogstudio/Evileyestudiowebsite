@@ -1,0 +1,11 @@
+{
+  "id": "chaser",
+  "name": "Chaser",
+  "ai": "chaser",
+  "hp": 14,
+  "speed": 135,
+  "touch_damage": 1,
+  "radius": 24,
+  "color": "d9564f",
+  "coin_drop_chance": 0.12
+}

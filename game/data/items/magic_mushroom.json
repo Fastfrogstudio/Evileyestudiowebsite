@@ -1,0 +1,13 @@
+{
+  "id": "magic_mushroom",
+  "name": "Magic Mushroom",
+  "description": "+1 Damage, +2 Max Health, +12 Move Speed (all-rounder)",
+  "sprite": "items/magic_mushroom.png",
+  "price": 25,
+  "tags": ["passive"],
+  "modifiers": {
+    "damage": { "add": 1.0 },
+    "max_health": { "add": 2.0 },
+    "move_speed": { "add": 12.0 }
+  }
+}

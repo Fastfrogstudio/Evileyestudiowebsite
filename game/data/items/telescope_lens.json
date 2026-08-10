@@ -1,0 +1,12 @@
+{
+  "id": "telescope_lens",
+  "name": "Telescope Lens",
+  "description": "+140 Range, +60 Shot Speed (tears fly farther and faster)",
+  "sprite": "items/telescope_lens.png",
+  "price": 20,
+  "tags": ["passive"],
+  "modifiers": {
+    "range": { "add": 140.0 },
+    "shot_speed": { "add": 60.0 }
+  }
+}

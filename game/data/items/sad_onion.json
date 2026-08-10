@@ -1,0 +1,11 @@
+{
+  "id": "sad_onion",
+  "name": "Sad Onion",
+  "description": "+0.7 Tears (faster fire rate)",
+  "sprite": "items/sad_onion.png",
+  "price": 15,
+  "tags": ["passive"],
+  "modifiers": {
+    "tears": { "add": 0.7 }
+  }
+}

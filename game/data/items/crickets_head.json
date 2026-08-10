@@ -1,0 +1,11 @@
+{
+  "id": "crickets_head",
+  "name": "Cricket's Head",
+  "description": "x1.5 Damage",
+  "sprite": "items/crickets_head.png",
+  "price": 20,
+  "tags": ["passive"],
+  "modifiers": {
+    "damage": { "mult": 1.5 }
+  }
+}

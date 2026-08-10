@@ -1,0 +1,37 @@
+; Godot 4 project configuration for the top-down roguelike vertical slice.
+; Input actions and most scenes are built in code so this file stays small
+; and robust. See game/README.md and ASSETS.md for details.
+
+config_version=5
+
+[application]
+
+config/name="Untitled Roguelike (Milestone 1)"
+config/description="Top-down roguelike vertical slice, Cult of the Lamb-style 2D. Placeholder art until assets/ is filled."
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.3", "Forward Plus")
+config/icon="res://icon.svg"
+
+[autoload]
+
+; Order matters: config first, then the signal bus, then state that uses them.
+GameConfig="*res://src/config/GameConfig.gd"
+Events="*res://src/autoload/Events.gd"
+Controls="*res://src/autoload/Controls.gd"
+Assets="*res://src/util/Assets.gd"
+ItemDB="*res://src/systems/items/ItemDB.gd"
+EnemyDB="*res://src/systems/enemies/EnemyDB.gd"
+GameState="*res://src/autoload/GameState.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+
+[rendering]
+
+; Linear filtering keeps smooth, hand-drawn (Cult of the Lamb-style) art crisp
+; when scaled. Set to 0 (Nearest) only if you switch to pixel art.
+textures/canvas_textures/default_texture_filter=1

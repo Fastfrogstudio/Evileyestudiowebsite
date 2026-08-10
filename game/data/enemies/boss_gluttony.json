@@ -1,0 +1,19 @@
+{
+  "id": "boss_gluttony",
+  "name": "Gluttony",
+  "ai": "boss",
+  "hp": 130,
+  "speed": 115,
+  "touch_damage": 2,
+  "radius": 70,
+  "color": "b04fd9",
+  "coin_drop_chance": 1.0,
+  "burst_interval": 2.2,
+  "charge_interval": 4.0,
+  "projectile": {
+    "damage": 1,
+    "speed": 240,
+    "lifetime": 3.0,
+    "radius": 12
+  }
+}

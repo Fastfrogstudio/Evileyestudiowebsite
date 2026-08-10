@@ -1,0 +1,11 @@
+{
+  "id": "wanderer",
+  "name": "Wanderer",
+  "ai": "wanderer",
+  "hp": 8,
+  "speed": 95,
+  "touch_damage": 1,
+  "radius": 22,
+  "color": "8f8fb0",
+  "coin_drop_chance": 0.15
+}

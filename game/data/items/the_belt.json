@@ -1,0 +1,11 @@
+{
+  "id": "the_belt",
+  "name": "The Belt",
+  "description": "+45 Move Speed",
+  "sprite": "items/the_belt.png",
+  "price": 15,
+  "tags": ["passive"],
+  "modifiers": {
+    "move_speed": { "add": 45.0 }
+  }
+}

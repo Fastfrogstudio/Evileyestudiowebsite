@@ -1,0 +1,9 @@
+# Godot 4 editor cache and import metadata
+.godot/
+# Exported builds
+/build/
+/export/
+*.import.log
+# OS / editor cruft
+.DS_Store
+*.tmp

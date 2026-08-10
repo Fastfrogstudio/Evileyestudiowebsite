@@ -1,0 +1,13 @@
+{
+  "comment": "Enemy layouts per room type. RoomPopulator picks one layout at random for a normal room. Extend with difficulty tiers per floor later.",
+  "normal": [
+    ["wanderer", "wanderer", "wanderer"],
+    ["chaser", "chaser"],
+    ["shooter", "wanderer"],
+    ["chaser", "wanderer", "wanderer"],
+    ["shooter", "shooter"],
+    ["chaser", "shooter", "wanderer"],
+    ["chaser", "chaser", "wanderer", "wanderer"]
+  ],
+  "boss": ["boss_gluttony"]
+}

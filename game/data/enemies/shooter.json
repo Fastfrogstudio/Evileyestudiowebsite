@@ -1,0 +1,20 @@
+{
+  "id": "shooter",
+  "name": "Shooter",
+  "ai": "shooter",
+  "hp": 10,
+  "speed": 70,
+  "touch_damage": 1,
+  "radius": 23,
+  "color": "6fae7a",
+  "coin_drop_chance": 0.18,
+  "preferred_distance": 230,
+  "fire_distance": 500,
+  "projectile": {
+    "damage": 1,
+    "speed": 260,
+    "cooldown": 1.4,
+    "lifetime": 2.4,
+    "radius": 10
+  }
+}
