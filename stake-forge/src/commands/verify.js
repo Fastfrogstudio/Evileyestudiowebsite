@@ -3,6 +3,7 @@ import chalk from 'chalk';
 
 import { loadGameSpec } from '../lib/loadSpec.js';
 import { buildSpecialSymbols, sortSymbols } from '../lib/taxonomy.js';
+import { hasSuperspinMode, BLANK_SYMBOL } from '../lib/mathGenerators.js';
 import { getRecipe } from '../lib/behaviorRecipes.js';
 import { mathGameId } from './mathScaffold.js';
 import {
@@ -43,10 +44,17 @@ export function verify({ specPath, mathSdkDir, webSdkDir, python: pythonOverride
 			winType: mechanic.winType,
 			numReels: spec.game.reels.count,
 			numRows: spec.game.reels.rows,
-			payingSymbols: sortSymbols(spec.symbols)
-				.filter((s) => s.paytable)
-				.map((s) => s.name)
-				.sort(),
+			payingSymbols: [
+				...sortSymbols(spec.symbols)
+					.filter((s) => s.paytable)
+					.map((s) => s.name),
+				// A hold-and-win game registers a blank symbol with a kind of 99 so
+				// its superspin strip validates. It is in the paytable and pays
+				// nothing, which is the point — but the engine still counts it as a
+				// paying symbol, so the expectation has to include it or verify
+				// reports a mismatch it caused itself.
+				...(hasSuperspinMode(spec) ? [BLANK_SYMBOL] : []),
+			].sort(),
 			specialSymbols: buildSpecialSymbols(spec.symbols),
 			betModes: Object.keys(spec.game.betModes),
 			numPaylines: mechanic.supportsPaylines
@@ -69,6 +77,20 @@ export function verify({ specPath, mathSdkDir, webSdkDir, python: pythonOverride
 					}
 				}
 			}
+			// A behavior that lives in its OWN bet mode is not reachable from the
+			// base one, so demanding its events there fails a game that works.
+			// Each such mode is run separately, under its own criteria.
+			const ownModes = Object.entries(spec.game.betModes).filter(([, mode]) => mode.superspin);
+			const ownModeEvents = new Set(
+				ownModes.length
+					? spec.symbols
+							.flatMap((symbol) => symbol.behaviors)
+							.map((tag) => getRecipe(tag))
+							.filter((recipe) => recipe?.requiresSuperspinBetMode && recipe.status === 'verified')
+							.flatMap((recipe) => recipe.webHooks?.bookEvents ?? [])
+					: [],
+			);
+
 			const criteria = spec.freeSpins ? 'freegame' : 'basegame';
 			results.push(
 				runSpin({
@@ -77,9 +99,22 @@ export function verify({ specPath, mathSdkDir, webSdkDir, python: pythonOverride
 					python,
 					betmode: Object.keys(spec.game.betModes)[0],
 					criteria,
-					expectEvents: [...new Set(expectEvents)],
+					expectEvents: [...new Set(expectEvents)].filter((e) => !ownModeEvents.has(e)),
 				}),
 			);
+
+			for (const [name] of ownModes) {
+				results.push(
+					runSpin({
+						mathSdkDir,
+						gameDir,
+						python,
+						betmode: name,
+						criteria: 'basegame',
+						expectEvents: [...ownModeEvents],
+					}),
+				);
+			}
 		}
 	}
 

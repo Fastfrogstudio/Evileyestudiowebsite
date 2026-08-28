@@ -99,7 +99,12 @@ export function loadGameSpec(specPath) {
 		assignOrders(symbols, { errors });
 		if (mechanic) {
 			for (const s of symbols) {
-				validateBehaviors(s, { mechanic: mechanic.id, errors, warnings });
+				validateBehaviors(s, {
+					mechanic: mechanic.id,
+					errors,
+					warnings,
+					betModes: spec?.game?.betModes,
+				});
 			}
 		}
 

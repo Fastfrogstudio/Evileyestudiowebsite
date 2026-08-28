@@ -442,3 +442,94 @@ export function appendModuleFunctions(existingSource, newSource, probeFunctionNa
 		action: 'appended',
 	};
 }
+
+/**
+ * Insert lines immediately AFTER the first line in a method matching `lineRe`,
+ * keeping that line. Idempotent via a marker comment.
+ *
+ * Distinct from replaceLineInMethod because a dispatch has to sit after the
+ * anchor rather than instead of it: a superspin branch goes in after
+ * reset_book(), which every sample calls first and none of them can skip.
+ */
+export function insertAfterLineInMethod(source, methodName, lineRe, newLines, markerId) {
+	const marker = `  # stake-forge:${markerId}`;
+	if (source.includes(marker)) return { source, replaced: true, alreadyPresent: true };
+
+	const found = findMethodBody(source, methodName);
+	if (!found) return { source, replaced: false };
+
+	const { start, end, lines } = found;
+	for (let i = start + 1; i <= end; i += 1) {
+		if (!lineRe.test(lines[i])) continue;
+		const indent = lines[i].match(/^[ \t]*/)[0];
+		const injected = newLines.map((l) => (l === '' ? '' : `${indent}${l}`));
+		injected[0] += marker;
+		lines.splice(i + 1, 0, ...injected);
+		return { source: lines.join('\n'), replaced: true, alreadyPresent: false };
+	}
+	return { source, replaced: false };
+}
+
+/**
+ * Add an entry to a dict literal assigned in one statement, e.g.
+ *   reels = {"BR0": "BR0.csv"}   ->   reels = {"BR0": "BR0.csv", "SSR": "SSR.csv"}
+ *
+ * Uses endOfStatement so a dict written across several lines is handled as one
+ * statement — the same discipline that stopped an earlier patcher leaving a
+ * stale trailing expression behind.
+ */
+export function addDictEntry(source, variableName, key, valueLiteral) {
+	if (new RegExp(`["']${key}["']\\s*:`).test(source)) {
+		// Already there. Which entry it belongs to is not knowable from a regex,
+		// so this is deliberately conservative: a name collision means no change
+		// rather than a duplicate key.
+		return { source, added: false, alreadyPresent: true };
+	}
+
+	const assignment = new RegExp(`^([ \\t]*)${variableName}\\s*=\\s*\\{`, 'm').exec(source);
+	if (!assignment) return { source, added: false };
+
+	const openBrace = source.indexOf('{', assignment.index);
+	const stop = endOfStatement(source, openBrace);
+	const statement = source.slice(assignment.index, stop);
+	const closeBrace = statement.lastIndexOf('}');
+	if (closeBrace === -1) return { source, added: false };
+
+	const before = statement.slice(0, closeBrace).replace(/,\s*$/, '');
+	const entry = `${before}, "${key}": ${valueLiteral}}`;
+	return {
+		source: source.slice(0, assignment.index) + entry + source.slice(assignment.index + closeBrace + 1),
+		added: true,
+		alreadyPresent: false,
+	};
+}
+
+/** Insert lines after the first top-level line matching `lineRe`. */
+export function insertAfterLine(source, lineRe, newLines, markerId) {
+	const marker = `  # stake-forge:${markerId}`;
+	if (source.includes(marker)) return { source, replaced: true, alreadyPresent: true };
+
+	const lines = source.split('\n');
+	for (let i = 0; i < lines.length; i += 1) {
+		if (!lineRe.test(lines[i])) continue;
+		const injected = [...newLines];
+		injected[0] += marker;
+		lines.splice(i + 1, 0, ...injected);
+		return { source: lines.join('\n'), replaced: true, alreadyPresent: false };
+	}
+	return { source, replaced: false };
+}
+
+/**
+ * Insert module-level lines just after the import block.
+ *
+ * Uses endOfImportBlock rather than a line-wise "last import" match, for the
+ * same reason ensureImport does: a parenthesised multi-line import would
+ * otherwise be spliced through the middle, producing a SyntaxError.
+ */
+export function insertAfterImports(source, lines) {
+	const block = `\n\n${lines.join('\n')}`;
+	const insertAt = endOfImportBlock(source);
+	if (insertAt === null) return `${lines.join('\n')}\n\n${source}`;
+	return source.slice(0, insertAt) + block + source.slice(insertAt);
+}

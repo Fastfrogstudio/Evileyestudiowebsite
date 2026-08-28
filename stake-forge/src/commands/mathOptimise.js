@@ -43,6 +43,21 @@ export function writeOptimisationSetup({ spec, gameDir, volatility, force }) {
 	return { file, plan, written: true };
 }
 
+/**
+ * Which bet modes an existing game_optimization.py targets.
+ *
+ * Read with a regex rather than by importing it: this runs before Python is
+ * involved, and the whole point is to catch a mismatch without executing
+ * anything.
+ */
+export function readSetupModes(file) {
+	if (!fs.existsSync(file)) return [];
+	const source = fs.readFileSync(file, 'utf8');
+	const block = /opt_params\s*=\s*\{([\s\S]*)/.exec(source);
+	if (!block) return [];
+	return [...block[1].matchAll(/^\s{12}["']([^"']+)["']\s*:\s*\{/gm)].map((m) => m[1]);
+}
+
 /** Is the Rust optimiser buildable and present? */
 function checkCargo(mathSdkDir) {
 	const optimisationPath = path.join(mathSdkDir, 'optimization_program');
@@ -80,6 +95,22 @@ export async function mathOptimise({
 	}
 
 	const { file, plan, written } = writeOptimisationSetup({ spec, gameDir, volatility, force });
+
+	// A setup naming modes this game does not have cannot work: the optimiser
+	// looks each one up by name and dies with a bare KeyError. Say so here, where
+	// the fix is obvious, rather than after the Rust binary has started.
+	if (!written) {
+		const declared = readSetupModes(file);
+		const actual = new Set(plan.modes.map((m) => m.name));
+		const strangers = declared.filter((m) => !actual.has(m));
+		if (strangers.length) {
+			throw new Error(
+				`${path.relative(mathSdkDir, file)} targets bet mode(s) this game does not have: ` +
+					`${strangers.join(', ')}. It is the sample game's setup, or was written for a different ` +
+					`spec. Re-run with --force to regenerate it from this one.`,
+			);
+		}
+	}
 
 	log(chalk.bold(`\nOptimising "${spec.game.name}"\n`));
 	log(`  volatility  ${chalk.bold(plan.volatility)} — ${chalk.dim(plan.profile.label)}`);
@@ -209,21 +240,25 @@ print("STAKE_FORGE_JSON:" + json.dumps(out))
 								'  look; `--force` regenerates it from the spec.\n',
 						),
 					);
-				} else if (/exit status 101/.test(result.error)) {
-					// 101 is a Rust PANIC, not a missing toolchain — the first version
-					// of this said "install Rust", which sent you looking in entirely
-					// the wrong place. run_rust_script() captures stderr and raises
-					// before printing it, so the panic message never reaches here;
-					// the reproduction below is the only way to read it.
+				} else if (/returned non-zero exit status/.test(result.error)) {
+					// A non-zero exit means the optimiser RAN and rejected something —
+					// never that Rust is missing. Saying "install Rust" here sent me
+					// looking in entirely the wrong place twice: once for a panic
+					// (101) and once for a fence that matched no books (1).
+					// run_rust_script() captures stderr and raises before printing it,
+					// so the real message never reaches here; the reproduction below
+					// is the only way to read it.
 					log(
 						chalk.dim(
-							'\n  The optimiser started and then panicked. Its message is swallowed by\n' +
+							'\n  The optimiser started and then failed. Its message is swallowed by\n' +
 								'  the SDK (run_rust_script captures stderr and raises before printing it),\n' +
 								'  so run it directly to read it:\n\n' +
 								`    cd ${path.join(mathSdkDir, 'optimization_program')} && cargo run --release\n\n` +
-								'  "betmode index not found in betmode summary array" means\n' +
-								'  library/configs/math_config.json has empty arrays — regenerate it by\n' +
-								'  re-running this command, which writes it from the optimisation setup.\n',
+								'  Two it says often:\n' +
+								'    "betmode index not found in betmode summary array" — math_config.json\n' +
+								'      has empty arrays; re-running this command rewrites it.\n' +
+								'    "fence \'<name>\' matched 0 books" — the setup targets a criteria the\n' +
+								'      simulation produced no rounds for. --force regenerates it.\n',
 						),
 					);
 				} else if (/cargo|No such file/i.test(result.error)) {

@@ -15,6 +15,8 @@ import {
 	renderReelCsv,
 	renderNumRows,
 	renderBetModes,
+	renderSuperspinReelCsv,
+	hasSuperspinMode,
 } from '../lib/mathGenerators.js';
 import {
 	replaceAssignment,
@@ -26,10 +28,24 @@ import {
 	appendModuleFunctions,
 	replaceOrInsertAssignment,
 	replaceOrInsertMethod,
+	insertAfterLineInMethod,
+	insertAfterLine,
+	insertAfterImports,
+	addDictEntry,
 	ensureImport,
 } from '../lib/pyPatch.js';
 
-const SKIP = new Set(['library', '__pycache__', '.pytest_cache']);
+/**
+ * Files not carried over from the sample game.
+ *
+ * game_optimization.py is on this list because it targets the SAMPLE's bet
+ * modes by name. Copied into a game with different modes it is not merely
+ * stale, it is wrong — the optimiser dies with `KeyError: 'bonus'` looking for
+ * a mode that does not exist. Leaving it absent means `forge math:optimise`
+ * writes a fresh one from the spec, and its refusal to overwrite an existing
+ * file then means what it says: that file is yours, not the sample's.
+ */
+const SKIP = new Set(['library', '__pycache__', '.pytest_cache', 'game_optimization.py']);
 
 /**
  * The math-sdk resolves a game's own folder from its `game_id`
@@ -95,6 +111,14 @@ function patchGameConfig(gameDir, spec, mechanic, { recipes }) {
 		for (const key of recipe.emitted?.requiredConditions ?? []) {
 			if (key === 'landing_wilds') {
 				conditionKeys.push('"landing_wilds": {0: 100, 1: 20, 2: 5},');
+			}
+			if (key === 'prize_values') {
+				// Weighted prize ladder for a hold-and-win round, shaped after
+				// 0_0_expwilds' superspin distribution: small values common, the top
+				// of the ladder rare. Values are multiples of the bet.
+				conditionKeys.push(
+					'"prize_values": {1: 700, 2: 200, 3: 50, 5: 30, 10: 20, 25: 10, 50: 5, 100: 5, 500: 2, 1000: 1},',
+				);
 			}
 		}
 	}
@@ -162,9 +186,20 @@ function writeReels(gameDir, spec) {
 		if (file.endsWith('.csv')) fs.removeSync(path.join(reelsDir, file));
 	}
 
+	// The superspin strips are blanks and prizes, not ordinary symbols — see
+	// renderSuperspinReelCsv. They are only written for a game that actually has
+	// a hold-and-win mode, because they need a prize symbol to put on them.
+	const superspin = hasSuperspinMode(spec);
+	const strips = superspin
+		? ['BR0', 'FR0', 'FRWCAP', 'WCAP', 'SSR', 'SSWCAP']
+		: ['BR0', 'FR0', 'FRWCAP', 'WCAP'];
+
 	const written = [];
-	for (const strip of ['BR0', 'FR0', 'FRWCAP', 'WCAP', 'SSR', 'SSWCAP']) {
-		fs.writeFileSync(path.join(reelsDir, `${strip}.csv`), renderReelCsv(spec, { seed: strip }), 'utf8');
+	for (const strip of strips) {
+		const contents = strip.startsWith('SS')
+			? renderSuperspinReelCsv(spec, { seed: strip })
+			: renderReelCsv(spec, { seed: strip });
+		fs.writeFileSync(path.join(reelsDir, `${strip}.csv`), contents, 'utf8');
 		written.push(`${strip}.csv`);
 	}
 	return written;
@@ -185,7 +220,15 @@ function applyModuleFunctions(gameDir, specs) {
 		const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
 		const result = appendModuleFunctions(existing, spec.source, spec.probe);
 		if (result.action === 'already-present') continue;
-		fs.writeFileSync(file, result.source, 'utf8');
+
+		// The appended functions may need imports the sample's own game_events.py
+		// never had. Missing these is a NameError on the first round that emits
+		// the event — late, and only under the one bet mode that reaches it.
+		let source = result.source;
+		for (const imp of spec.imports ?? []) {
+			source = ensureImport(source, imp.module, imp.names).source;
+		}
+		fs.writeFileSync(file, source, 'utf8');
 	}
 }
 
@@ -223,7 +266,7 @@ function applyClassMethods(gameDir, specs) {
 }
 
 /** Splice a recipe's steps into gamestate.py's run loop. */
-function applyGamestatePatches(gameDir, patches, imports) {
+function applyGamestatePatches(gameDir, patches, imports, constants) {
 	const file = path.join(gameDir, 'gamestate.py');
 	let source = fs.readFileSync(file, 'utf8');
 
@@ -233,6 +276,16 @@ function applyGamestatePatches(gameDir, patches, imports) {
 			result = prependToMethod(source, patch.method, patch.body, patch.id);
 		} else if (patch.mode === 'replace-line') {
 			result = replaceLineInMethod(source, patch.method, patch.lineRe, patch.body, patch.id);
+		} else if (patch.mode === 'wrap-after') {
+			result = insertAfterLineInMethod(source, patch.method, patch.afterRe, patch.body, patch.id);
+		} else if (patch.mode === 'add-method') {
+			// A whole new method on the class, rather than a splice into one that
+			// already exists. run_superspin has no counterpart in any sample the
+			// scaffolder clones, so there is nothing to splice into.
+			const appended = appendMethodsToClass(source, patch.className, patch.source, patch.probe);
+			// changed:false with the class present means the method is already
+			// there — idempotent, not a failure. A missing class IS a failure.
+			result = { source: appended.source, replaced: !appended.missingClass };
 		} else {
 			throw new Error(`unknown gamestate patch mode "${patch.mode}"`);
 		}
@@ -250,6 +303,13 @@ function applyGamestatePatches(gameDir, patches, imports) {
 
 	for (const imp of imports ?? []) {
 		source = ensureImport(source, imp.module, imp.names).source;
+	}
+
+	for (const constant of constants ?? []) {
+		const name = constant.split(/\s*=/)[0];
+		if (!new RegExp(`^${name}\\s*=`, 'm').test(source)) {
+			source = insertAfterImports(source, [constant]);
+		}
 	}
 
 	fs.writeFileSync(file, source, 'utf8');
@@ -270,6 +330,14 @@ function applyOverridePatches(gameDir, patches) {
 				);
 			}
 			source = result.source;
+			continue;
+		}
+
+		if (patch.anchor === 'method') {
+			// A standalone method on GameStateOverride, with no special-symbol
+			// mapping attached. reset_superspin is called by the game loop
+			// directly rather than dispatched by symbol.
+			source = replaceOrInsertMethod(source, 'GameStateOverride', patch.pythonMethod, patch.probe).source;
 			continue;
 		}
 
@@ -301,6 +369,48 @@ function applyOverridePatches(gameDir, patches) {
 	fs.writeFileSync(overridePath, source, 'utf8');
 }
 
+
+/**
+ * Patches into game_config.py that a recipe needs beyond what the spec drives.
+ *
+ * Kept separate from the spec-driven config generation because these are
+ * conditional on a behavior being present: a game with no sticky recipe should
+ * not carry a superspin reel strip it never draws from.
+ */
+function applyConfigPatches(gameDir, patches) {
+	if (!patches.length) return;
+	const file = path.join(gameDir, 'game_config.py');
+	let source = fs.readFileSync(file, 'utf8');
+
+	for (const patch of patches) {
+		if (patch.mode === 'dict-entry') {
+			const result = addDictEntry(source, patch.assignment, patch.key, patch.value);
+			if (!result.added && !result.alreadyPresent) {
+				throw new Error(
+					`game_config.py: could not apply "${patch.id}" — no ${patch.assignment} = {...} ` +
+						`assignment to add "${patch.key}" to. Refusing to write half-applied logic.`,
+				);
+			}
+			source = result.source;
+			continue;
+		}
+		if (patch.mode === 'after-line') {
+			const result = insertAfterLine(source, patch.lineRe, patch.body, patch.id);
+			if (!result.replaced) {
+				throw new Error(
+					`game_config.py: could not apply "${patch.id}" — no line matching ${patch.lineRe}. ` +
+						`Refusing to write half-applied logic.`,
+				);
+			}
+			source = result.source;
+			continue;
+		}
+		throw new Error(`unknown config patch mode "${patch.mode}"`);
+	}
+
+	fs.writeFileSync(file, source, 'utf8');
+}
+
 /** Apply the math half of every generable behavior recipe. */
 function applyRecipes(gameDir, spec) {
 	const results = [];
@@ -322,8 +432,16 @@ function applyRecipes(gameDir, spec) {
 
 			const emitted = recipe.emitMath({
 				wildSymbol: symbol.name,
+				// The same symbol, named for what the recipe does with it. A recipe
+				// reads whichever it means, so a prize recipe never has to pretend
+				// its symbol is a wild.
+				prizeSymbol: symbol.name,
 				gameName: spec.game.name,
 				gameTypes: mechanic.gameTypes,
+				respins: spec.holdAndWin?.respins,
+				superspinModes: Object.entries(spec.game.betModes)
+					.filter(([, mode]) => mode.superspin)
+					.map(([name]) => name),
 			});
 
 			for (const file of emitted.files ?? []) {
@@ -334,7 +452,13 @@ function applyRecipes(gameDir, spec) {
 			applyModuleFunctions(gameDir, emitted.moduleFunctions ?? []);
 			applyClassMethods(gameDir, emitted.classMethods ?? []);
 			applyOverridePatches(gameDir, emitted.overridePatches ?? []);
-			applyGamestatePatches(gameDir, emitted.gamestatePatches ?? [], emitted.gamestateImports);
+			applyGamestatePatches(
+				gameDir,
+				emitted.gamestatePatches ?? [],
+				emitted.gamestateImports,
+				emitted.gamestateConstants,
+			);
+			applyConfigPatches(gameDir, emitted.configPatches ?? []);
 
 			results.push({ tag, symbol: symbol.name, action: 'generated', recipe, emitted });
 		}

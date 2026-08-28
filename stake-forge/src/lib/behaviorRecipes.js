@@ -29,6 +29,7 @@
 
 import { ENGINE_SPECIAL_KEYS } from './taxonomy.js';
 import { renderExpandingMath, renderExpandingWeb } from './recipes/expanding.js';
+import { renderStickyMath } from './recipes/sticky.js';
 
 /**
  * @typedef {object} BehaviorRecipe
@@ -112,24 +113,43 @@ export const BEHAVIOR_RECIPES = {
 	// ─────────────────────────── tier 3, documented ─────────────────────────
 	sticky: {
 		id: 'sticky',
-		title: 'Sticky symbol (locks in place across respins)',
-		status: 'documented',
+		title: 'Sticky prize (hold-and-win respin round)',
+		status: 'verified',
 		tier: 3,
 		appliesToRoles: ['wild', 'high', 'low', 'scatter'],
+		/**
+		 * Verified on lines only, and that is the mechanic 0_0_expwilds is.
+		 *
+		 * The other three are not merely untested. This recipe's run_superspin()
+		 * draws a board, stamps the locked prizes back onto it and pays from the
+		 * final board — a cluster or scatter board re-draws mid-round via
+		 * tumble_game_board(), which the loop never sees, so the locks would be
+		 * wiped by the first cascade. Making it work on a tumbling board is real
+		 * design work, not scaffolding.
+		 */
+		verifiedForMechanics: ['lines'],
 		summary:
-			'A landed symbol locks to its cell and persists across subsequent spins of the ' +
-			'round, typically resetting a respin counter each time a new one lands.',
+			'A separate bet mode: a prize symbol lands, locks to its cell and resets the ' +
+			'respin counter. When the respins run out, every locked prize on the board pays.',
 		requiredAnimationStates: ['lock_in', 'locked_loop'],
-		requiredSpecialKeys: [],
-		suggestedSpecialKeys: ['prize'],
+		requiredSpecialKeys: ['prize'],
+		suggestedSpecialKeys: [],
 		referenceSample: { math: 'games/0_0_expwilds', web: null },
 		verifiedAgainst:
-			'READ, NOT YET RUN AS A GENERATOR. The real pattern is the "superspin" mode of ' +
-			'games/0_0_expwilds: game_executables.py check_for_new_prize() / ' +
-			'replace_board_with_stickys(), game_override.py reset_superspin(), and the ' +
-			'newStickySymbols event in game_events.py. Symbol.__slots__ already carries a ' +
-			'`locked` field (src/calculations/symbol.py) that nothing in the engine sets — ' +
-			'it exists precisely for this. Not emitted until it has been run end-to-end.',
+			'math-sdk games/0_0_expwilds "superspin" mode — read game_override.py, ' +
+			'game_executables.py, game_events.py and gamestate.py, then generated a game ' +
+			'from it and ran it: GameConfig() constructs, py_compile passes, and ' +
+			'GameState.run_spin() under betmode="superspin" emitted reveal, newStickySymbols, ' +
+			'updateFreeSpin, prizeWinInfo, setWin and setTotalWin events across a full ' +
+			'respin round. web-sdk has NO matching sample app, so the frontend half is ' +
+			'documented rather than generated.',
+		/**
+		 * A hold-and-win round is a BET MODE, not a modifier on an existing one.
+		 * The spec has to declare one, and it has to declare the prize symbol, or
+		 * the generated code has nothing to dispatch to and nothing to lock.
+		 */
+		requiresSuperspinBetMode: true,
+		emitMath: renderStickyMath,
 		mathHooks: {
 			resetBook: ['self.sticky_symbols = []', 'self.existing_sticky_symbols = []'],
 			executables: ['check_for_new_prize()', 'replace_board_with_stickys()'],
@@ -321,7 +341,7 @@ export function requiredStatesForSymbol(symbol, defaultStates) {
 }
 
 /** Validate `behaviors:` tags against the registry and the symbol's role. */
-export function validateBehaviors(symbol, { mechanic, errors, warnings }) {
+export function validateBehaviors(symbol, { mechanic, errors, warnings, betModes }) {
 	for (const tag of symbol.behaviors) {
 		const recipe = getRecipe(tag);
 		if (!recipe) {
@@ -351,6 +371,21 @@ export function validateBehaviors(symbol, { mechanic, errors, warnings }) {
 					`${recipe.requiresMechanic.join(' or ')}, but this spec uses "${mechanic}".`,
 			);
 		}
+		// A hold-and-win round is a whole bet mode with its own game loop, so
+		// there has to be a mode for the generated dispatch to fire on. Without
+		// one the code is emitted, is never reached, and the behavior silently
+		// does nothing — which is exactly the kind of quiet no-op worth failing on.
+		if (recipe.requiresSuperspinBetMode && betModes) {
+			const modes = Object.entries(betModes).filter(([, mode]) => mode.superspin);
+			if (!modes.length) {
+				errors.push(
+					`symbol ${symbol.name}: behavior "${tag}" is a hold-and-win respin ROUND, not a ` +
+						`modifier on an existing one. Add a bet mode with "superspin: true" to ` +
+						`game.betModes — without one the generated loop is never entered.`,
+				);
+			}
+		}
+
 		for (const key of recipe.requiredSpecialKeys) {
 			if (!symbol.special.includes(key)) {
 				errors.push(

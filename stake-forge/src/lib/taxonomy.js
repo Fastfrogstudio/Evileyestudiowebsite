@@ -193,9 +193,14 @@ export function normaliseSymbol(raw, { errors, warnings }) {
 	}
 
 	// --- paytable ---------------------------------------------------------
-	// Scatters normally pay via freespin_triggers rather than the paytable, so
-	// theirs is optional. Everything else must pay something or it can never win.
-	if (!raw.paytable && role !== 'scatter') {
+	// Two kinds of symbol pay by a route other than the paytable, and requiring
+	// one of them would be requiring a payout they should not have:
+	//   scatter  pays via freespin_triggers
+	//   prize    carries its value as an attribute rolled on landing, which is
+	//            how 0_0_expwilds' "P" works — it has no paytable entry at all
+	// Everything else must pay something or it can never win.
+	const paysWithoutPaytable = role === 'scatter' || special.includes('prize');
+	if (!raw.paytable && !paysWithoutPaytable) {
 		errors.push(`symbol ${name}: paytable is required for role "${role}"`);
 	}
 	if (raw.paytable) {

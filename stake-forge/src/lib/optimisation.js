@@ -101,6 +101,20 @@ export function splitRtp(total, shares) {
 }
 
 /**
+ * One paying round in N, from the distribution quotas.
+ *
+ * The zero-win criteria is the only one that pays nothing, so the paying share
+ * is everything else — and the hit rate the optimiser should aim for is the
+ * reciprocal of that share.
+ */
+export function payingHitRate(distributions) {
+	const total = distributions.reduce((sum, d) => sum + d.quota, 0);
+	const paying = distributions.filter((d) => d.criteria !== '0').reduce((sum, d) => sum + d.quota, 0);
+	if (!paying) return 'x';
+	return Math.round((total / paying) * 1e5) / 1e5;
+}
+
+/**
  * Plan the optimisation for every bet mode.
  *
  * Returns plain data — no Python — so it can be tested, shown in the app, and
@@ -119,7 +133,8 @@ export function planOptimisation(spec, { volatility } = {}) {
 	const modes = [];
 
 	for (const [name, mode] of Object.entries(spec.game.betModes)) {
-		const criteria = betModeCriteria(mode).map((c) => c.criteria);
+		const distributions = betModeCriteria(mode);
+		const criteria = distributions.map((c) => c.criteria);
 		const rtp = mode.rtp ?? spec.game.rtp;
 
 		// A buy-bonus mode has one criteria, so it takes the whole RTP. Anything
@@ -127,7 +142,25 @@ export function planOptimisation(spec, { volatility } = {}) {
 		// unless the game has no free spins at all, in which case the base game
 		// is the only thing that pays and takes all of it.
 		let conditions;
-		if (criteria.length === 1) {
+		if (mode.superspin) {
+			// Building this from the mode's real criteria rather than assuming a
+			// freegame/basegame pair is the point: an earlier version hardcoded a
+			// freegame condition searching by scatter, which a superspin mode has
+			// no rounds for, and the optimiser failed with "fence 'freegame'
+			// matched 0 books".
+			//
+			// The hit rate is DERIVED, not "x". A hold-and-win round is bought, so
+			// hr="x" — no target — looks right, and it is what the sample's bonus
+			// mode uses. But that mode has no zero-win criteria: with one present,
+			// an unconstrained hit rate lets the optimiser park weight in the zero
+			// bucket, and the mode comes in at rtp × (paying share). Measured: 48%
+			// against a 96% target, exactly half, because the optimiser had settled
+			// on 50/50. Pinning the hit rate to the quotas fixes it.
+			conditions = [
+				{ criteria: '0', rtp: 0, avWin: 0, searchPayout: 0, kind: 'zero' },
+				{ criteria: 'basegame', rtp, hitRate: payingHitRate(distributions), kind: 'basegame' },
+			];
+		} else if (criteria.length === 1) {
 			// hr="x" is how 0_0_lines' bonus mode expresses "no hit-rate target".
 			// A bonus buy triggers every round by definition, so there is nothing
 			// for the optimiser to hit one-in-N of.
@@ -154,6 +187,21 @@ export function planOptimisation(spec, { volatility } = {}) {
 				{ criteria: '0', rtp: 0, avWin: 0, searchPayout: 0, kind: 'zero' },
 				{ criteria: 'basegame', rtp: baseRtp, hitRate: profile.baseHitRate, kind: 'basegame' },
 			];
+		}
+
+		// The SDK asserts every distribution criteria appears as a conditions key.
+		// Asserting it here too means a planner bug is a clear error at plan time
+		// rather than a Rust fence failure minutes into an optimiser run.
+		const planned = new Set(conditions.map((c) => c.criteria));
+		const missing = criteria.filter((c) => !planned.has(c));
+		const extra = [...planned].filter((c) => !criteria.includes(c));
+		if (missing.length || extra.length) {
+			throw new Error(
+				`optimisation plan for bet mode "${name}" does not match its distributions: ` +
+					`${missing.length ? `missing ${missing.join(', ')}` : ''}` +
+					`${missing.length && extra.length ? '; ' : ''}` +
+					`${extra.length ? `has no distribution for ${extra.join(', ')}` : ''}.`,
+			);
 		}
 
 		modes.push({

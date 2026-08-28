@@ -55,6 +55,10 @@ import { auditSound, readSoundVocabulary, readSoundsUsed, readSoundSprite } from
 import { planOptimisation, renderOptimisationPy, splitRtp, VOLATILITY_PROFILES, VOLATILITY_IDS } from '../src/lib/optimisation.js';
 import { planSprite, spriteJson, buildFilterGraph, looksLooping, readSoundSources, SPRITE_FORMATS, CLIP_GAP_MS } from '../src/lib/soundSprite.js';
 import { inspectMathPublish, collectFrontend } from '../src/commands/packageGame.js';
+import { renderStickyMath } from '../src/lib/recipes/sticky.js';
+import { renderSuperspinReelCsv, hasSuperspinMode, BLANK_SYMBOL, SUPERSPIN_PRIZE_DENSITY } from '../src/lib/mathGenerators.js';
+import { payingHitRate } from '../src/lib/optimisation.js';
+import { addDictEntry, insertAfterLineInMethod, insertAfterImports } from '../src/lib/pyPatch.js';
 
 /** A pristine sample app, for the checks that need real source to read. */
 const LINES_APP = process.env.FORGE_WEB_SDK
@@ -562,14 +566,20 @@ test('tumble is refused on non-tumbling mechanics', () => {
 	assert.match(ctx2.errors.join(' '), /requires mechanic cluster or scatter/);
 });
 
-test('only recipes with a verified status carry code emitters', () => {
-	for (const id of ['sticky', 'prize', 'colossal']) {
-		const r = getRecipe(id);
-		assert.notEqual(r.status, 'verified');
-		assert.ok(!r.emitMath && !r.emitWeb, `${id} must not emit unverified code`);
+test('a recipe emits code if and only if it is verified', () => {
+	// The invariant, rather than a list of which recipes are which — a list has
+	// to be edited every time one is promoted, which is exactly when the rule
+	// most needs to still be checked.
+	for (const [id, r] of Object.entries(BEHAVIOR_RECIPES)) {
+		const emits = Boolean(r.emitMath || r.emitWeb);
+		if (r.status === 'verified') continue; // verified may or may not emit yet
+		assert.ok(!emits, `${id} is "${r.status}" but carries a code emitter`);
 	}
-	assert.equal(getRecipe('expanding').status, 'verified');
-	assert.ok(getRecipe('expanding').emitMath);
+	// And at least the two that have been run end to end do emit.
+	for (const id of ['expanding', 'sticky']) {
+		assert.equal(getRecipe(id).status, 'verified');
+		assert.ok(getRecipe(id).emitMath, `${id} should emit math`);
+	}
 });
 
 test('every recipe cites what it was verified against', () => {
@@ -1768,6 +1778,255 @@ test('a build that produced no index.html refuses to package', () => {
 	} finally {
 		fs.rmSync(root, { recursive: true, force: true });
 	}
+});
+
+
+// ── hold-and-win (sticky) ───────────────────────────────────────────────────
+
+const stickySpec = () => ({
+	game: {
+		name: 'vault',
+		rtp: 0.96,
+		volatility: 'high',
+		reels: { count: 5, rows: [3, 3, 3, 3, 3] },
+		betModes: {
+			base: { cost: 1, rtp: 0.96, maxWin: 5000, feature: true },
+			superspin: { cost: 50, rtp: 0.96, maxWin: 2000, feature: true, superspin: true },
+		},
+	},
+	freeSpins: { triggerCount: 3 },
+	symbols: [
+		{ name: 'H1', role: 'high', special: [], paytable: { 5: 20 } },
+		{ name: 'P', role: 'high', special: ['prize'], behaviors: ['sticky'] },
+	],
+});
+
+test('a superspin mode never lands in the base game', () => {
+	const criteria = betModeCriteria({ superspin: true }).map((c) => c.criteria);
+	assert.deepEqual(criteria.sort(), ['0', 'basegame']);
+	// No freegame criteria: a hold-and-win round is its own loop and never
+	// triggers free spins. An earlier plan assumed one and the optimiser failed
+	// with "fence 'freegame' matched 0 books".
+	assert.ok(!criteria.includes('freegame'));
+});
+
+test('a superspin distribution draws from its own strip, under the base gametype', () => {
+	const py = renderBetModes(stickySpec());
+	const block = py.slice(py.indexOf('name="superspin"'));
+	assert.match(block, /self\.basegame_type: \{"SSR": 1\}/);
+	assert.doesNotMatch(block.slice(0, block.indexOf('BetMode(', 10) + 1 || undefined), /"BR0"/);
+});
+
+test('a hold-and-win strip is blanks and prizes, and nothing else', () => {
+	// 0_0_expwilds' SSR.csv is 460 X to 20 P. Ordinary symbols on it would be
+	// cells that look valuable, lock, and pay nothing.
+	const csv = renderSuperspinReelCsv(stickySpec());
+	const names = new Set(csv.trim().split('\n').flatMap((row) => row.split(',')));
+	assert.deepEqual([...names].sort(), [BLANK_SYMBOL, 'P'].sort());
+});
+
+test('every reel of a hold-and-win strip carries at least two prizes', () => {
+	// Too sparse and a paying round lands nothing, which check_repeat() re-rolls
+	// forever; too dense and the respin counter never runs down.
+	const csv = renderSuperspinReelCsv(stickySpec());
+	const rows = csv.trim().split('\n').map((r) => r.split(','));
+	for (let reel = 0; reel < 5; reel += 1) {
+		const prizes = rows.filter((r) => r[reel] === 'P').length;
+		assert.ok(prizes >= 2, `reel ${reel} has only ${prizes} prize(s)`);
+		assert.ok(prizes < rows.length * SUPERSPIN_PRIZE_DENSITY * 3, `reel ${reel} is too dense`);
+	}
+});
+
+test('the prize symbol is kept OFF the ordinary strips', () => {
+	// 0_0_expwilds' BR0 and FR0 carry no P at all: nothing in an ordinary spin
+	// collects a prize, so one landing there pays nothing and looks broken.
+	const csv = renderReelCsv(stickySpec());
+	assert.ok(!csv.includes('P'), 'the base strip should not carry the prize symbol');
+});
+
+test('a hold-and-win game registers the blank symbol, and only then', () => {
+	// Config.validate_reel_symbols() rejects a symbol on a strip the game has
+	// not declared, and kind 99 is beyond any real win length so it pays nothing.
+	const withSuperspin = renderPaytable(stickySpec());
+	assert.match(withSuperspin, /\(99, "X"\): 0/);
+
+	const plain = stickySpec();
+	delete plain.game.betModes.superspin;
+	assert.equal(hasSuperspinMode(plain), false);
+	assert.doesNotMatch(renderPaytable(plain), /\(99, "X"\)/);
+});
+
+test('a prize symbol needs no paytable, unlike every other paying role', () => {
+	// It carries its value as an attribute rolled on landing. Requiring a
+	// paytable would be requiring a payout it must not have.
+	const errors = [];
+	const symbol = normaliseSymbol(
+		{ name: 'P', role: 'high', special: ['prize'] },
+		{ errors, warnings: [] },
+	);
+	assert.deepEqual(errors, []);
+	assert.ok(symbol);
+	// A high symbol WITHOUT the prize flag still needs one.
+	const errors2 = [];
+	normaliseSymbol({ name: 'H9', role: 'high' }, { errors: errors2, warnings: [] });
+	assert.match(errors2.join('\n'), /paytable is required/);
+});
+
+test('sticky without a superspin bet mode is refused', () => {
+	// The code would be emitted, never reached, and the behavior would silently
+	// do nothing — the exact quiet no-op worth failing on.
+	const errors = [];
+	validateBehaviors(
+		{ name: 'P', role: 'high', special: ['prize'], behaviors: ['sticky'] },
+		{ mechanic: 'lines', errors, warnings: [], betModes: { base: { cost: 1 } } },
+	);
+	assert.match(errors.join('\n'), /hold-and-win respin ROUND/);
+
+	const ok = [];
+	validateBehaviors(
+		{ name: 'P', role: 'high', special: ['prize'], behaviors: ['sticky'] },
+		{ mechanic: 'lines', errors: ok, warnings: [], betModes: { s: { superspin: true } } },
+	);
+	assert.deepEqual(ok, []);
+});
+
+test('sticky requires special: [prize] — its math reads that flag', () => {
+	const errors = [];
+	validateBehaviors(
+		{ name: 'P', role: 'high', special: [], behaviors: ['sticky'] },
+		{ mechanic: 'lines', errors, warnings: [], betModes: { s: { superspin: true } } },
+	);
+	assert.match(errors.join('\n'), /requires special: \[prize\]/);
+});
+
+test('sticky is refused on a tumbling mechanic', () => {
+	// tumble_game_board() redraws mid-round, which run_superspin never sees —
+	// the locks would be wiped by the first cascade.
+	for (const mechanic of ['cluster', 'scatter']) {
+		const errors = [];
+		validateBehaviors(
+			{ name: 'P', role: 'high', special: ['prize'], behaviors: ['sticky'] },
+			{ mechanic, errors, warnings: [], betModes: { s: { superspin: true } } },
+		);
+		assert.match(errors.join('\n'), /only verified on mechanic lines/);
+	}
+});
+
+test('the generated event guards on the prize KEY, not on the blank name', () => {
+	// json_ready_sym omits an attribute the symbol does not carry, so
+	// 0_0_expwilds' `name != "X"` form is a KeyError the moment any other symbol
+	// reaches the board.
+	const emitted = renderStickyMath({ prizeSymbol: 'P' });
+	const events = emitted.moduleFunctions[0].source;
+	assert.match(events, /if "prize" in board_client/);
+	assert.doesNotMatch(events, /!= "X"/);
+});
+
+test('the generated event module brings its own imports', () => {
+	// A sample's game_events.py imports only what its own events need; without
+	// these the first superspin round dies with a NameError.
+	const emitted = renderStickyMath({ prizeSymbol: 'P' });
+	const modules = emitted.moduleFunctions[0].imports.map((i) => i.module);
+	assert.deepEqual(modules.sort(), ['copy', 'src.events.event_constants', 'src.events.events']);
+});
+
+test('the respin count comes from the spec, not the sample literal', () => {
+	const setup = renderStickyMath({ prizeSymbol: 'P', respins: 7 }).overridePatches.find(
+		(p) => p.id === 'sticky:reset_superspin',
+	);
+	assert.match(setup.pythonMethod, /self\.tot_fs = 7/);
+	assert.match(renderStickyMath({ prizeSymbol: 'P' }).overridePatches.find(
+		(p) => p.id === 'sticky:reset_superspin',
+	).pythonMethod, /self\.tot_fs = 3/);
+});
+
+test('the respin counter reset is in the generated loop', () => {
+	// self.fs = 0 on a landing IS the mechanic — without it the round runs a
+	// fixed number of spins and is not hold-and-win at all.
+	const emitted = renderStickyMath({ prizeSymbol: 'P' });
+	const loop = emitted.gamestatePatches.find((p) => p.id === 'sticky:run_superspin').source;
+	assert.match(loop, /new_sticky_event\(self, new_sticky_symbols\)\s*\n\s*#[^\n]*\n\s*self\.fs = 0/);
+});
+
+test('the dispatch names the mode set, not a literal', () => {
+	const emitted = renderStickyMath({ prizeSymbol: 'P', superspinModes: ['superspin', 'megaspin'] });
+	assert.deepEqual(emitted.gamestateConstants, ['SUPERSPIN_BETMODES = {"superspin", "megaspin"}']);
+	const dispatch = emitted.gamestatePatches.find((p) => p.id === 'sticky:dispatch');
+	assert.ok(dispatch.body.some((l) => l.includes('SUPERSPIN_BETMODES')));
+});
+
+test('a superspin optimisation plan matches its real criteria', () => {
+	const plan = planOptimisation(stickySpec());
+	const superspin = plan.modes.find((m) => m.name === 'superspin');
+	assert.deepEqual(superspin.conditions.map((c) => c.criteria).sort(), ['0', 'basegame']);
+	// The hit rate is DERIVED from the quotas. "x" let the optimiser park weight
+	// in the zero bucket and the mode came in at exactly half its target.
+	const basegame = superspin.conditions.find((c) => c.criteria === 'basegame');
+	assert.notEqual(basegame.hitRate, 'x');
+	assert.equal(basegame.hitRate, payingHitRate(betModeCriteria({ superspin: true })));
+	assert.ok(basegame.hitRate > 1 && basegame.hitRate < 1.2, `hr ${basegame.hitRate} out of range`);
+});
+
+test('payingHitRate is the reciprocal of the paying share', () => {
+	assert.equal(payingHitRate([{ criteria: 'basegame', quota: 0.9 }, { criteria: '0', quota: 0.1 }]), 1.11111);
+	assert.equal(payingHitRate([{ criteria: 'freegame', quota: 1 }]), 1);
+	assert.equal(payingHitRate([{ criteria: '0', quota: 1 }]), 'x');
+});
+
+test('a plan that does not match its distributions is refused at plan time', () => {
+	// Rather than as a Rust fence failure minutes into an optimiser run.
+	const spec = stickySpec();
+	const plan = planOptimisation(spec);
+	for (const mode of plan.modes) {
+		const criteria = betModeCriteria(spec.game.betModes[mode.name]).map((c) => c.criteria);
+		assert.deepEqual(mode.conditions.map((c) => c.criteria).sort(), [...criteria].sort());
+	}
+});
+
+// ── python patching ─────────────────────────────────────────────────────────
+
+test('addDictEntry handles a dict written across several lines', () => {
+	const single = 'reels = {"BR0": "BR0.csv"}\n';
+	assert.match(addDictEntry(single, 'reels', 'SSR', '"SSR.csv"').source, /"BR0": "BR0.csv", "SSR": "SSR.csv"/);
+
+	const multi = 'reels = {\n    "BR0": "BR0.csv",\n    "FR0": "FR0.csv",\n}\nx = 1\n';
+	const result = addDictEntry(multi, 'reels', 'SSR', '"SSR.csv"');
+	assert.equal(result.added, true);
+	assert.match(result.source, /"SSR": "SSR\.csv"\}/);
+	assert.match(result.source, /\nx = 1\n/, 'the statement after the dict must survive');
+});
+
+test('addDictEntry does not duplicate a key that is already there', () => {
+	const src = 'reels = {"SSR": "SSR.csv"}\n';
+	const result = addDictEntry(src, 'reels', 'SSR', '"SSR.csv"');
+	assert.equal(result.added, false);
+	assert.equal(result.alreadyPresent, true);
+	assert.equal(result.source, src);
+});
+
+test('insertAfterLineInMethod keeps the anchor line', () => {
+	// Distinct from replace-line: the dispatch goes AFTER reset_book(), which
+	// every sample calls and none of them can skip.
+	const src = 'class G:\n    def run_spin(self):\n        self.reset_book()\n        self.draw_board()\n';
+	const result = insertAfterLineInMethod(src, 'run_spin', /self\.reset_book\(\)/, ['if x:', '    y()'], 'test');
+	assert.equal(result.replaced, true);
+	assert.match(result.source, /self\.reset_book\(\)\n\s+if x:/);
+	assert.match(result.source, /self\.draw_board\(\)/, 'the rest of the method must survive');
+});
+
+test('insertAfterLineInMethod is idempotent', () => {
+	const src = 'class G:\n    def run_spin(self):\n        self.reset_book()\n';
+	const once = insertAfterLineInMethod(src, 'run_spin', /reset_book/, ['a()'], 'test');
+	const twice = insertAfterLineInMethod(once.source, 'run_spin', /reset_book/, ['a()'], 'test');
+	assert.equal(twice.source, once.source);
+	assert.equal(twice.alreadyPresent, true);
+});
+
+test('insertAfterImports does not splice into a parenthesised import', () => {
+	const src = 'from a import (\n    x,\n    y,\n)\nfrom b import z\n\n\nclass C:\n    pass\n';
+	const out = insertAfterImports(src, ['CONST = 1']);
+	assert.match(out, /from b import z\n\nCONST = 1/);
+	assert.match(out, /from a import \(\n {4}x,\n {4}y,\n\)/, 'the parenthesised import must be intact');
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

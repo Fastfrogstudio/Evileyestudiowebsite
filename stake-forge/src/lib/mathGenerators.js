@@ -28,6 +28,22 @@ import { sortSymbols, buildSpecialSymbols } from './taxonomy.js';
  * Emitted in role order (wilds, highs, lows) and descending kind within each
  * symbol, matching how the sample games lay theirs out so diffs stay readable.
  */
+/**
+ * The blank symbol a hold-and-win strip is mostly made of.
+ *
+ * 0_0_expwilds' SSR.csv is 460 X and 20 P, and its game_config registers
+ * `(99, "X"): 0  # only included for symbol register`. That register entry is
+ * not optional: Config.validate_reel_symbols() rejects any symbol on a strip
+ * the game has not declared, and a kind of 99 is high enough that no real win
+ * length can reach it, so it pays nothing while still existing.
+ */
+export const BLANK_SYMBOL = 'X';
+
+/** Does any bet mode run a hold-and-win respin round? */
+export function hasSuperspinMode(spec) {
+	return Object.values(spec.game.betModes ?? {}).some((mode) => mode.superspin);
+}
+
 export function renderPaytable(spec) {
 	const entries = new Map();
 	for (const s of sortSymbols(spec.symbols)) {
@@ -38,6 +54,9 @@ export function renderPaytable(spec) {
 		for (const kind of kinds) {
 			entries.set(new PyRaw(`(${kind}, "${s.name}")`), s.paytable[String(kind)]);
 		}
+	}
+	if (hasSuperspinMode(spec)) {
+		entries.set(new PyRaw(`(99, "${BLANK_SYMBOL}")`), 0);
 	}
 	return pyLiteral(entries, 2);
 }
@@ -154,9 +173,18 @@ export function renderReelCsv(spec, { length = REEL_STRIP_LENGTH, seed = 'BR0' }
 		spec.symbols.filter((s) => s.special.includes('scatter')).map((s) => s.name),
 	);
 
+	// A PRIZE symbol belongs only on a hold-and-win strip. 0_0_expwilds' BR0 and
+	// FR0 carry no P at all, and rightly: nothing in an ordinary spin collects a
+	// prize, so one landing there is a symbol that looks valuable and pays
+	// nothing.
+	const prizeNames = new Set(
+		spec.symbols.filter((s) => s.special.includes('prize')).map((s) => s.name),
+	);
+
 	const pool = [];
 	for (const [name, weight] of Object.entries(weights)) {
 		if (scatterNames.has(name)) continue; // scatters are placed deliberately, below
+		if (prizeNames.has(name)) continue;
 		for (let i = 0; i < weight; i += 1) pool.push(name);
 	}
 	if (!pool.length) {
@@ -257,6 +285,16 @@ export function renderNumRows(spec) {
  * starting point; balancing them is a maths job, not a scaffolding job.
  */
 export function betModeCriteria(mode) {
+	// A SUPERSPIN mode is a hold-and-win respin round, not a spin of the base
+	// game: it never triggers free spins and never draws from the base strips.
+	// Its zero-win criteria carries win_criteria=0.0 like any other, and the
+	// recipe's run_superspin() forces a prize-free board for it.
+	if (mode.superspin) {
+		return [
+			{ criteria: '0', quota: 0.1, forceFreegame: false, winCriteria: 0.0, reels: 'SSR' },
+			{ criteria: 'basegame', quota: 0.9, forceFreegame: false, reels: 'SSR' },
+		];
+	}
 	return mode.buyBonus
 		? [{ criteria: 'freegame', quota: 1.0, forceFreegame: true }]
 		: [
@@ -289,16 +327,20 @@ export function renderBetModes(spec, { conditionKeys = [] } = {}) {
 			? allConditions.map((k) => `                            ${k}`).join('\n') + '\n'
 			: '';
 		const distributions = betModeCriteria(mode)
-			.map(({ criteria, quota, forceFreegame, winCriteria }) => {
+			.map(({ criteria, quota, forceFreegame, winCriteria, reels }) => {
 				// A freegame distribution has to weight the free-game reel set too;
 				// a basegame one must not, or the board is drawn from strips the
-				// base game never uses.
-				const reelWeights = forceFreegame
-					? `{
+				// base game never uses. A superspin mode names its own strip: it
+				// draws from the respin reels under the BASE gametype, because that
+				// is the gametype run_superspin() runs in.
+				const reelWeights = reels
+					? `{self.basegame_type: {"${reels}": 1}}`
+					: forceFreegame
+						? `{
                                 self.basegame_type: {"BR0": 1},
                                 self.freegame_type: {"FR0": 1},
                             }`
-					: `{self.basegame_type: {"BR0": 1}}`;
+						: `{self.basegame_type: {"BR0": 1}}`;
 				// win_criteria pins what the round must pay. Only the zero-win
 				// distribution sets it here; a wincap one would too, and is left out
 				// for the reason spelled out above the distributions.
@@ -363,4 +405,60 @@ export function renderScatterTriggers(spec) {
 		weight /= 2.5;
 	}
 	return pyLiteral(out, 0).replace(/\n\s*/g, ' ').replace(/\{ /, '{').replace(/, \}/, '}');
+}
+
+/**
+ * A placeholder HOLD-AND-WIN strip: blanks with a scattering of prize symbols.
+ *
+ * Not the ordinary strip generator with a different seed. A superspin board is
+ * blanks plus prizes and nothing else — 0_0_expwilds' SSR.csv is 460 X to 20 P
+ * — because every non-blank cell locks and pays. Putting the game's ordinary
+ * symbols on it produces a board where most cells are decorative, and
+ * reveal_prize_event then trips over the first one that carries no prize.
+ *
+ * Density matters in both directions here. Too sparse and a "basegame" round
+ * lands nothing, which check_repeat() re-rolls forever; too dense and every
+ * respin lands a prize, so the counter never runs down and the round never
+ * ends. 1 in 24 matches the sample and leaves both loops terminating.
+ */
+export const SUPERSPIN_PRIZE_DENSITY = 1 / 24;
+
+export function renderSuperspinReelCsv(spec, { length = REEL_STRIP_LENGTH, seed = 'SSR', density = SUPERSPIN_PRIZE_DENSITY } = {}) {
+	const prizeSymbols = spec.symbols.filter((s) => s.special.includes('prize')).map((s) => s.name);
+	if (!prizeSymbols.length) {
+		throw new Error(
+			'a superspin bet mode needs a symbol with special: [prize] — its strip is blanks and prizes, ' +
+				'and with no prize symbol every round would pay nothing.',
+		);
+	}
+
+	let h = 2166136261;
+	for (const ch of `${spec.game.name}:${seed}`) {
+		h ^= ch.charCodeAt(0);
+		h = Math.imul(h, 16777619);
+	}
+	const rng = () => {
+		h ^= h << 13;
+		h ^= h >>> 17;
+		h ^= h << 5;
+		return ((h >>> 0) % 100000) / 100000;
+	};
+
+	const reels = spec.game.reels.count;
+	const columns = Array.from({ length: reels }, () => Array.from({ length }, () => BLANK_SYMBOL));
+
+	// Placed on a stride rather than rolled per cell, so every reel carries the
+	// same count and a short strip cannot come out empty by chance.
+	const perReel = Math.max(2, Math.round(length * density));
+	for (let reel = 0; reel < reels; reel += 1) {
+		const stride = Math.floor(length / perReel);
+		for (let n = 0; n < perReel; n += 1) {
+			const at = (n * stride + Math.floor(rng() * stride)) % length;
+			columns[reel][at] = prizeSymbols[Math.floor(rng() * prizeSymbols.length)];
+		}
+	}
+
+	const rows = [];
+	for (let i = 0; i < length; i += 1) rows.push(columns.map((col) => col[i]).join(','));
+	return `${rows.join('\n')}\n`;
 }
