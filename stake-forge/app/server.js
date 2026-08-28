@@ -38,6 +38,7 @@ import { BEHAVIOR_RECIPES } from '../src/lib/behaviorRecipes.js';
 import { MECHANICS } from '../src/lib/mechanics.js';
 import { SCREEN_SLOTS, WIN_LEVEL_ALIASES, WIN_LEVEL_ANIMATIONS, BANNER_WIN_LEVELS } from '../src/lib/screens.js';
 import { ROLES, ENGINE_SPECIAL_KEYS, typeRequiredStates, defaultAnimationStates } from '../src/lib/taxonomy.js';
+import { VOLATILITY_PROFILES } from '../src/lib/optimisation.js';
 import { requiredStatesForSymbol } from '../src/lib/behaviorRecipes.js';
 import { INSPIRATION_RULES } from '../src/lib/inspirationRules.js';
 
@@ -107,6 +108,7 @@ app.get('/api/registry', (_req, res) => {
 			]),
 		),
 		screenSlots: SCREEN_SLOTS,
+		volatility: VOLATILITY_PROFILES,
 		winLevels: { aliases: WIN_LEVEL_ALIASES, animations: WIN_LEVEL_ANIMATIONS, banners: BANNER_WIN_LEVELS },
 		inspirationVocabulary: INSPIRATION_RULES.map((r) => ({
 			id: r.id,

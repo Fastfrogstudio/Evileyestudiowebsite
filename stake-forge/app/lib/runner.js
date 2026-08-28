@@ -98,6 +98,21 @@ export const STEPS = {
 			return args;
 		},
 	},
+	'math:optimise': {
+		id: 'math:optimise',
+		title: 'Hit the target RTP',
+		blurb: 'Reweight the simulated rounds until the game pays what the spec asked for. The slow step.',
+		needs: ['mathSdk', 'simulated'],
+		args: ({ dir, config }) => {
+			const args = [
+				'math:optimise',
+				'--spec', path.join(dir, 'game-spec.yaml'),
+				'--math-sdk', config.mathSdk,
+			];
+			if (config.python) args.push('--python', config.python);
+			return args;
+		},
+	},
 	'math:sync': {
 		id: 'math:sync',
 		title: 'Sync maths into the app',
@@ -151,6 +166,7 @@ export const STEP_ORDER = [
 	'scaffold',
 	'assets:import',
 	'math:run',
+	'math:optimise',
 	'math:sync',
 	'math:report',
 	'verify',

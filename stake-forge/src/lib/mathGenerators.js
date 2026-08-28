@@ -232,12 +232,46 @@ export function renderNumRows(spec) {
 }
 
 /**
+ * The distribution criteria a bet mode simulates, in order.
+ *
+ * A BUY-BONUS mode gets `freegame` only. It is what the player paid for: every
+ * round of a bonus buy must trigger the feature, and 0_0_lines' own bonus mode
+ * has no basegame distribution for exactly that reason. Emitting one meant 90%
+ * of bonus rounds were plain base-game spins — a 100x purchase that usually
+ * bought nothing, and a bonus lookup table indistinguishable from the base one.
+ *
+ * Every other mode gets three: freegame, ZERO-WIN, and basegame.
+ *
+ * The zero-win one is not optional decoration. `win_criteria=0.0` makes
+ * check_repeat() re-roll until the round pays exactly nothing, so the simulated
+ * set contains losing rounds. Without it every round in the lookup table is a
+ * winner, and the optimiser — which can only reweight rounds that exist — has
+ * no way to bring the RTP down or to hit a hit-rate target at all. Measured:
+ * without it the base mode optimised to 331.94% against a 96.5% target, with a
+ * hit rate of 1 in 1.0.
+ *
+ * Unlike a wincap criteria, this one is trivially satisfiable, so it cannot
+ * cause the runaway re-roll that wincap does on placeholder reels.
+ *
+ * Quotas follow 0_0_lines (0.1 / 0.4 / 0.5, less its 0.001 wincap). They are a
+ * starting point; balancing them is a maths job, not a scaffolding job.
+ */
+export function betModeCriteria(mode) {
+	return mode.buyBonus
+		? [{ criteria: 'freegame', quota: 1.0, forceFreegame: true }]
+		: [
+				{ criteria: 'freegame', quota: 0.1, forceFreegame: true },
+				{ criteria: '0', quota: 0.4, forceFreegame: false, winCriteria: 0.0 },
+				{ criteria: 'basegame', quota: 0.5, forceFreegame: false },
+			];
+}
+
+/**
  * `self.bet_modes` — a list of BetMode objects.
  *
- * Distributions are deliberately minimal: one `freegame` and one `basegame`
- * criteria per mode — the smallest set that lets create_books() actually
- * terminate. Tuning the quotas and weights is a maths job, not a scaffolding
- * job, so the generated block does not pretend to be balanced.
+ * Criteria come from betModeCriteria(), so the optimisation setup and the
+ * simulation cannot disagree about which criteria exist — the SDK asserts they
+ * match, and a mismatch is an AssertionError before a single round is run.
  */
 export function renderBetModes(spec, { conditionKeys = [] } = {}) {
 	// Any Distribution with force_freegame: True MUST also carry scatter_triggers:
@@ -254,6 +288,33 @@ export function renderBetModes(spec, { conditionKeys = [] } = {}) {
 		const extraConditions = allConditions.length
 			? allConditions.map((k) => `                            ${k}`).join('\n') + '\n'
 			: '';
+		const distributions = betModeCriteria(mode)
+			.map(({ criteria, quota, forceFreegame, winCriteria }) => {
+				// A freegame distribution has to weight the free-game reel set too;
+				// a basegame one must not, or the board is drawn from strips the
+				// base game never uses.
+				const reelWeights = forceFreegame
+					? `{
+                                self.basegame_type: {"BR0": 1},
+                                self.freegame_type: {"FR0": 1},
+                            }`
+					: `{self.basegame_type: {"BR0": 1}}`;
+				// win_criteria pins what the round must pay. Only the zero-win
+				// distribution sets it here; a wincap one would too, and is left out
+				// for the reason spelled out above the distributions.
+				const win = winCriteria === undefined ? '' : `\n                        win_criteria=${winCriteria.toFixed(1)},`;
+				return `                    Distribution(
+                        criteria="${criteria}",
+                        quota=${quota},${win}
+                        conditions={
+                            "reel_weights": ${reelWeights},
+${extraConditions}                            "force_wincap": False,
+                            "force_freegame": ${forceFreegame ? 'True' : 'False'},
+                        },
+                    ),`;
+			})
+			.join('\n');
+
 		lines.push(`            BetMode(
                 name="${name}",
                 cost=${Number(mode.cost).toFixed(1)},
@@ -273,27 +334,7 @@ export function renderBetModes(spec, { conditionKeys = [] } = {}) {
                     #
                     #   Distribution(criteria="wincap", quota=0.001,
                     #                win_criteria=self.wincap, conditions={...})
-                    Distribution(
-                        criteria="freegame",
-                        quota=0.1,
-                        conditions={
-                            "reel_weights": {
-                                self.basegame_type: {"BR0": 1},
-                                self.freegame_type: {"FR0": 1},
-                            },
-${extraConditions}                            "force_wincap": False,
-                            "force_freegame": True,
-                        },
-                    ),
-                    Distribution(
-                        criteria="basegame",
-                        quota=0.9,
-                        conditions={
-                            "reel_weights": {self.basegame_type: {"BR0": 1}},
-${extraConditions}                            "force_wincap": False,
-                            "force_freegame": False,
-                        },
-                    ),
+${distributions}
                 ],
             ),`);
 	}

@@ -9,6 +9,7 @@ import { mathScaffold } from '../src/commands/mathScaffold.js';
 import { mathRun } from '../src/commands/mathRun.js';
 import { mathSync } from '../src/commands/mathSync.js';
 import { mathReport } from '../src/commands/mathReport.js';
+import { mathOptimise } from '../src/commands/mathOptimise.js';
 import { importAssets } from '../src/commands/importAssets.js';
 import { placeholderArt } from '../src/commands/placeholderArt.js';
 import { audit } from '../src/commands/audit.js';
@@ -155,6 +156,30 @@ program
 				mathSdkDir: path.resolve(opts.mathSdk),
 				sdkDir: path.resolve(opts.sdk),
 				dryRun: opts.dryRun,
+			}),
+		),
+	);
+
+program
+	.command('math:optimise')
+	.description('Reweight the simulated rounds until the game actually pays its target RTP')
+	.requiredOption('--spec <path>', 'path to game-spec.yaml')
+	.requiredOption('--math-sdk <path>', 'path to a checkout of StakeEngine/math-sdk')
+	.option('--volatility <profile>', 'low | medium | high — overrides game.volatility in the spec')
+	.option('--threads <n>', 'threads for the Rust optimiser', (v) => Number(v), 4)
+	.option('--force', 'regenerate game_optimization.py, discarding any hand-tuning', false)
+	.option('--setup-only', 'write game_optimization.py and stop, without running the optimiser', false)
+	.option('--python <path>', 'python interpreter to use')
+	.action(
+		run((opts) =>
+			mathOptimise({
+				specPath: path.resolve(opts.spec),
+				mathSdkDir: path.resolve(opts.mathSdk),
+				volatility: opts.volatility,
+				threads: opts.threads,
+				force: opts.force,
+				setupOnly: opts.setupOnly,
+				python: opts.python,
 			}),
 		),
 	);

@@ -6,6 +6,7 @@ import { MECHANIC_IDS, getMechanic } from './mechanics.js';
 import { normaliseSymbol, assignOrders, sortSymbols } from './taxonomy.js';
 import { validateBehaviors } from './behaviorRecipes.js';
 import { validateScreens } from './screens.js';
+import { VOLATILITY_IDS } from './optimisation.js';
 
 // Allows a single-character name: `^[a-z][a-z0-9-]*[a-z0-9]$` required at least
 // two characters, so a game called "x" was rejected as not kebab-case.
@@ -71,6 +72,15 @@ export function loadGameSpec(specPath) {
 
 	if (!spec?.game?.betModes || !Object.keys(spec.game.betModes).length) {
 		errors.push('game.betModes must define at least one mode');
+	}
+
+	// Optional, and only read when generating the optimisation setup — but worth
+	// catching a typo here rather than at optimise time, which is the slowest
+	// step in the whole pipeline to fail in.
+	if (spec?.game?.volatility && !VOLATILITY_IDS.includes(spec.game.volatility)) {
+		errors.push(
+			`game.volatility must be one of: ${VOLATILITY_IDS.join(', ')} (got "${spec.game.volatility}")`,
+		);
 	}
 
 	// ── symbols ─────────────────────────────────────────────────────────────

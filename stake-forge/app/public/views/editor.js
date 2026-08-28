@@ -91,6 +91,15 @@ function gameCard(spec, registry, changed) {
 				input(g.rtp, (v) => { g.rtp = Number(v); changed(); }, 'mono', 'number'),
 			),
 			field(
+				'Volatility',
+				registry.volatility?.[g.volatility ?? 'medium']?.label ?? 'How the RTP is spread.',
+				select(
+					Object.keys(registry.volatility ?? { medium: {} }),
+					g.volatility ?? 'medium',
+					(v) => { g.volatility = v; changed(); },
+				),
+			),
+			field(
 				'Mechanic',
 				mech ? `math ${mech.mathSample} · web apps/${mech.webApp}` : null,
 				select(

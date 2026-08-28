@@ -41,7 +41,7 @@ import {
 } from '../src/lib/taxonomy.js';
 import { requiredStatesForSymbol, validateBehaviors, getRecipe, BEHAVIOR_RECIPES } from '../src/lib/behaviorRecipes.js';
 import { buildConfigObject, buildSymbolInfoMap, buildInitialBoard } from '../src/lib/generators.js';
-import { renderPaytable, renderSpecialSymbols, renderFreespinTriggers, renderReelCsv, renderNumRows, REEL_STRIP_LENGTH, SCATTER_DENSITY } from '../src/lib/mathGenerators.js';
+import { renderPaytable, renderSpecialSymbols, renderFreespinTriggers, renderReelCsv, renderNumRows, renderBetModes, betModeCriteria, REEL_STRIP_LENGTH, SCATTER_DENSITY } from '../src/lib/mathGenerators.js';
 import { MECHANICS } from '../src/lib/mechanics.js';
 import { assertNoExtractedMaterial, matchLine } from '../src/lib/inspirationRules.js';
 import { loadGameSpec, loadAssetsManifest, SpecValidationError } from '../src/lib/loadSpec.js';
@@ -52,6 +52,7 @@ import { applyWebRecipe } from '../src/lib/webRecipePatch.js';
 import { buildConfigFromMath } from '../src/commands/mathSync.js';
 import { summarise } from '../src/commands/mathReport.js';
 import { auditSound, readSoundVocabulary, readSoundsUsed, readSoundSprite } from '../src/lib/sound.js';
+import { planOptimisation, renderOptimisationPy, splitRtp, VOLATILITY_PROFILES, VOLATILITY_IDS } from '../src/lib/optimisation.js';
 
 /** A pristine sample app, for the checks that need real source to read. */
 const LINES_APP = process.env.FORGE_WEB_SDK
@@ -1299,6 +1300,183 @@ test('the shipped example spec is valid', () => {
 	const wild = spec.symbols.find((s) => s.name === 'W');
 	assert.deepEqual(wild.behaviors, ['expanding']);
 	assert.deepEqual(wild.special, ['wild', 'multiplier']);
+});
+
+
+// ── optimisation ────────────────────────────────────────────────────────────
+// The SDK asserts on all of this at import time, so getting it wrong is not a
+// subtly-wrong game — it is an AssertionError before a round is optimised.
+
+const optSpec = () => ({
+	game: {
+		name: 'opt-test',
+		rtp: 0.965,
+		reels: { count: 5, rows: [3, 3, 3, 3, 3] },
+		betModes: {
+			base: { cost: 1, rtp: 0.965, maxWin: 5000, feature: true, buyBonus: false },
+			bonus: { cost: 100, rtp: 0.965, maxWin: 5000, feature: false, buyBonus: true },
+		},
+	},
+	freeSpins: { triggerCount: 3 },
+});
+
+test('splitRtp parts sum EXACTLY to the whole, at 5dp', () => {
+	// verify_optimization_input does round(sum, 5) == round(total, 5). Rounding
+	// each share independently drifts off by 1e-5 for some splits, which is a
+	// hard failure rather than a rounding nicety.
+	for (const total of [0.965, 0.9642, 0.88, 0.9701, 0.5]) {
+		for (const share of [0.25, 0.33, 0.38, 0.55, 0.6667]) {
+			const parts = splitRtp(total, [share, 1 - share]);
+			const sum = parts.reduce((a, b) => a + b, 0);
+			assert.equal(
+				Math.round(sum * 1e5),
+				Math.round(total * 1e5),
+				`${total} split ${share} summed to ${sum}`,
+			);
+		}
+	}
+});
+
+test('every conditions key matches a distribution criteria', () => {
+	// The SDK asserts this directly. Both files are generated from
+	// betModeCriteria() so they cannot drift, and this proves the wiring.
+	const spec = optSpec();
+	const plan = planOptimisation(spec);
+	for (const mode of plan.modes) {
+		const criteria = betModeCriteria(spec.game.betModes[mode.name]).map((c) => c.criteria);
+		assert.deepEqual(
+			mode.conditions.map((c) => c.criteria).sort(),
+			[...criteria].sort(),
+			`mode ${mode.name}`,
+		);
+	}
+});
+
+test('condition RTPs sum to the bet mode RTP for every volatility profile', () => {
+	for (const volatility of VOLATILITY_IDS) {
+		const plan = planOptimisation(optSpec(), { volatility });
+		for (const mode of plan.modes) {
+			const sum = mode.conditions.reduce((total, c) => total + c.rtp, 0);
+			assert.equal(
+				Math.round(sum * 1e5),
+				Math.round(mode.rtp * 1e5),
+				`${volatility}/${mode.name}: ${sum} != ${mode.rtp}`,
+			);
+		}
+	}
+});
+
+test('a buy-bonus mode is free spins only, and never lands in the base game', () => {
+	// A basegame distribution here meant 90% of bonus rounds were plain base
+	// spins — a 100x purchase that usually bought nothing.
+	assert.deepEqual(
+		betModeCriteria({ buyBonus: true }).map((c) => c.criteria),
+		['freegame'],
+	);
+	const plan = planOptimisation(optSpec());
+	const bonus = plan.modes.find((m) => m.name === 'bonus');
+	assert.equal(bonus.conditions.length, 1);
+	assert.equal(bonus.conditions[0].criteria, 'freegame');
+	// hr="x": every round triggers, so there is no one-in-N to hit.
+	assert.equal(bonus.conditions[0].hitRate, 'x');
+});
+
+test('a non-buy mode carries a zero-win criteria, or the RTP is unreachable', () => {
+	// Without losing rounds in the simulated set the optimiser has nothing to
+	// weight down: measured, the base mode optimised to 331.94% against a 96.5%
+	// target at a hit rate of 1 in 1.0.
+	const criteria = betModeCriteria({ buyBonus: false });
+	const zero = criteria.find((c) => c.criteria === '0');
+	assert.ok(zero, 'no zero-win distribution');
+	assert.equal(zero.winCriteria, 0.0);
+
+	const base = planOptimisation(optSpec()).modes.find((m) => m.name === 'base');
+	const zeroCondition = base.conditions.find((c) => c.criteria === '0');
+	assert.ok(zeroCondition, 'no zero-win condition');
+	assert.equal(zeroCondition.rtp, 0, 'the zero criteria must not consume any RTP');
+	assert.equal(zeroCondition.avWin, 0);
+});
+
+test('the zero-win distribution emits win_criteria, and only it does', () => {
+	// Comments stripped first: the generated block carries a commented-out
+	// wincap example, which is documentation rather than an emitted distribution.
+	const py = renderBetModes(optSpec())
+		.split('\n')
+		.filter((line) => !line.trim().startsWith('#'))
+		.join('\n');
+	const blocks = py.split('Distribution(').slice(1);
+	for (const block of blocks) {
+		const criteria = /criteria="([^"]*)"/.exec(block)?.[1];
+		if (criteria === '0') assert.match(block, /win_criteria=0\.0/, 'zero-win has no win_criteria');
+		else assert.doesNotMatch(block, /win_criteria=/, `${criteria} should not pin a win_criteria`);
+	}
+});
+
+test('a game with no free spins puts all of the RTP in the base game', () => {
+	const spec = optSpec();
+	delete spec.freeSpins;
+	const base = planOptimisation(spec).modes.find((m) => m.name === 'base');
+	const free = base.conditions.find((c) => c.criteria === 'freegame');
+	assert.equal(free.rtp, 0, 'a game with no free spins cannot pay through them');
+	assert.equal(free.searchSymbol, null, 'nothing to search for without a scatter trigger');
+	assert.equal(base.conditions.find((c) => c.criteria === 'basegame').rtp, 0.965);
+});
+
+test('generated Python quotes hr="x" rather than emitting a bare name', () => {
+	// Raw interpolation produced `hr=x`, which is a NameError at import.
+	const spec = optSpec();
+	const py = renderOptimisationPy(spec, planOptimisation(spec));
+	assert.match(py, /hr="x"/);
+	assert.doesNotMatch(py, /hr=x[,)\s]/);
+});
+
+test('generated Python uses tuples where the SDK asserts on tuples', () => {
+	// ConstructScaling asserts isinstance(win_range, tuple) and ConstructFenceBias
+	// asserts len(range) == 2 — a list fails the first outright.
+	const spec = optSpec();
+	const py = renderOptimisationPy(spec, planOptimisation(spec));
+	assert.match(py, /"win_range": \(\d/);
+	assert.doesNotMatch(py, /"win_range": \[/);
+	assert.match(py, /bias_ranges=\[\(/);
+	// test_spins IS a list in the sample, and toml-dumped as one.
+	assert.match(py, /test_spins=\[\d/);
+});
+
+test('the zero-win criteria gets no scaling curve', () => {
+	// Every round in it pays zero, so a win_range factor has nothing to act on.
+	const base = planOptimisation(optSpec()).modes.find((m) => m.name === 'base');
+	assert.equal(base.scaling.filter((s) => s.criteria === '0').length, 0);
+});
+
+test('volatility moves the RTP into the feature, monotonically', () => {
+	const freeShare = (volatility) => {
+		const base = planOptimisation(optSpec(), { volatility }).modes.find((m) => m.name === 'base');
+		return base.conditions.find((c) => c.criteria === 'freegame').rtp;
+	};
+	assert.ok(freeShare('low') < freeShare('medium'), 'low should pay less through the feature');
+	assert.ok(freeShare('medium') < freeShare('high'), 'high should pay more through the feature');
+});
+
+test('an unknown volatility is refused by name, not silently defaulted', () => {
+	assert.throws(() => planOptimisation(optSpec(), { volatility: 'spicy' }), /Unknown volatility "spicy"/);
+});
+
+test('every volatility profile is complete', () => {
+	for (const [id, profile] of Object.entries(VOLATILITY_PROFILES)) {
+		for (const key of ['label', 'freegameShare', 'baseHitRate', 'freegameHitRate', 'scaleSpread']) {
+			assert.ok(profile[key] !== undefined, `${id} is missing ${key}`);
+		}
+		assert.ok(profile.freegameShare > 0 && profile.freegameShare < 1, `${id} share out of range`);
+	}
+});
+
+test('game.volatility is validated in the spec, not at optimise time', () => {
+	withSpec(MINIMAL.replace('rtp: 0.96\n', 'rtp: 0.96\n  volatility: enormous\n'), (file) => {
+		assert.throws(() => loadGameSpec(file), /game\.volatility must be one of/);
+	});
+	withSpec(MINIMAL.replace('rtp: 0.96\n', 'rtp: 0.96\n  volatility: high\n'), (file) => {
+		assert.equal(loadGameSpec(file).game.volatility, 'high');
+	});
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

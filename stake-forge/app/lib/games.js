@@ -190,6 +190,8 @@ function starterSpec({ id, name, mechanic, providerName, profile }) {
 			gameId: `0_0_${id.replace(/-/g, '_')}`,
 			workingName: name || id,
 			rtp: 0.965,
+			// Drives the optimisation targets. Medium is the shape most slots have.
+			volatility: 'medium',
 			mechanic,
 			reels: { ...profile.defaultReels },
 			betModes: {

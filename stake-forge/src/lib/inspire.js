@@ -44,6 +44,7 @@ function baseDraft({ name, providerName }) {
 			providerName: providerName || 'your_studio',
 			gameId: `0_0_${id.replace(/-/g, '_')}`,
 			rtp: 0.965,
+			volatility: 'medium',
 			mechanic: 'lines',
 			reels: { count: 5, rows: [3, 3, 3, 3, 3] },
 			betModes: {
