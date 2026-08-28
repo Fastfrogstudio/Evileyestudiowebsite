@@ -53,6 +53,7 @@ import { buildConfigFromMath } from '../src/commands/mathSync.js';
 import { summarise } from '../src/commands/mathReport.js';
 import { auditSound, readSoundVocabulary, readSoundsUsed, readSoundSprite } from '../src/lib/sound.js';
 import { planOptimisation, renderOptimisationPy, splitRtp, VOLATILITY_PROFILES, VOLATILITY_IDS } from '../src/lib/optimisation.js';
+import { planSprite, spriteJson, buildFilterGraph, looksLooping, readSoundSources, SPRITE_FORMATS, CLIP_GAP_MS } from '../src/lib/soundSprite.js';
 
 /** A pristine sample app, for the checks that need real source to read. */
 const LINES_APP = process.env.FORGE_WEB_SDK
@@ -1477,6 +1478,122 @@ test('game.volatility is validated in the spec, not at optimise time', () => {
 	withSpec(MINIMAL.replace('rtp: 0.96\n', 'rtp: 0.96\n  volatility: high\n'), (file) => {
 		assert.equal(loadGameSpec(file).game.volatility, 'high');
 	});
+});
+
+
+// ── audio sprite ────────────────────────────────────────────────────────────
+// The layout convention was read off the shipped sprite rather than invented,
+// so the strongest test is that it reproduces that sprite exactly.
+
+const SHIPPED_SPRITE = path.join(LINES_APP, 'static', 'assets', 'audio', 'sounds.json');
+const shipped = fs.existsSync(SHIPPED_SPRITE) ? JSON.parse(fs.readFileSync(SHIPPED_SPRITE, 'utf8')) : null;
+
+test('the layout reproduces the shipped sprite offset for offset', () => {
+	if (!shipped) return; // no web-sdk checkout here
+	const clips = Object.entries(shipped.sprite)
+		.sort((a, b) => a[1][0] - b[1][0])
+		.map(([name, v]) => ({ name, durationMs: v[1], loop: Boolean(v[2]) }));
+	const plan = planSprite(clips);
+	for (const entry of plan.entries) {
+		assert.equal(entry.start, shipped.sprite[entry.name][0], `${entry.name} landed at the wrong offset`);
+	}
+});
+
+test('the loop heuristic matches the shipped sprite exactly', () => {
+	if (!shipped) return;
+	const ours = Object.keys(shipped.sprite).filter(looksLooping).sort();
+	const theirs = Object.entries(shipped.sprite).filter(([, v]) => v[2]).map(([k]) => k).sort();
+	assert.deepEqual(ours, theirs);
+});
+
+test('every clip starts on a whole second, with at least a 1s gap', () => {
+	// A sprite is one file seeked into, and browsers seek imprecisely — without
+	// the pad a clip bleeds into the next one.
+	const clips = [
+		{ name: 'a', durationMs: 1500 },
+		{ name: 'b', durationMs: 10 },
+		{ name: 'c', durationMs: 69120 },
+		{ name: 'd', durationMs: 132452.83 },
+	];
+	const plan = planSprite(clips);
+	let previousEnd = 0;
+	for (const entry of plan.entries) {
+		assert.equal(entry.start % 1000, 0, `${entry.name} does not start on a whole second`);
+		if (previousEnd) {
+			assert.ok(entry.start - previousEnd >= CLIP_GAP_MS, `${entry.name} is padded by less than 1s`);
+		}
+		previousEnd = entry.start + entry.durationMs;
+	}
+	assert.ok(plan.totalMs >= previousEnd);
+});
+
+test('no two clips overlap, whatever the durations', () => {
+	const clips = Array.from({ length: 40 }, (_, i) => ({
+		name: `s${i}`,
+		// Deliberately awkward: sub-millisecond, exactly-on-the-second, and long.
+		durationMs: [0.4, 1000, 999.999, 1000.001, 45231.7][i % 5],
+	}));
+	const plan = planSprite(clips);
+	for (let i = 1; i < plan.entries.length; i += 1) {
+		const previous = plan.entries[i - 1];
+		assert.ok(
+			plan.entries[i].start >= previous.start + previous.durationMs,
+			`${plan.entries[i].name} starts before ${previous.name} ends`,
+		);
+	}
+});
+
+test('sounds.json has exactly the shape the loader reads', () => {
+	const plan = planSprite([
+		{ name: 'bgm_main', durationMs: 1000, loop: true },
+		{ name: 'sfx_btn_spin', durationMs: 250, loop: false, volume: 0.5 },
+	]);
+	const json = spriteJson(plan);
+	assert.deepEqual(Object.keys(json).sort(), ['config', 'sprite', 'src']);
+	// A looping clip carries the third element; a one-shot must NOT — the shipped
+	// sprite only sets it on the 8 that loop.
+	assert.equal(json.sprite.bgm_main.length, 3);
+	assert.equal(json.sprite.bgm_main[2], true);
+	assert.equal(json.sprite.sfx_btn_spin.length, 2);
+	assert.equal(json.config.sfx_btn_spin.volume, 0.5);
+	assert.equal(json.config.bgm_main.volume, 1);
+	// Paths resolve from static/, not from the JSON's own folder.
+	assert.deepEqual(json.src, SPRITE_FORMATS.map((f) => `./assets/audio/sounds.${f.ext}`));
+});
+
+test('the shipped sprite ships all four formats, and so do we', () => {
+	if (!shipped) return;
+	assert.deepEqual(spriteJson(planSprite([{ name: 'x', durationMs: 1 }])).src, shipped.src);
+});
+
+test('the filter graph normalises every input before mixing', () => {
+	// Mixing a 48kHz mono clip with a 44.1kHz stereo one without resampling
+	// produces a mangled or silent track, and ffmpeg does not warn about it.
+	const graph = buildFilterGraph([
+		{ name: 'a', start: 0 },
+		{ name: 'b', start: 2000 },
+	]);
+	assert.equal((graph.match(/aresample=44100/g) ?? []).length, 2);
+	assert.equal((graph.match(/channel_layouts=stereo/g) ?? []).length, 2);
+	assert.match(graph, /adelay=0\|0/);
+	assert.match(graph, /adelay=2000\|2000/);
+	// normalize=0 is load-bearing: amix otherwise divides every sample by the
+	// input count and the whole sprite comes out near-silent.
+	assert.match(graph, /amix=inputs=2:normalize=0/);
+});
+
+test('the source folder maps filenames to sound names', () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-sound-'));
+	try {
+		fs.writeFileSync(path.join(dir, 'bgm_main.wav'), '');
+		fs.writeFileSync(path.join(dir, 'sfx_btn_spin.MP3'), '');
+		fs.writeFileSync(path.join(dir, 'notes.txt'), 'not audio');
+		fs.writeFileSync(path.join(dir, 'sounds.yaml'), 'x: 1');
+		const found = readSoundSources(dir);
+		assert.deepEqual(found.map((f) => f.name), ['bgm_main', 'sfx_btn_spin']);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

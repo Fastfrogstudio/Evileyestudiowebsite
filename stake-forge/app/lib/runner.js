@@ -82,6 +82,24 @@ export const STEPS = {
 			'--spec', path.join(dir, 'game-spec.yaml'),
 		],
 	},
+	'sound:build': {
+		id: 'sound:build',
+		title: 'Build the audio sprite',
+		blurb: 'Mix your sound files into the one sprite the web-sdk actually loads, in all four formats.',
+		needs: ['webSdk', 'scaffolded', 'sounds'],
+		// The sprite is still WRITTEN when sounds are missing — the command exits
+		// non-zero to say the game will be partly silent, which is true and worth
+		// saying, but a half-supplied audio folder is a normal state to be in
+		// mid-project and nothing downstream depends on it. Stopping a whole build
+		// over it would mean never getting to the maths.
+		advisory: true,
+		args: ({ dir, config, spec }) => [
+			'sound:build',
+			'--sdk', config.webSdk,
+			'--game', spec.game.name,
+			'--source', path.join(dir, 'sounds-source'),
+		],
+	},
 	'math:run': {
 		id: 'math:run',
 		title: 'Simulate',
@@ -165,6 +183,7 @@ export const STEP_ORDER = [
 	'math:scaffold',
 	'scaffold',
 	'assets:import',
+	'sound:build',
 	'math:run',
 	'math:optimise',
 	'math:sync',

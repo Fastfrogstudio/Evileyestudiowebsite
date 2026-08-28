@@ -196,6 +196,8 @@ tr:last-child td { border-bottom: 0; }
 }
 .step.done .step-num { background: rgba(78,201,138,0.2); color: var(--ok); }
 .step.failed .step-num { background: rgba(242,112,95,0.2); color: var(--err); }
+/* An advisory step that found something real, but nothing downstream depends on. */
+.step.warned .step-num { background: rgba(224,178,74,0.2); color: var(--warn); }
 .step.running .step-num { background: rgba(240,181,63,0.2); color: var(--accent); }
 .step-body { min-width: 0; flex: 1; }
 .step-title { font-weight: 550; font-size: 13px; }

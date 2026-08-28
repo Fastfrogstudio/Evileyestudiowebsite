@@ -31,6 +31,9 @@ import {
 	detachScreen,
 	symbolWiring,
 	safeName,
+	soundsDir,
+	listSounds,
+	safeSoundName,
 } from './lib/assets.js';
 
 import { analyseInspiration } from '../src/lib/inspire.js';
@@ -41,6 +44,7 @@ import { ROLES, ENGINE_SPECIAL_KEYS, typeRequiredStates, defaultAnimationStates 
 import { VOLATILITY_PROFILES } from '../src/lib/optimisation.js';
 import { requiredStatesForSymbol } from '../src/lib/behaviorRecipes.js';
 import { INSPIRATION_RULES } from '../src/lib/inspirationRules.js';
+import { readSoundsUsed, readSoundVocabulary, readSoundSprite } from '../src/lib/sound.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -122,6 +126,7 @@ app.get('/api/registry', (_req, res) => {
 			title: STEPS[id].title,
 			blurb: STEPS[id].blurb,
 			needs: STEPS[id].needs,
+			advisory: Boolean(STEPS[id].advisory),
 		})),
 	});
 });
@@ -237,6 +242,8 @@ app.get('/api/games/:id', (req, res) => {
 		// Lookup tables, not books: they are what math:report reads, and both are
 		// written by the same run, so their presence is the honest signal that a
 		// simulation has actually produced results.
+		// Drives the sound:build step's blocked state on the Build tab.
+		game.soundCount = listSounds(game.dir).length;
 		game.simulated = Boolean(
 			mathDir &&
 				fs.existsSync(path.join(mathDir, 'library', 'lookup_tables')) &&
@@ -351,6 +358,77 @@ app.post('/api/games/:id/assets/upload', upload.array('files', 200), (req, res) 
 			}
 		}
 		res.json({ written, rejected, assets: listAssets(gameDir(config.workspace, req.params.id)) });
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+// ── sounds ──────────────────────────────────────────────────────────────────
+// Audio is not wired per-symbol like art is: the filename is the sound name,
+// and the whole folder is built into one sprite by `forge sound:build`.
+app.get('/api/games/:id/sounds', (req, res) => {
+	try {
+		const config = loadConfig();
+		const dir = gameDir(config.workspace, req.params.id);
+		const game = readGame(config.workspace, req.params.id);
+		const appDir =
+			config.webSdk && game.raw?.game?.name
+				? path.join(config.webSdk, 'apps', game.raw.game.name)
+				: null;
+
+		// What the game's own code plays, so an uploaded folder can be checked
+		// against it right here rather than after a build.
+		const played = appDir && fs.existsSync(appDir) ? [...readSoundsUsed(appDir).keys()].sort() : [];
+		const vocabulary = appDir && fs.existsSync(appDir) ? readSoundVocabulary(appDir) : { music: [], effects: [] };
+		const sounds = listSounds(dir);
+		const supplied = new Set(sounds.map((s) => s.name));
+		const allowed = new Set([...vocabulary.music, ...vocabulary.effects]);
+
+		res.json({
+			sounds,
+			played,
+			// The finding that matters: played by the game, absent from the folder.
+			// It is silent at runtime with no error at all.
+			missing: played.filter((n) => allowed.has(n) && !supplied.has(n)),
+			unknown: sounds.filter((s) => allowed.size && !allowed.has(s.name)).map((s) => s.name),
+			unused: sounds.filter((s) => !played.includes(s.name)).map((s) => s.name),
+			vocabulary: [...allowed].sort(),
+			sprite: appDir && fs.existsSync(appDir) ? readSoundSprite(appDir) : { found: false },
+		});
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+app.post('/api/games/:id/sounds/upload', upload.array('files', 400), (req, res) => {
+	try {
+		const config = loadConfig();
+		const dir = soundsDir(gameDir(config.workspace, req.params.id));
+		fs.ensureDirSync(dir);
+
+		const written = [];
+		const rejected = [];
+		for (const file of req.files ?? []) {
+			try {
+				const name = safeSoundName(file.originalname);
+				fs.writeFileSync(path.join(dir, name), file.buffer);
+				written.push(name);
+			} catch (err) {
+				rejected.push({ file: file.originalname, reason: err.message });
+			}
+		}
+		res.json({ written, rejected, sounds: listSounds(gameDir(config.workspace, req.params.id)) });
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+app.delete('/api/games/:id/sounds/:file', (req, res) => {
+	try {
+		const config = loadConfig();
+		const dir = soundsDir(gameDir(config.workspace, req.params.id));
+		fs.removeSync(path.join(dir, safeSoundName(req.params.file)));
+		res.json({ sounds: listSounds(gameDir(config.workspace, req.params.id)) });
 	} catch (err) {
 		fail(res, err);
 	}

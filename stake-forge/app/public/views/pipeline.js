@@ -36,6 +36,7 @@ export function renderPipeline(ctx) {
 			if (need === 'scaffolded' && !current.scaffolded?.web) return 'web app not scaffolded yet';
 			if (need === 'mathScaffolded' && !current.scaffolded?.math) return 'math not scaffolded yet';
 			if (need === 'simulated' && !current.simulated) return 'nothing simulated yet — run "Simulate" first';
+			if (need === 'sounds' && !current.soundCount) return 'no audio files uploaded yet (Assets → Sound)';
 		}
 		if (!current.valid) return 'the spec has errors — fix those first';
 		return null;
@@ -100,7 +101,7 @@ export function renderPipeline(ctx) {
 				continue;
 			}
 			await run(step.id, { refresh: false });
-			if (state.results[step.id] === 'failed') {
+			if (state.results[step.id] === 'failed' && !step.advisory) {
 				ctx.refreshGame();
 				toast('Stopped — a step failed', 'err');
 				return;
@@ -123,10 +124,13 @@ export function renderPipeline(ctx) {
 			stepsEl,
 			registry.steps.map((step, i) => {
 				const blocked = blockedReason(step);
-				const status = state.results[step.id];
+				// An advisory step that failed found something real, but nothing
+				// downstream depends on it — so it reads as a warning, not a stop.
+				const raw = state.results[step.id];
+				const status = raw === 'failed' && step.advisory ? 'warned' : raw;
 				return h(
 					`div.step${blocked ? '.blocked' : ''}${status ? `.${status}` : ''}`,
-					h('div.step-num', status === 'running' ? h('span.spin', '◌') : status === 'done' ? '✓' : status === 'failed' ? '✕' : String(i + 1)),
+					h('div.step-num', status === 'running' ? h('span.spin', '◌') : status === 'done' ? '✓' : status === 'warned' ? '!' : status === 'failed' ? '✕' : String(i + 1)),
 					h('div.step-body',
 						h('div.step-title', step.title),
 						h('div.step-blurb', blocked ? h('span.dim', blocked) : step.blurb),
@@ -134,7 +138,7 @@ export function renderPipeline(ctx) {
 					h('button.btn.btn-small', {
 						disabled: Boolean(blocked) || Boolean(state.running),
 						onclick: () => run(step.id),
-					}, status === 'done' ? 'Re-run' : 'Run'),
+					}, status === 'done' || status === 'warned' ? 'Re-run' : 'Run'),
 				);
 			}),
 		);

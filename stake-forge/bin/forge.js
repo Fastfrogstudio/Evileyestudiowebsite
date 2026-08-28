@@ -10,6 +10,7 @@ import { mathRun } from '../src/commands/mathRun.js';
 import { mathSync } from '../src/commands/mathSync.js';
 import { mathReport } from '../src/commands/mathReport.js';
 import { mathOptimise } from '../src/commands/mathOptimise.js';
+import { soundBuild } from '../src/commands/soundBuild.js';
 import { importAssets } from '../src/commands/importAssets.js';
 import { placeholderArt } from '../src/commands/placeholderArt.js';
 import { audit } from '../src/commands/audit.js';
@@ -196,6 +197,26 @@ program
 				specPath: path.resolve(opts.spec),
 				mathSdkDir: path.resolve(opts.mathSdk),
 				json: opts.json,
+			}),
+		),
+	);
+
+program
+	.command('sound:build')
+	.description('Build the audio sprite (sounds.json + 4 formats) from a folder of individual sound files')
+	.requiredOption('--sdk <path>', 'path to a checkout of StakeEngine/web-sdk')
+	.requiredOption('--source <path>', 'folder of audio files, each named after the sound it is')
+	.option('--spec <path>', 'path to game-spec.yaml, to know which app to build into')
+	.option('--game <name>', 'the game.name you used (matches apps/<name>) — alternative to --spec')
+	.option('--dry-run', 'show the planned layout without writing anything', false)
+	.action(
+		run((opts) =>
+			soundBuild({
+				specPath: opts.spec ? path.resolve(opts.spec) : null,
+				sdkDir: path.resolve(opts.sdk),
+				sourceDir: path.resolve(opts.source),
+				gameName: opts.game,
+				dryRun: opts.dryRun,
 			}),
 		),
 	);

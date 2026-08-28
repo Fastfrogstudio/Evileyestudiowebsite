@@ -15,10 +15,14 @@ export function renderAssets(ctx) {
 	const { game } = ctx;
 	const root = h('div');
 	let data = null;
+	let sounds = null;
 
 	async function load() {
 		try {
-			data = await api(`/api/games/${game.id}/assets`);
+			[data, sounds] = await Promise.all([
+				api(`/api/games/${game.id}/assets`),
+				api(`/api/games/${game.id}/sounds`),
+			]);
 			render();
 		} catch (err) {
 			mount(root, h('div.card', h('div.msg.msg-err', err.message)));
@@ -65,12 +69,37 @@ export function renderAssets(ctx) {
 		await load();
 	}
 
+	async function uploadSounds(files) {
+		if (!files?.length) return;
+		const form = new FormData();
+		for (const file of files) form.append('files', file);
+		try {
+			const result = await api(`/api/games/${game.id}/sounds/upload`, { method: 'POST', body: form });
+			for (const r of result.rejected ?? []) toast(`${r.file}: ${r.reason}`, 'err', 8000);
+			if (result.written?.length) {
+				toast(`Added ${result.written.length} sound${result.written.length === 1 ? '' : 's'}`, 'ok');
+			}
+			await load();
+			ctx.refreshGame();
+		} catch (err) {
+			toast(err.message, 'err', 8000);
+		}
+	}
+
+	async function removeSound(file) {
+		if (!confirm(`Delete ${file}?`)) return;
+		await api(`/api/games/${game.id}/sounds/${encodeURIComponent(file)}`, { method: 'DELETE' });
+		await load();
+		ctx.refreshGame();
+	}
+
 	function render() {
 		mount(root,
 			uploadCard({ upload }),
 			wiringCard({ data, attach, detach, openWiring }),
 			screensCard({ data, attach, detachSlot }),
 			namedCard({ data, attach, detachNamed }),
+			soundCard({ sounds, uploadSounds, removeSound }),
 			filesCard({ data, gameId: game.id, remove }),
 		);
 	}
@@ -129,6 +158,116 @@ function uploadCard({ upload }) {
 		h('h2', 'Upload'),
 		h('p.card-sub', 'Files land in the game’s assets-source folder. Nothing is wired up until you say so.'),
 		drop,
+	);
+}
+
+// ── sound ───────────────────────────────────────────────────────────────────
+/**
+ * Audio is supplied differently from art, and the UI should say so rather than
+ * pretend it is the same.
+ *
+ * Art is wired symbol by symbol. Audio is not wired at all: the FILENAME is the
+ * sound name, and the whole folder is mixed into the one sprite the web-sdk
+ * loads. So the only thing worth showing is the reconciliation — which of the
+ * names this game's code plays you have supplied, and which you have not.
+ *
+ * That last part is why this card exists. A missing sound does not throw and
+ * does not log; the moment just plays nothing.
+ */
+function soundCard({ sounds, uploadSounds, removeSound }) {
+	if (!sounds) return h('div.card', h('h2', 'Sound'), h('p.card-sub', 'Loading…'));
+
+	const input = h('input', {
+		type: 'file',
+		multiple: true,
+		accept: 'audio/*',
+		style: 'display:none',
+		onchange: (e) => { uploadSounds(e.target.files); e.target.value = ''; },
+	});
+
+	const drop = h('div.dropzone', {
+		ondragover: (e) => { e.preventDefault(); drop.classList.add('over'); },
+		ondragleave: () => drop.classList.remove('over'),
+		ondrop: (e) => {
+			e.preventDefault();
+			drop.classList.remove('over');
+			uploadSounds(e.dataTransfer.files);
+		},
+		onclick: () => input.click(),
+	},
+		h('div', { style: 'font-size:22px' }, '♪'),
+		h('div', { style: 'font-weight:550; margin-top:6px' }, 'Drop your sounds here'),
+		h('div.small.dim', { style: 'margin-top:4px' },
+			'Name each file after the sound it is — bgm_main.wav, sfx_btn_spin.wav. ',
+			'The filename becomes the name the game plays by.',
+		),
+		input,
+	);
+
+	const supplied = new Set(sounds.sounds.map((s) => s.name));
+
+	// The list the game plays, each marked supplied or silent. Sorted so the
+	// silent ones are at the top: they are the only rows that need action.
+	const rows = [...sounds.played]
+		.sort((a, b) => Number(supplied.has(a)) - Number(supplied.has(b)) || a.localeCompare(b))
+		.map((name) => {
+			const file = sounds.sounds.find((s) => s.name === name);
+			return h('tr',
+				h('td', h('code', name)),
+				h('td',
+					file
+						? h('span.pill.ok', 'supplied')
+						: h('span.pill.err', 'silent'),
+				),
+				h('td.dim.small', file ? `${(file.size / 1024).toFixed(0)} KB · ${file.file}` : 'no file with this name'),
+				h('td', file
+					? h('button.btn.btn-small', { onclick: () => removeSound(file.file) }, 'Remove')
+					: null),
+			);
+		});
+
+	const extra = sounds.sounds
+		.filter((s) => !sounds.played.includes(s.name))
+		.map((s) =>
+			h('tr',
+				h('td', h('code', s.name)),
+				h('td', sounds.unknown.includes(s.name)
+					? h('span.pill.warn', 'unknown name')
+					: h('span.pill', 'not played')),
+				h('td.dim.small', `${(s.size / 1024).toFixed(0)} KB · ${s.file}`),
+				h('td', h('button.btn.btn-small', { onclick: () => removeSound(s.file) }, 'Remove')),
+			),
+		);
+
+	const sprite = sounds.sprite?.found
+		? h('div.msg.msg-info.small',
+			`The app currently ships a sprite of ${sounds.sprite.supplied.length} sound(s) `,
+			`in ${sounds.sprite.formats.join(', ')}. `,
+			'Building again replaces it.')
+		: h('div.msg.msg-warn.small', 'This app has no audio sprite yet.');
+
+	return h('div.card',
+		h('h2', 'Sound'),
+		h('p.card-sub',
+			'The web-sdk does not load loose audio files — it loads one sprite plus a JSON of offsets. ',
+			'Drop your clips here and “Build the audio sprite” on the Build tab assembles it.',
+		),
+		drop,
+		sounds.missing.length
+			? h('div.msg.msg-err',
+				h('strong', `${sounds.missing.length} sound(s) this game plays have no file. `),
+				'They will play nothing, with no error anywhere: ',
+				sounds.missing.join(', '))
+			: sounds.played.length
+				? h('div.msg.msg-ok.small', 'Every sound this game plays has a file.')
+				: null,
+		sprite,
+		rows.length || extra.length
+			? h('table.table',
+				h('thead', h('tr', h('th', 'Sound'), h('th', 'State'), h('th', 'File'), h('th'))),
+				h('tbody', ...rows, ...extra),
+			)
+			: h('p.small.dim', 'Nothing uploaded yet.'),
 	);
 }
 

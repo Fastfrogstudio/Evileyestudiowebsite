@@ -31,6 +31,53 @@ export function assetsDir(gameDir) {
 }
 
 /**
+ * Audio lives in its own folder, not in assets-source.
+ *
+ * Art is wired symbol-by-symbol through assets-manifest.yaml; audio is not
+ * wired at all — the filename IS the sound name, and the whole folder is built
+ * into one sprite. Mixing them would mean every audio file showed up in the
+ * art manifest as an unclassifiable stray.
+ */
+export function soundsDir(gameDir) {
+	return path.join(gameDir, 'sounds-source');
+}
+
+/** Audio file types ffmpeg will decode that anyone actually hands you. */
+export const ACCEPTED_AUDIO = /\.(wav|mp3|ogg|m4a|aac|flac|aiff|aif|opus|wma)$/i;
+
+/** Reject an audio filename that could escape sounds-source. */
+export function safeSoundName(name) {
+	const base = path.basename(String(name));
+	if (!base || base.startsWith('.') || base !== name) {
+		throw new Error(`Unsafe filename: ${name}`);
+	}
+	if (!ACCEPTED_AUDIO.test(base)) {
+		throw new Error(`${base} is not an audio file type this accepts (wav, mp3, ogg, m4a, flac, aiff, opus)`);
+	}
+	return base;
+}
+
+/** What is in the sounds folder, with the name each file will become. */
+export function listSounds(gameDir) {
+	const dir = soundsDir(gameDir);
+	if (!fs.existsSync(dir)) return [];
+	return fs
+		.readdirSync(dir, { withFileTypes: true })
+		.filter((e) => e.isFile() && ACCEPTED_AUDIO.test(e.name))
+		.map((e) => {
+			const full = path.join(dir, e.name);
+			return {
+				file: e.name,
+				// The filename minus its extension is the sprite key, and therefore
+				// the name the game's code plays by.
+				name: path.basename(e.name, path.extname(e.name)),
+				size: fs.statSync(full).size,
+			};
+		})
+		.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
  * Classify a file and, for a spine skeleton, read its animation names.
  *
  * A skeleton and a sprite-atlas descriptor are both .json, so they are told
