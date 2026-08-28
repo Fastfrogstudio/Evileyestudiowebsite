@@ -58,10 +58,14 @@ export function mount(el, ...children) {
 
 /** JSON fetch that turns an API error body into a thrown Error with details. */
 export async function api(url, options = {}) {
+	// FormData must go through untouched: stringifying it would send "[object
+	// FormData]", and setting Content-Type by hand drops the multipart boundary
+	// the browser generates.
+	const isForm = options.body instanceof FormData;
 	const res = await fetch(url, {
-		headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+		headers: options.body && !isForm ? { 'Content-Type': 'application/json' } : undefined,
 		...options,
-		body: options.body ? JSON.stringify(options.body) : undefined,
+		body: isForm ? options.body : options.body ? JSON.stringify(options.body) : undefined,
 	});
 	const text = await res.text();
 	let data = null;

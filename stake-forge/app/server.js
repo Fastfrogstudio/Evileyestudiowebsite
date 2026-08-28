@@ -7,6 +7,7 @@
  */
 
 import express from 'express';
+import multer from 'multer';
 import fs from 'fs-extra';
 import YAML from 'yaml';
 import path from 'node:path';
@@ -16,17 +17,42 @@ import { loadConfig, saveConfig, validateConfig, guessPaths } from './lib/config
 import { listGames, readGame, writeGame, createGame, validateSpecObject, gameDir } from './lib/games.js';
 import { STEPS, STEP_ORDER, runStep, auditJson } from './lib/runner.js';
 import { startPreview, stopPreview, previewState, previewStories, stopAllPreviews } from './lib/preview.js';
+import {
+	assetsDir,
+	listAssets,
+	spineGroups,
+	readManifest,
+	attachSpine,
+	attachSprite,
+	attachScreen,
+	attachSprite_,
+	detachSprite_,
+	detachSymbol,
+	detachScreen,
+	symbolWiring,
+	safeName,
+} from './lib/assets.js';
 
 import { analyseInspiration } from '../src/lib/inspire.js';
 import { BEHAVIOR_RECIPES } from '../src/lib/behaviorRecipes.js';
 import { MECHANICS } from '../src/lib/mechanics.js';
 import { SCREEN_SLOTS, WIN_LEVEL_ALIASES, WIN_LEVEL_ANIMATIONS, BANNER_WIN_LEVELS } from '../src/lib/screens.js';
 import { ROLES, ENGINE_SPECIAL_KEYS, typeRequiredStates, defaultAnimationStates } from '../src/lib/taxonomy.js';
+import { requiredStatesForSymbol } from '../src/lib/behaviorRecipes.js';
 import { INSPIRATION_RULES } from '../src/lib/inspirationRules.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+
+/**
+ * Uploads are buffered in memory and written by the route, so a rejected
+ * filename never lands on disk at all. 64MB covers a large spine atlas with
+ * room to spare; beyond that the file almost certainly does not belong in a
+ * game bundle.
+ */
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 64 * 1024 * 1024 } });
+
 app.use(express.json({ limit: '4mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -249,6 +275,121 @@ app.get('/api/games/:id/art', (req, res) => {
 			.filter((f) => /\.(png|webp|jpg|jpeg|gif)$/i.test(f))
 			.map((f) => ({ file: f, url: `/api/games/${req.params.id}/art/${encodeURIComponent(f)}` }));
 		res.json({ files });
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+// ── your own assets ─────────────────────────────────────────────────────────
+/**
+ * Everything in assets-source, classified — and for a spine skeleton, the
+ * animation names read out of it, so states can be mapped from a dropdown
+ * rather than typed blind.
+ */
+app.get('/api/games/:id/assets', (req, res) => {
+	try {
+		const config = loadConfig();
+		const dir = gameDir(config.workspace, req.params.id);
+		const game = readGame(config.workspace, req.params.id);
+		const assets = listAssets(dir);
+		const manifest = readManifest(dir);
+
+		const symbols = game.normalised?.symbols ?? [];
+		const mechanicId = game.normalised?.mechanic?.id;
+		const artStates = mechanicId ? defaultAnimationStates({ mechanic: mechanicId }) : [];
+
+		res.json({
+			assets: assets.map((a) => ({
+				...a,
+				url: a.kind === 'image' ? `/api/games/${req.params.id}/art/${encodeURIComponent(a.file)}` : null,
+			})),
+			groups: spineGroups(assets),
+			manifest,
+			wiring: symbolWiring({
+				manifest,
+				symbols,
+				requiredStatesFor: (symbol) => [...requiredStatesForSymbol(symbol, artStates).keys()],
+			}),
+			namedSprites: Object.entries(manifest.sprites ?? {}).map(([key, file]) => ({ key, file })),
+			screenSlots: Object.entries(SCREEN_SLOTS)
+				.filter(([, slot]) => !slot.onlyMechanics || slot.onlyMechanics.includes(mechanicId))
+				.map(([slotId, slot]) => ({ slotId, ...slot, supplied: manifest.screens?.[slotId] ?? null })),
+		});
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+app.post('/api/games/:id/assets/upload', upload.array('files', 200), (req, res) => {
+	try {
+		const config = loadConfig();
+		const dir = assetsDir(gameDir(config.workspace, req.params.id));
+		fs.ensureDirSync(dir);
+
+		const written = [];
+		const rejected = [];
+		for (const file of req.files ?? []) {
+			try {
+				const name = safeName(file.originalname);
+				fs.writeFileSync(path.join(dir, name), file.buffer);
+				written.push(name);
+			} catch (err) {
+				rejected.push({ file: file.originalname, reason: err.message });
+			}
+		}
+		res.json({ written, rejected, assets: listAssets(gameDir(config.workspace, req.params.id)) });
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+app.delete('/api/games/:id/assets/:file', (req, res) => {
+	try {
+		const config = loadConfig();
+		const dir = assetsDir(gameDir(config.workspace, req.params.id));
+		const name = safeName(req.params.file);
+		fs.removeSync(path.join(dir, name));
+		res.json({ removed: name });
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+/** Attach a spine export or a flat image to a symbol, replacing what it had. */
+app.post('/api/games/:id/assets/attach', (req, res) => {
+	try {
+		const config = loadConfig();
+		const dir = gameDir(config.workspace, req.params.id);
+		const { symbol, slotId, kind, ...rest } = req.body ?? {};
+
+		if (kind === 'named') {
+			if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(rest.key ?? '')) {
+				throw new Error('Asset key must be a plain identifier, e.g. logo or popup_bg');
+			}
+			res.json({ manifest: attachSprite_(dir, rest.key, rest.file) });
+			return;
+		}
+		if (slotId) {
+			res.json({ manifest: attachScreen(dir, slotId, rest.entry) });
+			return;
+		}
+		if (!symbol) throw new Error('symbol or slotId is required');
+
+		const manifest =
+			kind === 'spine' ? attachSpine(dir, symbol, rest) : attachSprite(dir, symbol, rest);
+		res.json({ manifest });
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+app.post('/api/games/:id/assets/detach', (req, res) => {
+	try {
+		const config = loadConfig();
+		const dir = gameDir(config.workspace, req.params.id);
+		const { symbol, slotId, key } = req.body ?? {};
+		if (key) return res.json({ manifest: detachSprite_(dir, key) });
+		res.json({ manifest: slotId ? detachScreen(dir, slotId) : detachSymbol(dir, symbol) });
 	} catch (err) {
 		fail(res, err);
 	}

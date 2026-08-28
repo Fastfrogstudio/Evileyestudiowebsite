@@ -189,6 +189,19 @@ export const SCREEN_SLOTS = {
 		required: false,
 		note: 'Driven by the `anticipation` array on the reveal bookEvent.',
 	},
+	logo: {
+		assetKey: 'logo',
+		component: 'Game.svelte',
+		assetType: 'sprite',
+		animations: [],
+		required: false,
+		manualWiring: true,
+		note:
+			'Registers the asset, but the sample apps have NO logo slot to plug into — ' +
+			"Game.svelte renders `<Text text=\"ADD YOUR LOGO\" />` inside its `{#snippet logo()}`. " +
+			'Swap that Text for `<Sprite key="logo" />` and size it to taste. Not generated, ' +
+			'because the size and anchor are design decisions this tool cannot make for you.',
+	},
 };
 
 export const SCREEN_SLOT_IDS = Object.keys(SCREEN_SLOTS);
