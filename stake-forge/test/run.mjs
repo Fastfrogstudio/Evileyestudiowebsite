@@ -59,6 +59,7 @@ import { renderStickyMath } from '../src/lib/recipes/sticky.js';
 import { renderSuperspinReelCsv, hasSuperspinMode, BLANK_SYMBOL, SUPERSPIN_PRIZE_DENSITY } from '../src/lib/mathGenerators.js';
 import { payingHitRate } from '../src/lib/optimisation.js';
 import { addDictEntry, insertAfterLineInMethod, insertAfterImports } from '../src/lib/pyPatch.js';
+import { auditSpriteFrames, readSpriteFrames, readSpriteAssetKeys } from '../src/lib/spriteFrames.js';
 
 /** A pristine sample app, for the checks that need real source to read. */
 const LINES_APP = process.env.FORGE_WEB_SDK
@@ -2027,6 +2028,154 @@ test('insertAfterImports does not splice into a parenthesised import', () => {
 	const out = insertAfterImports(src, ['CONST = 1']);
 	assert.match(out, /from b import z\n\nCONST = 1/);
 	assert.match(out, /from a import \(\n {4}x,\n {4}y,\n\)/, 'the parenthesised import must be intact');
+});
+
+
+// ── sprite frames ───────────────────────────────────────────────────────────
+// A symbol pointing at a frame no sheet holds renders as NOTHING, silently —
+// the same failure class as a missing sound, and found the same way: by looking
+// at the running game and noticing the scatter was invisible.
+
+function withSpriteApp(setup, fn) {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-app-'));
+	try {
+		const sheets = path.join(root, 'static', 'assets', 'sprites', 'symbolsStatic');
+		const game = path.join(root, 'src', 'game');
+		fs.mkdirSync(sheets, { recursive: true });
+		fs.mkdirSync(game, { recursive: true });
+		setup({ root, sheets, game });
+		return fn({ root });
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+}
+
+const sheetJson = (frames) =>
+	JSON.stringify({ frames: Object.fromEntries(frames.map((f) => [f, {}])) });
+
+const constantsTs = (entries) =>
+	'export const SYMBOL_INFO_MAP = {\n' +
+	entries
+		.map(
+			([symbol, key]) =>
+				`\t${symbol}: {\n\t\tstatic: {\n\t\t\ttype: 'sprite',\n\t\t\tassetKey: '${key}',\n\t\t},\n\t},`,
+		)
+		.join('\n') +
+	'\n} as const;\n';
+
+test('a frame that exists in a sheet passes', () => {
+	withSpriteApp(({ sheets, game }) => {
+		fs.writeFileSync(path.join(sheets, 'symbolsStatic.json'), sheetJson(['h1.webp', 's.png']));
+		fs.writeFileSync(path.join(game, 'constants.ts'), constantsTs([['H1', 'h1.webp'], ['S', 's.png']]));
+	}, ({ root }) => {
+		const result = auditSpriteFrames(root);
+		assert.equal(result.ok, true);
+		assert.deepEqual(result.missing, []);
+	});
+});
+
+test('a frame no sheet holds is reported, with the near miss named', () => {
+	// "s.webp" against a sheet holding "s.png" is one character from working.
+	withSpriteApp(({ sheets, game }) => {
+		fs.writeFileSync(path.join(sheets, 'symbolsStatic.json'), sheetJson(['h1.webp', 's.png']));
+		fs.writeFileSync(path.join(game, 'constants.ts'), constantsTs([['H1', 'h1.webp'], ['S', 's.webp']]));
+	}, ({ root }) => {
+		const result = auditSpriteFrames(root);
+		assert.equal(result.ok, false);
+		assert.equal(result.missing.length, 1);
+		assert.equal(result.missing[0].symbol, 'S');
+		assert.deepEqual(result.missing[0].assetKeys, ['s.webp']);
+		assert.deepEqual(result.missing[0].near, ['s.png']);
+	});
+});
+
+test('a symbol with no art at all is reported with no near miss', () => {
+	withSpriteApp(({ sheets, game }) => {
+		fs.writeFileSync(path.join(sheets, 'symbolsStatic.json'), sheetJson(['l1.webp']));
+		fs.writeFileSync(path.join(game, 'constants.ts'), constantsTs([['L5', 'l5.webp']]));
+	}, ({ root }) => {
+		const result = auditSpriteFrames(root);
+		assert.equal(result.missing[0].symbol, 'L5');
+		assert.deepEqual(result.missing[0].near, [], 'nothing to suggest — the art does not exist');
+	});
+});
+
+test('frames are collected across every sheet, not just one', () => {
+	withSpriteApp(({ root, sheets, game }) => {
+		fs.writeFileSync(path.join(sheets, 'symbolsStatic.json'), sheetJson(['h1.webp']));
+		const other = path.join(root, 'static', 'assets', 'sprites', 'coins');
+		fs.mkdirSync(other, { recursive: true });
+		fs.writeFileSync(path.join(other, 'coins.json'), sheetJson(['s.png']));
+		fs.writeFileSync(path.join(game, 'constants.ts'), constantsTs([['H1', 'h1.webp'], ['S', 's.png']]));
+	}, ({ root }) => {
+		// The loader picks the sheet, not the symbol — so a frame in ANY sheet counts.
+		assert.equal(auditSpriteFrames(root).ok, true);
+	});
+});
+
+test('a spine assetKey is NOT checked against sheet frames', () => {
+	// It resolves against assets.ts instead — a different namespace. Checking it
+	// here would report every spine symbol as broken.
+	withSpriteApp(({ sheets, game }) => {
+		fs.writeFileSync(path.join(sheets, 'symbolsStatic.json'), sheetJson(['h1.webp']));
+		fs.writeFileSync(
+			path.join(game, 'constants.ts'),
+			"export const SYMBOL_INFO_MAP = {\n\tH1: {\n\t\twin: {\n\t\t\ttype: 'spine',\n\t\t\tassetKey: 'H1',\n\t\t},\n\t},\n} as const;\n",
+		);
+	}, ({ root }) => {
+		assert.equal(auditSpriteFrames(root).ok, true);
+	});
+});
+
+test('the scaffolder matches real frames instead of guessing an extension', () => {
+	// The guess is `<name>.webp`. Against a sheet holding s.png and w.png it is
+	// wrong, and the symbol renders as nothing with no error.
+	const frames = ['h1.webp', 'l1.webp', 's.png', 'w.png'];
+	const spec = {
+		game: { name: 'g', rtp: 0.96, reels: { count: 5, rows: [3, 3, 3, 3, 3] }, betModes: { base: {} } },
+		symbols: [
+			{ name: 'W', role: 'wild', special: ['wild'], paytable: { 5: 10 }, behaviors: [], order: 1 },
+			{ name: 'H1', role: 'high', special: [], paytable: { 5: 20 }, behaviors: [], order: 1 },
+			{ name: 'L1', role: 'low', special: [], paytable: { 5: 2 }, behaviors: [], order: 1 },
+			{ name: 'S', role: 'scatter', special: ['scatter'], behaviors: [], order: 1 },
+			{ name: 'L9', role: 'low', special: [], paytable: { 5: 1 }, behaviors: [], order: 2 },
+		],
+	};
+	const map = buildSymbolInfoMap(spec, { availableFrames: frames });
+	assert.equal(map.S.static.assetKey, 's.png');
+	assert.equal(map.W.static.assetKey, 'w.png');
+	assert.equal(map.H1.static.assetKey, 'h1.webp');
+	// Nothing matches L9, so the guess stands and the audit reports it rather
+	// than the generator inventing a frame.
+	assert.equal(map.L9.static.assetKey, 'l9.webp');
+});
+
+test('frame resolution survives a one-shot iterator', () => {
+	// Callers pass a Map's .keys(). Spreading it per symbol drained it on the
+	// first one, so W resolved and every symbol after it fell back to the guess.
+	const sheet = new Map([['s.png', 'x'], ['w.png', 'x']]);
+	const spec = {
+		game: { name: 'g', rtp: 0.96, reels: { count: 5, rows: [3, 3, 3, 3, 3] }, betModes: { base: {} } },
+		symbols: [
+			{ name: 'W', role: 'wild', special: ['wild'], paytable: { 5: 10 }, behaviors: [], order: 1 },
+			{ name: 'S', role: 'scatter', special: ['scatter'], behaviors: [], order: 1 },
+		],
+	};
+	const map = buildSymbolInfoMap(spec, { availableFrames: sheet.keys() });
+	assert.equal(map.W.static.assetKey, 'w.png');
+	assert.equal(map.S.static.assetKey, 's.png', 'the second symbol saw a drained iterator');
+});
+
+test('a bet mode cannot be both a bonus buy and a hold-and-win round', () => {
+	withSpec(
+		MINIMAL.replace(
+			'base: { cost: 1.0, rtp: 0.96, maxWin: 5000, feature: true, buyBonus: false }',
+			'base: { cost: 1.0, rtp: 0.96, maxWin: 5000, feature: true, buyBonus: true, superspin: true }',
+		),
+		(file) => {
+			assert.throws(() => loadGameSpec(file), /both superspin and buyBonus/);
+		},
+	);
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

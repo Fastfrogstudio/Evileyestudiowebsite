@@ -158,16 +158,40 @@ export function renderConfigTs(spec) {
  * Every state points at a flat sprite placeholder named after the symbol until
  * `forge assets:import` swaps in the real spine/sprite references.
  */
-export function buildSymbolInfoMap(spec) {
+export function buildSymbolInfoMap(spec, { availableFrames } = {}) {
 	// Every state in the SymbolState union, for every mechanic — see
 	// taxonomy.js typeRequiredStates() for why this is not conditional.
 	const states = typeRequiredStates();
 	const map = {};
 
+	/**
+	 * Pick the sprite frame for a symbol.
+	 *
+	 * `<name>.webp` is a guess, and for a sample sheet holding `s.png`, `w.png`
+	 * and no `l5` at all it is a wrong one — the symbol then renders as nothing,
+	 * with no error anywhere. When the caller can tell us which frames the
+	 * cloned sheet actually holds, match against them: same stem, any extension,
+	 * case-insensitive. Where nothing matches, the guess stands and `forge audit`
+	 * reports it rather than the game silently showing an empty cell.
+	 */
+	// Materialised ONCE, outside frameFor. Callers pass a Map's .keys(), which is
+	// a one-shot iterator: spreading it per symbol drained it on the first one,
+	// so W resolved correctly and every symbol after it silently fell back to
+	// the guess.
+	const frames = availableFrames ? [...availableFrames] : null;
+
+	const frameFor = (name) => {
+		const guess = `${name.toLowerCase()}.webp`;
+		if (!frames) return guess;
+		if (frames.includes(guess)) return guess;
+		const stem = name.toLowerCase();
+		return frames.find((f) => f.replace(/\.[^.]+$/, '').toLowerCase() === stem) ?? guess;
+	};
+
 	for (const s of sortSymbols(spec.symbols)) {
 		const placeholder = {
 			type: 'sprite',
-			assetKey: `${s.name.toLowerCase()}.webp`,
+			assetKey: frameFor(s.name),
 			sizeRatios: { width: 1, height: 1 },
 		};
 		map[s.name] = {};

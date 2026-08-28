@@ -7,6 +7,7 @@ import { defaultAnimationStates } from '../lib/taxonomy.js';
 import { requiredStatesForSymbol, getRecipe } from '../lib/behaviorRecipes.js';
 import { SCREEN_SLOTS, slotsForMechanic, flattenScreens } from '../lib/screens.js';
 import { auditSound } from '../lib/sound.js';
+import { auditSpriteFrames } from '../lib/spriteFrames.js';
 
 /**
  * Cross-check assets-manifest.yaml against everything the spec implies, BEFORE
@@ -246,6 +247,23 @@ export function audit({ specPath, manifestPath, sdkDir, json }) {
 		if (!fs.existsSync(appDir)) {
 			add('info', 'sound', `apps/${spec.game.name} not scaffolded yet — skipped the sound check`);
 		} else {
+			// Sprite frames first: an invisible symbol is more obviously wrong than
+			// a silent sound, and both fail the same silent way.
+			const frames = auditSpriteFrames(appDir);
+			for (const miss of frames.missing) {
+				add(
+					'error',
+					`symbol ${miss.symbol}`,
+					`points at sprite frame${miss.assetKeys.length > 1 ? 's' : ''} ${miss.assetKeys.join(', ')}, ` +
+						`which ${miss.assetKeys.length > 1 ? 'are' : 'is'} not in any sprite sheet — ` +
+						`it will render as NOTHING, with no error`,
+					miss.near.length
+						? `The sheet has "${miss.near[0]}". Either rename the frame or point at that one.`
+						: `Supply art for ${miss.symbol} and run "forge assets:import", which rewrites ` +
+							`SYMBOL_INFO_MAP to point at what you actually supplied.`,
+				);
+			}
+
 			soundResult = auditSound(appDir);
 
 			for (const name of soundResult.missing) {

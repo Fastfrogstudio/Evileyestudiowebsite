@@ -4,6 +4,7 @@ import chalk from 'chalk';
 
 import { loadGameSpec } from '../lib/loadSpec.js';
 import { renderConfigTs, buildSymbolInfoMap, buildInitialBoard } from '../lib/generators.js';
+import { readSpriteFrames } from '../lib/spriteFrames.js';
 import { highSymbolNames } from '../lib/taxonomy.js';
 import { tsStringify } from '../lib/tsSerialize.js';
 import { replaceExportConst } from '../lib/patchExport.js';
@@ -20,13 +21,30 @@ function copyApp(sdkDir, mechanicApp, targetName, { force }) {
 			`Sample app "${mechanicApp}" not found at ${src}. Is --sdk pointing at a checkout of StakeEngine/web-sdk?`,
 		);
 	}
+	// node_modules survives a --force re-scaffold.
+	//
+	// It is a pnpm symlink farm, not source, and the re-clone comes from the same
+	// sample with the same dependencies — so removing it only forces another
+	// `pnpm install` in the whole workspace. Without this, every re-scaffold
+	// silently broke the preview and the type-check until that install was run
+	// again, which is a slow and completely avoidable round trip.
+	const modules = path.join(dest, 'node_modules');
+	const stashed = path.join(sdkDir, 'apps', `.${targetName}-node_modules`);
+	let restore = false;
+
 	if (fs.existsSync(dest)) {
 		if (!force) {
 			throw new Error(`apps/${targetName} already exists. Re-run with --force to overwrite it.`);
 		}
+		if (fs.existsSync(modules)) {
+			fs.removeSync(stashed);
+			fs.renameSync(modules, stashed);
+			restore = true;
+		}
 		fs.removeSync(dest);
 	}
 	fs.copySync(src, dest, { filter: (p) => !SKIP_DIRS.has(path.basename(p)) });
+	if (restore) fs.renameSync(stashed, modules);
 	return dest;
 }
 
@@ -48,7 +66,12 @@ function patchConstantsTs(appDir, spec) {
 		else missed.push(name);
 	};
 
-	patch('SYMBOL_INFO_MAP', tsStringify(buildSymbolInfoMap(spec)));
+	// The app was just cloned from a sample, so its sprite sheets are on disk and
+	// the placeholder frame names can be matched against what they actually hold
+	// instead of guessed. A guess of "s.webp" against a sheet holding "s.png"
+	// renders the symbol as nothing, silently.
+	const { frames } = readSpriteFrames(appDir);
+	patch('SYMBOL_INFO_MAP', tsStringify(buildSymbolInfoMap(spec, { availableFrames: frames.keys() })));
 	patch('HIGH_SYMBOLS', tsStringify(highSymbolNames(spec.symbols)));
 	patch('INITIAL_BOARD', tsStringify(buildInitialBoard(spec)));
 

@@ -203,7 +203,22 @@ function betModesCard(spec, changed) {
 			h('td', numberInput(mode.rtp ?? spec.game.rtp, (v) => { mode.rtp = v; changed(); }, 0.001)),
 			h('td', numberInput(mode.maxWin, (v) => { mode.maxWin = v; changed(); }, 1)),
 			h('td', checkbox(mode.feature, (v) => { mode.feature = v; changed(); })),
-			h('td', checkbox(mode.buyBonus, (v) => { mode.buyBonus = v; changed(); })),
+			h('td', checkbox(mode.buyBonus, (v) => {
+				mode.buyBonus = v;
+				if (v) mode.superspin = false;
+				changed();
+			})),
+			// Hold-and-win is a MODE, not a modifier: it gets its own respin loop,
+			// its own reel strip and its own criteria. Without this checkbox a
+			// "sticky" behavior could only be set up by hand-editing the YAML.
+			h('td', checkbox(mode.superspin, (v) => {
+				mode.superspin = v;
+				// A hold-and-win round is its own game. It cannot also be a bonus
+				// buy of the base game, and leaving both set generates
+				// contradictory distributions.
+				if (v) mode.buyBonus = false;
+				changed();
+			})),
 			h(
 				'td',
 				h('button.btn.btn-small.btn-danger', {
@@ -220,10 +235,15 @@ function betModesCard(spec, changed) {
 	return h(
 		'div.card',
 		h('h2', 'Bet modes'),
-		h('p.card-sub', 'Max win also sets the win cap. Distributions are generated minimally — balancing them is a math job.'),
+		h('p.card-sub',
+			'Max win also sets the win cap. Distributions are generated minimally — balancing them is a math job. ',
+			h('strong', 'Hold & win'),
+			' makes the mode a respin round with its own loop and reel strip — pair it with a symbol ',
+			'carrying the ', h('code', 'sticky'), ' behavior.',
+		),
 		h(
 			'table',
-			h('thead', h('tr', ['Mode', 'Cost', 'RTP', 'Max win', 'Feature', 'Buy bonus', ''].map((t) => h('th', t)))),
+			h('thead', h('tr', ['Mode', 'Cost', 'RTP', 'Max win', 'Feature', 'Buy bonus', 'Hold & win', ''].map((t) => h('th', t)))),
 			h('tbody', rows),
 		),
 		h('div.row', { style: 'margin-top:12px' },
@@ -232,7 +252,14 @@ function betModesCard(spec, changed) {
 					let name = 'mode';
 					let n = 2;
 					while (modes[name]) name = `mode${n++}`;
-					modes[name] = { cost: 1.0, rtp: spec.game.rtp, maxWin: 5000, feature: true, buyBonus: false };
+					modes[name] = {
+						cost: 1.0,
+						rtp: spec.game.rtp,
+						maxWin: 5000,
+						feature: true,
+						buyBonus: false,
+						superspin: false,
+					};
 					changed();
 				},
 			}, 'Add bet mode'),

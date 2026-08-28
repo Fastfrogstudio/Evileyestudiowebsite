@@ -72,6 +72,19 @@ export function loadGameSpec(specPath) {
 
 	if (!spec?.game?.betModes || !Object.keys(spec.game.betModes).length) {
 		errors.push('game.betModes must define at least one mode');
+	} else {
+		for (const [name, mode] of Object.entries(spec.game.betModes)) {
+			// A hold-and-win round is its own game with its own loop, reel strip
+			// and criteria. A bonus buy is a purchased spin of the base game that
+			// forces a free-spin trigger. A mode cannot be both, and the two
+			// generate contradictory distributions if it claims to be.
+			if (mode?.superspin && mode?.buyBonus) {
+				errors.push(
+					`bet mode "${name}" is both superspin and buyBonus. A hold-and-win round is its own ` +
+						`game loop, not a purchased spin of the base one — pick one.`,
+				);
+			}
+		}
 	}
 
 	// Optional, and only read when generating the optimisation setup — but worth

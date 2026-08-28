@@ -9,6 +9,7 @@
 
 import fs from 'fs-extra';
 import path from 'node:path';
+import net from 'node:net';
 import { spawn } from 'node:child_process';
 
 const BASE_PORT = 6100;
@@ -17,10 +18,30 @@ const MAX_PREVIEWS = 4;
 /** gameName -> { port, child, status, log, startedAt } */
 const previews = new Map();
 
-function nextPort() {
+/**
+ * A port nothing is listening on.
+ *
+ * Checking our own map is not enough. A stopped preview's storybook can outlive
+ * the SIGTERM by a second or two, and reusing its port immediately meant the
+ * NEW storybook found the port taken, prompted "run on 6101 instead?", and sat
+ * there forever — while the readiness poll happily got a 200 from the OLD
+ * server still on that port and reported "ready". The app then showed a blank
+ * page and nothing said why.
+ */
+async function isPortFree(port) {
+	return new Promise((resolve) => {
+		const server = net.createServer();
+		server.once('error', () => resolve(false));
+		server.once('listening', () => server.close(() => resolve(true)));
+		server.listen(port, '127.0.0.1');
+	});
+}
+
+async function nextPort() {
 	const used = new Set([...previews.values()].map((p) => p.port));
 	for (let port = BASE_PORT; port < BASE_PORT + 50; port += 1) {
-		if (!used.has(port)) return port;
+		if (used.has(port)) continue;
+		if (await isPortFree(port)) return port;
 	}
 	throw new Error('no free preview port');
 }
@@ -42,7 +63,7 @@ export function allPreviews() {
 	return Object.fromEntries([...previews.keys()].map((name) => [name, previewState(name)]));
 }
 
-export function startPreview({ gameName, webSdk }) {
+export async function startPreview({ gameName, webSdk }) {
 	const existing = previews.get(gameName);
 	if (existing && existing.status !== 'stopped' && existing.status !== 'error') {
 		return previewState(gameName);
@@ -66,14 +87,20 @@ export function startPreview({ gameName, webSdk }) {
 		if (oldest) stopPreview(oldest[0]);
 	}
 
-	const port = nextPort();
+	const port = await nextPort();
 	const child = spawn(
 		'npx',
-		['--no-install', 'storybook', 'dev', '-p', String(port), '--no-open', '--quiet'],
+		// --ci so storybook never asks anything. Without it, a taken port turns
+		// into an interactive "run on 6101 instead? (Y/n)" prompt that blocks
+		// forever with no output explaining the hang.
+		['--no-install', 'storybook', 'dev', '-p', String(port), '--no-open', '--quiet', '--ci'],
 		{
 			cwd: appDir,
-			env: { ...process.env, PUBLIC_CHROMATIC: 'true', FORCE_COLOR: '0', NO_COLOR: '1' },
-			detached: false,
+			env: { ...process.env, PUBLIC_CHROMATIC: 'true', FORCE_COLOR: '0', NO_COLOR: '1', CI: 'true' },
+			// Its own process group, so stopping it can kill the whole tree.
+			// `npx` forks the real storybook process; SIGTERM to npx alone left
+			// that child alive and holding the port.
+			detached: true,
 		},
 	);
 
@@ -155,13 +182,38 @@ export function stopPreview(gameName) {
 	const preview = previews.get(gameName);
 	if (!preview) return { status: 'stopped' };
 	preview.status = 'stopping';
-	try {
-		preview.child.kill('SIGTERM');
-	} catch {
-		// already gone
-	}
+	killTree(preview.child);
 	previews.delete(gameName);
 	return { status: 'stopped' };
+}
+
+/**
+ * Kill the whole process group, not just the process we spawned.
+ *
+ * `npx storybook` forks the real server, so signalling npx alone leaves a live
+ * vite dev server holding the port. Negative pid signals the group, which is
+ * why the child is spawned detached.
+ */
+function killTree(child) {
+	try {
+		process.kill(-child.pid, 'SIGTERM');
+	} catch {
+		try {
+			child.kill('SIGTERM');
+		} catch {
+			// already gone
+		}
+	}
+	// SIGKILL shortly after, in case something ignored the TERM. Unref'd so it
+	// never holds the server process open on its own.
+	const timer = setTimeout(() => {
+		try {
+			process.kill(-child.pid, 'SIGKILL');
+		} catch {
+			// already gone
+		}
+	}, 4000);
+	timer.unref?.();
 }
 
 export function stopAllPreviews() {

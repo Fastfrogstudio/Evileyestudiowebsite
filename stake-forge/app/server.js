@@ -532,11 +532,11 @@ app.get('/api/games/:id/run/:step', async (req, res) => {
 });
 
 // ── preview ─────────────────────────────────────────────────────────────────
-app.post('/api/games/:id/preview/start', (req, res) => {
+app.post('/api/games/:id/preview/start', async (req, res) => {
 	try {
 		const config = loadConfig();
 		const game = readGame(config.workspace, req.params.id);
-		res.json(startPreview({ gameName: game.raw.game.name, webSdk: config.webSdk }));
+		res.json(await startPreview({ gameName: game.raw.game.name, webSdk: config.webSdk }));
 	} catch (err) {
 		fail(res, err);
 	}
