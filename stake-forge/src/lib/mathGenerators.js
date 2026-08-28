@@ -117,6 +117,25 @@ export function renderAnticipationTriggers(spec) {
 }
 
 /**
+ * Strip length and scatter density, both taken from the real sample games
+ * rather than picked.
+ *
+ * Measured across math-sdk's own BR0.csv files:
+ *   games/0_0_lines     219 rows, 0.5%-2.3% scatters per reel
+ *   games/0_0_ways      251 rows, 0.8%-2.4%
+ *   games/0_0_expwilds  628 rows, 0.2%-1.3%
+ *
+ * Density is not cosmetic. At 6% every free spin re-triggers (three scatters
+ * across five reels becomes the common case), `tot_fs` grows faster than `fs`,
+ * and run_freespin()'s `while self.fs < self.tot_fs` never terminates — the
+ * simulation hangs rather than failing. 1.4% sits mid-range of the real games,
+ * with a floor of 2 per reel so force_special_board() can always place its
+ * exact count.
+ */
+export const REEL_STRIP_LENGTH = 220;
+export const SCATTER_DENSITY = 0.014;
+
+/**
  * A placeholder reel CSV per strip.
  *
  * Same caveat as the web side: this is NOT real math. It exists so the game can
@@ -127,14 +146,24 @@ export function renderAnticipationTriggers(spec) {
  * validate_reel_symbols() checks every symbol on a strip is a known symbol, so
  * the placeholder only ever emits names from the spec.
  */
-export function renderReelCsv(spec, { length = 100, seed = 'BR0' } = {}) {
+export function renderReelCsv(spec, { length = REEL_STRIP_LENGTH, seed = 'BR0' } = {}) {
 	const weights =
 		spec.placeholderReelWeights || Object.fromEntries(spec.symbols.map((s) => [s.name, 10]));
+
+	const scatterNames = new Set(
+		spec.symbols.filter((s) => s.special.includes('scatter')).map((s) => s.name),
+	);
+
 	const pool = [];
 	for (const [name, weight] of Object.entries(weights)) {
+		if (scatterNames.has(name)) continue; // scatters are placed deliberately, below
 		for (let i = 0; i < weight; i += 1) pool.push(name);
 	}
-	if (!pool.length) throw new Error('placeholderReelWeights produced an empty symbol pool');
+	if (!pool.length) {
+		throw new Error(
+			'placeholderReelWeights produced an empty non-scatter pool — every symbol cannot be a scatter',
+		);
+	}
 
 	// Deterministic per (game, strip) so re-running produces no spurious diff.
 	let h = 2166136261;
@@ -149,38 +178,44 @@ export function renderReelCsv(spec, { length = 100, seed = 'BR0' } = {}) {
 		return ((h >>> 0) % 100000) / 100000;
 	};
 
-	// Scatters must not stack within one reel's visible window.
-	// Board.force_special_board() loops until the board holds EXACTLY the
-	// requested number of scatters, and its own docstring warns: "Ensure the
-	// reels do not have stacked scatter symbols." Two scatters visible in the
-	// same reel make an exact count unreachable, so that loop never terminates.
-	const scatterNames = new Set(
-		spec.symbols.filter((s) => s.special.includes('scatter')).map((s) => s.name),
+	const reels = spec.game.reels.count;
+	const columns = Array.from({ length: reels }, () =>
+		Array.from({ length }, () => pool[Math.floor(rng() * pool.length)]),
 	);
+
+	// ── Scatters are PLACED, not rolled ──────────────────────────────────────
+	// Two hard requirements from Board.force_special_board(), which loops until
+	// the board holds EXACTLY the requested number of trigger symbols:
+	//
+	//   1. Every reel must carry at least one scatter. Rolling them from a
+	//      weighted pool leaves that to chance — at a weight of 3 in ~120 over a
+	//      100-row strip a reel drawing zero is entirely likely, and then the
+	//      loop can never reach its target and hangs forever.
+	//   2. No two scatters may fall within one reel's visible window, or two
+	//      appear at once and an exact count is again unreachable. The method's
+	//      own docstring says: "Ensure the reels do not have stacked scatter
+	//      symbols."
+	//
+	// So each reel gets a fixed number of scatters at evenly spaced positions,
+	// jittered within their slot to avoid a visible lattice across reels.
 	const window = Math.max(...spec.game.reels.rows) + 2;
-	const nonScatter = pool.filter((n) => !scatterNames.has(n));
-
-	const columns = Array.from({ length: spec.game.reels.count }, () => []);
-	const lastScatterAt = new Array(spec.game.reels.count).fill(-Infinity);
-
-	for (let i = 0; i < length; i += 1) {
-		for (let reel = 0; reel < spec.game.reels.count; reel += 1) {
-			let pick = pool[Math.floor(rng() * pool.length)];
-			if (scatterNames.has(pick)) {
-				// Reject a scatter too close to the previous one on this reel,
-				// including across the wrap, since reel strips are cyclic.
-				const tooClose =
-					i - lastScatterAt[reel] < window ||
-					(length - i + (lastScatterAt[reel] === -Infinity ? length : lastScatterAt[reel])) < window;
-				if (tooClose) {
-					pick = nonScatter.length
-						? nonScatter[Math.floor(rng() * nonScatter.length)]
-						: pick;
-				} else {
-					lastScatterAt[reel] = i;
-				}
+	if (scatterNames.size) {
+		const perReel = Math.max(2, Math.round(length * SCATTER_DENSITY));
+		const slot = Math.floor(length / perReel);
+		if (slot <= window) {
+			throw new Error(
+				`reel strip of ${length} rows is too short to hold ${perReel} spaced scatters ` +
+					`for a board ${window - 2} rows tall — raise the strip length`,
+			);
+		}
+		const names = [...scatterNames];
+		for (let reel = 0; reel < reels; reel += 1) {
+			for (let n = 0; n < perReel; n += 1) {
+				// Keep the jitter inside the slot so neighbours stay >= window apart.
+				const jitter = Math.floor(rng() * (slot - window));
+				const at = (n * slot + jitter) % length;
+				columns[reel][at] = names[Math.floor(rng() * names.length)];
 			}
-			columns[reel].push(pick);
 		}
 	}
 

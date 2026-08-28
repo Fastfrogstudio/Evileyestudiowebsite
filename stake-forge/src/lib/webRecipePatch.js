@@ -17,6 +17,8 @@
 import fs from 'fs-extra';
 import path from 'node:path';
 
+import { tsStringify } from './tsSerialize.js';
+
 /** Insert `text` before the `export type BookEvent =` union declaration. */
 function insertBeforeUnion(source, text) {
 	const idx = source.indexOf('export type BookEvent =');
@@ -127,9 +129,11 @@ function patchStoryEvents(appDir, emitted) {
 			}
 		}
 
-		const block = additions
-			.map(([key, value]) => `\t${key}: ${JSON.stringify(value, null, '\t').replace(/\n/g, '\n\t')},`)
-			.join('\n');
+		// tsStringify rather than JSON.stringify: the sample story files use the
+		// codebase's own style (tabs, unquoted identifier keys, single quotes),
+		// and a block of double-quoted JSON in the middle of one reads as foreign
+		// and fails the repo's prettier check.
+		const block = additions.map(([key, value]) => `\t${key}: ${tsStringify(value, 1)},`).join('\n');
 		source = `${source.slice(0, i)}${block}\n${source.slice(i)}`;
 		fs.writeFileSync(full, source, 'utf8');
 	}

@@ -176,8 +176,31 @@ except Exception as exc:
     out = {"ok": False, "error": f"{type(exc).__name__}: {exc}", "traceback": traceback.format_exc()}
 print("STAKE_FORGE_JSON:" + json.dumps(out))
 `;
-	const result = spawnSync(python, ['-c', script], { encoding: 'utf8', timeout: 300000 });
+	const TIMEOUT_MS = 120000;
+	const result = spawnSync(python, ['-c', script], { encoding: 'utf8', timeout: TIMEOUT_MS });
 	const line = (result.stdout || '').split('\n').find((l) => l.startsWith('STAKE_FORGE_JSON:'));
+
+	// A timeout here is almost always a non-terminating loop rather than slow
+	// maths, and there is one dominant cause worth naming: run_freespin()'s
+	// `while self.fs < self.tot_fs` never exits if free spins re-trigger faster
+	// than they are consumed. Too many scatters on the reel strip does exactly
+	// that. The second cause is force_special_board(), which loops until the
+	// board holds an EXACT scatter count — unreachable if a reel has none, or if
+	// two can appear in one reel's window.
+	if (result.error?.code === 'ETIMEDOUT' || result.signal) {
+		return {
+			name: `run_spin(${betmode}/${criteria})`,
+			ok: false,
+			detail:
+				`no result after ${TIMEOUT_MS / 1000}s — the simulation is not terminating.\n` +
+				`    Most likely one of:\n` +
+				`      - too many scatters on the reel strips, so every free spin re-triggers and\n` +
+				`        tot_fs outruns fs in run_freespin()'s while loop;\n` +
+				`      - a reel with no scatter at all, or two within one reel's visible window, so\n` +
+				`        force_special_board() can never reach its exact count.\n` +
+				`    Check games/<game_id>/reels/*.csv against a sample game's density (~0.2-2.4%).`,
+		};
+	}
 
 	if (!line) {
 		return {

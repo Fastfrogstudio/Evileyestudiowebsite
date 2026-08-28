@@ -41,7 +41,7 @@ import {
 } from '../src/lib/taxonomy.js';
 import { requiredStatesForSymbol, validateBehaviors, getRecipe, BEHAVIOR_RECIPES } from '../src/lib/behaviorRecipes.js';
 import { buildConfigObject, buildSymbolInfoMap, buildInitialBoard } from '../src/lib/generators.js';
-import { renderPaytable, renderSpecialSymbols, renderFreespinTriggers, renderReelCsv, renderNumRows } from '../src/lib/mathGenerators.js';
+import { renderPaytable, renderSpecialSymbols, renderFreespinTriggers, renderReelCsv, renderNumRows, REEL_STRIP_LENGTH, SCATTER_DENSITY } from '../src/lib/mathGenerators.js';
 import { MECHANICS } from '../src/lib/mechanics.js';
 import { assertNoExtractedMaterial, matchLine } from '../src/lib/inspirationRules.js';
 import { loadGameSpec, SpecValidationError } from '../src/lib/loadSpec.js';
@@ -705,26 +705,65 @@ test('freespin_triggers omits the freegame table when retrigger is off', () => {
 	assert.ok(!out.includes('freegame_type'));
 });
 
-test('placeholder reels never stack scatters within a reel window', () => {
+test('every reel carries at least one scatter', () => {
 	// force_special_board() loops until the board holds EXACTLY the requested
-	// number of scatters; two visible in one reel make that unreachable.
-	const spec = specFor('lines');
-	const csv = renderReelCsv(spec, { seed: 'BR0', length: 300 });
-	const rows = csv.trim().split('\n').map((r) => r.split(','));
-	const window = Math.max(...spec.game.reels.rows) + 2;
-	for (let reel = 0; reel < spec.game.reels.count; reel += 1) {
-		const positions = rows.map((r) => r[reel]).map((s, i) => (s === 'S' ? i : -1)).filter((i) => i >= 0);
-		for (let i = 1; i < positions.length; i += 1) {
-			assert.ok(positions[i] - positions[i - 1] >= window, `scatters too close on reel ${reel}`);
+	// number of trigger symbols. A reel with no scatter makes that unreachable
+	// and hangs the simulation — which is exactly what happened when scatters
+	// were rolled from the weighted pool rather than placed.
+	for (const mechanic of Object.keys(MECHANICS)) {
+		const spec = specFor(mechanic);
+		for (const seed of ['BR0', 'FR0', 'WCAP']) {
+			const rows = renderReelCsv(spec, { seed }).trim().split('\n').map((r) => r.split(','));
+			for (let reel = 0; reel < spec.game.reels.count; reel += 1) {
+				const count = rows.filter((r) => r[reel] === 'S').length;
+				assert.ok(count >= 1, `${mechanic}/${seed} reel ${reel} has no scatter`);
+			}
 		}
 	}
+});
+
+test('placeholder reels never stack scatters within a reel window', () => {
+	// Two scatters visible in one reel also make an exact count unreachable.
+	for (const mechanic of Object.keys(MECHANICS)) {
+		const spec = specFor(mechanic);
+		const window = Math.max(...spec.game.reels.rows) + 2;
+		for (const seed of ['BR0', 'FR0', 'WCAP']) {
+			const rows = renderReelCsv(spec, { seed }).trim().split('\n').map((r) => r.split(','));
+			for (let reel = 0; reel < spec.game.reels.count; reel += 1) {
+				const at = rows.map((r, i) => (r[reel] === 'S' ? i : -1)).filter((i) => i >= 0);
+				for (let i = 1; i < at.length; i += 1) {
+					assert.ok(
+						at[i] - at[i - 1] >= window,
+						`${mechanic}/${seed} reel ${reel}: scatters at ${at[i - 1]} and ${at[i]} are closer than ${window}`,
+					);
+				}
+			}
+		}
+	}
+});
+
+test('scatter density stays inside the range the real sample games use', () => {
+	// Measured from math-sdk's own BR0.csv files: 0.2%-2.4% per reel. Above that,
+	// free spins re-trigger faster than they are consumed and run_freespin()'s
+	// `while self.fs < self.tot_fs` never terminates.
+	for (const mechanic of Object.keys(MECHANICS)) {
+		const spec = specFor(mechanic);
+		const rows = renderReelCsv(spec, { seed: 'BR0' }).trim().split('\n').map((r) => r.split(','));
+		assert.equal(rows.length, REEL_STRIP_LENGTH);
+		for (let reel = 0; reel < spec.game.reels.count; reel += 1) {
+			const density = rows.filter((r) => r[reel] === 'S').length / rows.length;
+			assert.ok(density > 0, `${mechanic} reel ${reel} has no scatter`);
+			assert.ok(density <= 0.025, `${mechanic} reel ${reel} density ${density} is above the sample range`);
+		}
+	}
+	assert.ok(SCATTER_DENSITY > 0.002 && SCATTER_DENSITY < 0.024);
 });
 
 test('placeholder reels only contain symbols from the spec', () => {
 	// Config.validate_reel_symbols() rejects anything else.
 	const spec = specFor('lines');
 	const names = new Set(spec.symbols.map((s) => s.name));
-	for (const cell of renderReelCsv(spec, { seed: 'BR0', length: 200 }).trim().split(/[\n,]/)) {
+	for (const cell of renderReelCsv(spec, { seed: 'BR0' }).trim().split(/[\n,]/)) {
 		assert.ok(names.has(cell), `unknown symbol "${cell}" on a reel`);
 	}
 });

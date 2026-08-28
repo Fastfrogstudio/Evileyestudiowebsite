@@ -52,6 +52,8 @@ const MECHANICS = {
 
 const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-e2e-'));
 const results = [];
+/** Specs kept alive so the typecheck pass can re-use them after pnpm install. */
+const specPaths = {};
 
 function run(args, label) {
 	const r = spawnSync(process.execPath, [FORGE, ...args], { encoding: 'utf8', timeout: 900000 });
@@ -87,6 +89,28 @@ for (const [mechanic, cfg] of Object.entries(MECHANICS)) {
 	}
 	if (webSdk) {
 		run(['scaffold', '--spec', specPath, '--sdk', webSdk, '--force'], `${mechanic}: scaffold`);
+		specPaths[mechanic] = specPath;
+	}
+}
+
+// Typecheck AFTER every app exists. A scaffolded app is a new pnpm workspace
+// package, so its node_modules only appear once `pnpm install` is re-run at the
+// web-sdk root — doing it once here mirrors the real flow and avoids paying for
+// four installs.
+if (webSdk) {
+	console.log(`\n\x1b[1m── pnpm install (link the new workspace packages) ──\x1b[0m`);
+	const install = spawnSync('pnpm', ['install', '--ignore-scripts'], {
+		cwd: webSdk,
+		encoding: 'utf8',
+		timeout: 900000,
+	});
+	const installed = install.status === 0;
+	results.push({ label: 'pnpm install', ok: installed, output: `${install.stdout}${install.stderr}` });
+	console.log(`${installed ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'} pnpm install`);
+	if (!installed) console.log(`    ${install.stderr || install.error?.message}`);
+
+	console.log(`\n\x1b[1m── typecheck ──\x1b[0m`);
+	for (const [mechanic, specPath] of Object.entries(specPaths)) {
 		run(['verify', '--spec', specPath, '--sdk', webSdk], `${mechanic}: tsc --noEmit (vs sample baseline)`);
 	}
 }
