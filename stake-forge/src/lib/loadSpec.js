@@ -192,6 +192,20 @@ export function loadAssetsManifest(manifestPath) {
 		}
 		check(`${symbol}.staticSprite`, def.staticSprite);
 	}
+	// Flat-sprite symbols: one image for every state, optionally overridden per
+	// state. This is the shape `forge art:placeholder` writes, and the shape a
+	// real game uses for symbols that never animate.
+	for (const [symbol, def] of Object.entries(manifest.spriteSymbols || {})) {
+		if (!def?.sprite) {
+			missing.push(`${symbol}.sprite: missing from the manifest`);
+			continue;
+		}
+		check(`${symbol}.sprite`, def.sprite);
+		for (const [state, file] of Object.entries(def.states || {})) {
+			check(`${symbol}.states.${state}`, file);
+		}
+	}
+
 	for (const [key, file] of Object.entries(manifest.sprites || {})) {
 		check(`sprites.${key}`, file);
 	}
@@ -203,6 +217,17 @@ export function loadAssetsManifest(manifestPath) {
 		for (const field of ['atlas', 'png', 'skeleton', 'sprite']) {
 			check(`screens.${key}.${field}`, def[field]);
 		}
+	}
+
+	const overlap = Object.keys(manifest.spriteSymbols || {}).filter((name) =>
+		Object.prototype.hasOwnProperty.call(manifest.spineSymbols || {}, name),
+	);
+	if (overlap.length) {
+		throw new SpecValidationError([
+			`These symbols appear in BOTH spineSymbols and spriteSymbols: ${overlap.join(', ')}.`,
+			'Pick one per symbol — the two would register conflicting assets under the same key.',
+			'Replacing placeholder art means deleting the spriteSymbols entry as you add the spine one.',
+		]);
 	}
 
 	if (missing.length) {

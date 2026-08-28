@@ -63,6 +63,7 @@ git clone https://github.com/StakeEngine/math-sdk.git  && (cd math-sdk && python
 ```
 inspiration.yaml ──forge inspire──> game-spec.yaml ──┬──forge math:scaffold──> math-sdk/games/<game_id>
                                                      └──forge scaffold───────> web-sdk/apps/<name>
+     forge art:placeholder ──> stand-in symbol tiles, so it renders on day one
                     assets-manifest.yaml ──forge audit──> gaps, before anything is written
                                          ──forge assets:import──> your art, wired in
                                                           forge verify ──> proof it runs
@@ -92,7 +93,39 @@ and says what to do instead. Working from a screenshot? Look at it yourself, wri
 *does* in words, and put the words in `features:`. The tool never ingests another studio's pixels —
 that boundary is only enforceable if it lives at exactly one file, so it does.
 
-### 3. `forge audit` — before you scaffold
+### 3. `forge art:placeholder` — see it before your art exists
+
+```bash
+forge art:placeholder --spec game-spec.yaml
+```
+
+Generates one legible tile per symbol — role-coloured, name on the front, top
+payout underneath — writes them to `assets-source/`, and adds a `spriteSymbols:`
+block to `assets-manifest.yaml`. From there `assets:import` wires them in and the
+game renders with symbols you can actually tell apart on a spinning reel.
+
+Symbols carrying a behavior also get a tile per extra state, so a feature firing
+is **visible on the board** rather than only in the event log — an expanding wild
+produces `w.png` plus `w_expand_in.png`, `w_expand_loop.png`, `w_expand_out.png`.
+
+The tiles are plain PNGs written by a small encoder in `src/lib/png.js` (no image
+dependency), so nothing here needs a design tool to regenerate.
+
+**Symbols only, and that limit is deliberate.** `SYMBOL_INFO_MAP` entries may be
+`{ type: 'sprite', assetKey }`, and pixi-svelte's loader registers a `sprite`
+under its own key — so a flat PNG per symbol renders with no spine anywhere.
+Screens cannot work that way: `Background.svelte`, `FreeSpinIntro.svelte`,
+`WinAnimation.svelte` and the rest hardcode `<SpineProvider key="...">` and play
+named animation tracks, so a PNG cannot stand in for one without rewriting the
+component. Placeholder runs leave those on the sample app's art, and `forge audit`
+marks them `◐ using sample art`.
+
+**Swapping in your real art** is per symbol and needs no spec change: add the
+symbol to `spineSymbols:` with its atlas/skeleton and delete its `spriteSymbols:`
+entry. The loader rejects a symbol listed in both, so you cannot half-migrate one
+by accident.
+
+### 4. `forge audit` — before you scaffold
 
 ```bash
 forge audit --spec game-spec.yaml --manifest assets-manifest.yaml
@@ -107,6 +140,7 @@ no way to notice those are missing from a spine export until the feature fires i
 Symbols
   ✗ W    wild     [expanding]  missing: expand_loop, expand_out
   ✓ H1   high      5 states ok
+  ◐ H2   high      5 states via placeholder sprite
 
 ERROR symbol W: missing animation state "expand_loop" (required by behavior "expanding")
       Add it under W.animations in assets-manifest.yaml, pointing at the animation name inside w.json.
@@ -114,7 +148,7 @@ ERROR symbol W: missing animation state "expand_loop" (required by behavior "exp
 
 Exits non-zero when there are errors, so it drops straight into CI.
 
-### 4. `forge math:scaffold` and `forge scaffold`
+### 5. `forge math:scaffold` and `forge scaffold`
 
 ```bash
 forge math:scaffold --spec game-spec.yaml --math-sdk ../math-sdk
@@ -133,7 +167,7 @@ evaluator and events.
 8-step "Steps to Add a New BookEvent" procedure from web-sdk's own README: event types, the
 `BookEvent` union, handlers, a new component, the `EmitterEventGame` union, and story fixtures.
 
-### 5. `forge assets:import`
+### 6. `forge assets:import`
 
 ```bash
 forge assets:import --manifest assets-manifest.yaml --sdk ../web-sdk --game le-bandit --spec game-spec.yaml
@@ -142,7 +176,7 @@ forge assets:import --manifest assets-manifest.yaml --sdk ../web-sdk --game le-b
 Copies your files in and patches `assets.ts` + `SYMBOL_INFO_MAP`. Pass `--spec` so states are wired
 per symbol role *and* behavior — otherwise it can only guess the default five.
 
-### 6. `forge verify` — the part that matters
+### 7. `forge verify` — the part that matters
 
 ```bash
 forge verify --spec game-spec.yaml --math-sdk ../math-sdk --sdk ../web-sdk
@@ -328,6 +362,7 @@ tumble-aware variant, which is design work rather than scaffolding.
 | `forge init` | Write example spec/manifest/inspiration files + `assets-source/` |
 | `forge inspire --in <yaml> [--out <yaml>] [--report <md>]` | Feature checklist -> draft spec + tier report |
 | `forge behaviors [--json]` | List the recipe registry and its provenance |
+| `forge art:placeholder --spec <yaml> [--out <dir>] [--size <px>]` | Generate stand-in symbol tiles + wire them into the manifest |
 | `forge audit --spec <yaml> --manifest <yaml> [--json]` | Check the manifest against required states + screen slots |
 | `forge math:scaffold --spec <yaml> --math-sdk <path> [--force]` | Create `games/<game_id>` |
 | `forge scaffold --spec <yaml> --sdk <path> [--force]` | Create `apps/<name>` |

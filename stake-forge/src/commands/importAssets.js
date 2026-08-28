@@ -47,6 +47,20 @@ export function importAssets({ manifestPath, sdkDir, gameName, specPath }) {
 	const screenDestDir = path.join(appDir, 'static', 'assets', 'spines', 'screens');
 	const seen = new Set();
 
+	const spriteSymbolEntries = Object.entries(manifest.spriteSymbols || {});
+	for (const [, def] of spriteSymbolEntries) {
+		copyOnce(seen, manifest._resolvedSourceDir, staticSpriteDestDir, def.sprite);
+		for (const file of Object.values(def.states || {})) {
+			copyOnce(seen, manifest._resolvedSourceDir, staticSpriteDestDir, file);
+		}
+	}
+	if (spriteSymbolEntries.length) {
+		console.log(
+			chalk.green('✓'),
+			`copied ${spriteSymbolEntries.length} flat-sprite symbol(s) into static/assets/sprites/symbolsStatic`,
+		);
+	}
+
 	const spineEntries = Object.entries(manifest.spineSymbols || {});
 	for (const [, def] of spineEntries) {
 		copyOnce(seen, manifest._resolvedSourceDir, spineDestDir, def.atlas);
@@ -54,10 +68,12 @@ export function importAssets({ manifestPath, sdkDir, gameName, specPath }) {
 		copyOnce(seen, manifest._resolvedSourceDir, spineDestDir, def.skeleton);
 		copyOnce(seen, manifest._resolvedSourceDir, staticSpriteDestDir, def.staticSprite);
 	}
-	console.log(
-		chalk.green('✓'),
-		`copied ${spineEntries.length} spine skeleton(s) + shared atlas/png into static/assets/spines/symbols`,
-	);
+	if (spineEntries.length) {
+		console.log(
+			chalk.green('✓'),
+			`copied ${spineEntries.length} spine skeleton(s) + shared atlas/png into static/assets/spines/symbols`,
+		);
+	}
 
 	const spriteEntries = Object.entries(manifest.sprites || {});
 	for (const [, file] of spriteEntries) {
@@ -113,6 +129,26 @@ export function importAssets({ manifestPath, sdkDir, gameName, specPath }) {
 			src: new RawExpr(`new URL('../../assets/sprites/custom/${file}', import.meta.url).href`),
 		};
 	}
+	// Flat-sprite symbols register one asset per distinct image. pixi-svelte's
+	// loader puts a `sprite` under its own key (assetLoad.ts PROCESS_METHOD_MAP),
+	// so SYMBOL_INFO_MAP can point straight at these with no spine involved.
+	for (const [symbol, def] of spriteSymbolEntries) {
+		newEntries[`${symbol}_static`] = {
+			type: 'sprite',
+			src: new RawExpr(
+				`new URL('../../assets/sprites/symbolsStatic/${def.sprite}', import.meta.url).href`,
+			),
+		};
+		for (const [state, file] of Object.entries(def.states || {})) {
+			newEntries[`${symbol}_${state}`] = {
+				type: 'sprite',
+				src: new RawExpr(
+					`new URL('../../assets/sprites/symbolsStatic/${file}', import.meta.url).href`,
+				),
+			};
+		}
+	}
+
 
 	// Screen slots register under the asset key the component actually looks up,
 	// not under the slot id — Background.svelte asks for "foregroundAnimation".
@@ -149,7 +185,7 @@ export function importAssets({ manifestPath, sdkDir, gameName, specPath }) {
 	const constantsPath = path.join(appDir, 'src', 'game', 'constants.ts');
 	const constantsSource = fs.readFileSync(constantsPath, 'utf8');
 
-	const { map, unmapped } = buildRealSymbolInfoMap(spineEntries, spec);
+	const { map, unmapped } = buildRealSymbolInfoMap(spineEntries, spriteSymbolEntries, spec);
 	const { source: withMap, replaced } = replaceExportConst(
 		constantsSource,
 		'SYMBOL_INFO_MAP',
@@ -181,11 +217,28 @@ export function importAssets({ manifestPath, sdkDir, gameName, specPath }) {
  * behaviors — so an expanding wild gets expand_in/expand_loop/expand_out wired
  * alongside the usual states, instead of the fixed five the v1 tool assumed.
  */
-function buildRealSymbolInfoMap(spineEntries, spec) {
+function buildRealSymbolInfoMap(spineEntries, spriteSymbolEntries, spec) {
 	const map = {};
 	const unmapped = [];
 	const specSymbols = new Map((spec?.symbols ?? []).map((s) => [s.name, s]));
 	const baseStates = typeRequiredStates();
+
+	// Flat-sprite symbols first: every state points at the base tile, with any
+	// per-state override swapped in. No animationName, because there is no spine.
+	for (const [symbol, def] of spriteSymbolEntries) {
+		const specSymbol = specSymbols.get(symbol);
+		const states = specSymbol
+			? [...requiredStatesForSymbol(specSymbol, baseStates).keys()]
+			: baseStates;
+		const ref = (key) => ({ type: 'sprite', assetKey: key, sizeRatios: { width: 1, height: 1 } });
+
+		map[symbol] = {};
+		for (const state of states) {
+			map[symbol][state] = def.states?.[state]
+				? ref(`${symbol}_${state}`)
+				: ref(`${symbol}_static`);
+		}
+	}
 
 	for (const [symbol, def] of spineEntries) {
 		const animations = statesFor(def);

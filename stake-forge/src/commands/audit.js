@@ -76,19 +76,46 @@ export function audit({ specPath, manifestPath, json }) {
 
 	// ── symbols ─────────────────────────────────────────────────────────────
 	const spine = manifest.spineSymbols || {};
+	const sprite = manifest.spriteSymbols || {};
 	const baseStates = defaultAnimationStates({ mechanic: mechanic.id });
 	const symbolRows = [];
 
 	for (const symbol of spec.symbols) {
 		const required = requiredStatesForSymbol(symbol, baseStates);
+
+		// A flat-sprite symbol covers every state with one image, plus optional
+		// per-state overrides. It renders — it just does not animate — so it is
+		// reported as a note rather than a gap.
+		if (sprite[symbol.name]) {
+			const def = sprite[symbol.name];
+			const overrides = Object.keys(def.states || {});
+			add(
+				'info',
+				`symbol ${symbol.name}`,
+				`flat sprite "${def.sprite}" covers all ${required.size} state(s)` +
+					(overrides.length ? `, with per-state art for ${overrides.join(', ')}` : '') +
+					' — renders, but does not animate',
+			);
+			symbolRows.push({
+				symbol: symbol.name,
+				role: symbol.role,
+				behaviors: symbol.behaviors,
+				kind: 'sprite',
+				required: [...required.keys()],
+				supplied: [...required.keys()],
+				missing: [],
+			});
+			continue;
+		}
+
 		const def = spine[symbol.name];
 
 		if (!def) {
 			add(
 				'error',
 				`symbol ${symbol.name}`,
-				`role "${symbol.role}" but no entry in assets-manifest.yaml spineSymbols`,
-				`Add:  ${symbol.name}: { atlas: …, png: …, skeleton: …, animations: { ${[...required.keys()].join(': …, ')}: … } }`,
+				`role "${symbol.role}" but no entry in assets-manifest.yaml (spineSymbols or spriteSymbols)`,
+				`Either add a spine entry, or run \`forge art:placeholder\` to generate a stand-in tile for it.`,
 			);
 			symbolRows.push({ symbol: symbol.name, role: symbol.role, required: [...required.keys()], supplied: [], missing: [...required.keys()] });
 			continue;
@@ -126,7 +153,9 @@ export function audit({ specPath, manifestPath, json }) {
 		});
 	}
 
-	const orphans = Object.keys(spine).filter((n) => !spec.symbols.some((s) => s.name === n));
+	const orphans = [...Object.keys(spine), ...Object.keys(sprite)].filter(
+		(n) => !spec.symbols.some((s) => s.name === n),
+	);
 	for (const name of orphans) {
 		add(
 			'warn',
@@ -158,10 +187,14 @@ export function audit({ specPath, manifestPath, json }) {
 
 	for (const [id, slot] of slotsForMechanic(mechanic.id)) {
 		const inSpec = declared.has(id);
-		const inManifest = Object.prototype.hasOwnProperty.call(manifestScreens, id) || Object.prototype.hasOwnProperty.call(manifestScreens, slot.assetKey);
-		const supplied = inSpec || inManifest;
+		// "Supplied" means a FILE exists for it. Declaring a slot in game-spec.yaml
+		// only says the game wants one — the art still has to be in the manifest,
+		// and reporting a declaration as supplied hid exactly that gap.
+		const supplied =
+			Object.prototype.hasOwnProperty.call(manifestScreens, id) ||
+			Object.prototype.hasOwnProperty.call(manifestScreens, slot.assetKey);
 
-		if (slot.required && !supplied) {
+		if (slot.required && !inSpec && !supplied) {
 			add(
 				'error',
 				`screen ${id}`,
@@ -178,6 +211,7 @@ export function audit({ specPath, manifestPath, json }) {
 			component: slot.component,
 			assetType: slot.assetType,
 			animations: slot.animations,
+			declared: inSpec,
 			supplied,
 		});
 	}
@@ -187,9 +221,10 @@ export function audit({ specPath, manifestPath, json }) {
 		const inManifest = Object.prototype.hasOwnProperty.call(manifestScreens, id);
 		if (!inManifest) {
 			add(
-				'warn',
+				'info',
 				`screen ${id}`,
-				'declared in game-spec.yaml but has no file in assets-manifest.yaml screens:',
+				'declared in game-spec.yaml but has no file in assets-manifest.yaml screens: — ' +
+					`${SCREEN_SLOTS[id].component} keeps the sample app's art until you add one`,
 			);
 		}
 	}
@@ -211,19 +246,23 @@ function report({ spec, findings, json, symbolRows, screenRows }) {
 
 	console.log(chalk.bold('Symbols'));
 	for (const row of symbolRows) {
-		const tag = row.missing.length ? chalk.red('✗') : chalk.green('✓');
+		const tag = row.missing.length ? chalk.red('✗') : row.kind === 'sprite' ? chalk.cyan('◐') : chalk.green('✓');
 		const behaviors = row.behaviors?.length ? chalk.dim(` [${row.behaviors.join(', ')}]`) : '';
-		console.log(
-			`  ${tag} ${row.symbol.padEnd(4)} ${chalk.dim(row.role.padEnd(8))}${behaviors}` +
-				(row.missing.length ? chalk.red(`  missing: ${row.missing.join(', ')}`) : chalk.dim(`  ${row.required.length} states ok`)),
-		);
+		const note = row.missing.length
+			? chalk.red(`  missing: ${row.missing.join(', ')}`)
+			: row.kind === 'sprite'
+				? chalk.cyan(`  ${row.required.length} states via placeholder sprite`)
+				: chalk.dim(`  ${row.required.length} states ok`);
+		console.log(`  ${tag} ${row.symbol.padEnd(4)} ${chalk.dim(row.role.padEnd(8))}${behaviors}${note}`);
 	}
 
 	console.log(chalk.bold('\nScreens'));
 	for (const row of screenRows) {
-		const tag = row.supplied ? chalk.green('✓') : chalk.dim('·');
+		// ✓ art supplied · ◐ wanted, but still on the sample's art · · not wanted
+		const tag = row.supplied ? chalk.green('✓') : row.declared ? chalk.cyan('◐') : chalk.dim('·');
+		const note = !row.supplied && row.declared ? chalk.cyan('  using sample art') : '';
 		console.log(
-			`  ${tag} ${row.slot.padEnd(24)} ${chalk.dim(`${row.assetKey} -> ${row.component}`)}`,
+			`  ${tag} ${row.slot.padEnd(24)} ${chalk.dim(`${row.assetKey} -> ${row.component}`)}${note}`,
 		);
 	}
 

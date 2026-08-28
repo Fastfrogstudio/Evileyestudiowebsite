@@ -23,6 +23,11 @@ export function init({ cwd }) {
 	}
 	fs.ensureDirSync(path.join(cwd, 'assets-source'));
 	console.log(chalk.green('✓'), 'created assets-source/ (drop your exported art/spine files here)');
+	console.log(chalk.bold.cyan('\nFastest path to seeing it run (no art needed):'));
+	console.log('  forge art:placeholder --spec game-spec.yaml');
+	console.log('  forge math:scaffold   --spec game-spec.yaml --math-sdk ./math-sdk');
+	console.log('  forge scaffold        --spec game-spec.yaml --sdk ./web-sdk');
+	console.log('  forge assets:import   --manifest assets-manifest.yaml --sdk ./web-sdk --game <game-name> --spec game-spec.yaml');
 	console.log(chalk.bold.cyan('\nStarting from a feature checklist?'));
 	console.log('  forge inspire --in inspiration.yaml --out game-spec.draft.yaml');
 	console.log(chalk.bold.cyan('\nOtherwise, edit game-spec.yaml + assets-manifest.yaml, then:'));

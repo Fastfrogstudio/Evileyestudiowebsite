@@ -7,6 +7,7 @@ import { init } from '../src/commands/init.js';
 import { scaffoldGame } from '../src/commands/scaffold.js';
 import { mathScaffold } from '../src/commands/mathScaffold.js';
 import { importAssets } from '../src/commands/importAssets.js';
+import { placeholderArt } from '../src/commands/placeholderArt.js';
 import { audit } from '../src/commands/audit.js';
 import { verify } from '../src/commands/verify.js';
 import { inspire } from '../src/commands/inspire.js';
@@ -56,6 +57,26 @@ program
 	.description('List the behavior recipe registry — what is built, what needs custom code, and from which sample')
 	.option('--json', 'machine-readable output', false)
 	.action(run((opts) => behaviors({ json: opts.json })));
+
+program
+	.command('art:placeholder')
+	.description('Generate stand-in symbol tiles so you can see the game before your art exists')
+	.requiredOption('--spec <path>', 'path to game-spec.yaml')
+	.option('--out <dir>', 'where to write the tiles', 'assets-source')
+	.option('--manifest <path>', 'manifest to update', 'assets-manifest.yaml')
+	.option('--size <px>', 'tile size in pixels', (v) => Number(v), 256)
+	.option('--force', 'replace existing spineSymbols entries too', false)
+	.action(
+		run((opts) =>
+			placeholderArt({
+				specPath: path.resolve(opts.spec),
+				outDir: path.resolve(opts.out),
+				manifestPath: path.resolve(opts.manifest),
+				force: opts.force,
+				size: opts.size,
+			}),
+		),
+	);
 
 program
 	.command('audit')
