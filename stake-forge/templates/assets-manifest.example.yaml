@@ -1,0 +1,153 @@
+# ─────────────────────────────────────────────────────────────────
+#  assets-manifest.yaml — which of YOUR OWN files map to which
+#  symbol state and which screen slot.
+#
+#  Run `forge audit --spec game-spec.yaml --manifest assets-manifest.yaml`
+#  BEFORE scaffolding: it lists every animation state each symbol's
+#  role + behaviors require, and flags the ones you haven't supplied.
+# ─────────────────────────────────────────────────────────────────
+
+assetsSourceDir: ./assets-source
+
+# ── Symbols ──────────────────────────────────────────────────────
+#  Symbols sharing one exported spine atlas repeat the same atlas/png —
+#  each file is copied only once.
+#
+#  `animations:` maps a SYMBOL STATE to an animation name inside that
+#  skeleton. The states any given symbol needs come from its role plus
+#  its behaviors:
+#
+#    every symbol   static, spin, land, win, postWinStatic
+#    tumbling games  + explosion   (cluster / scatter only)
+#    behaviors: [expanding]  + expand_in, expand_loop, expand_out
+#
+#  `forge behaviors` lists the extra states each behavior adds.
+#  Any state you leave out falls back to the static frame, and
+#  `forge audit` tells you which ones those are.
+#
+#  `staticSprite` is optional: supply it and static/spin/land/postWinStatic
+#  use a flat image instead of a spine pose, which is cheaper to render.
+spineSymbols:
+  H1:
+    atlas: symbols.atlas
+    png: symbols.png
+    skeleton: h1.json
+    staticSprite: h1_static.webp
+    animations: { win: h1_win }
+  H2:
+    atlas: symbols.atlas
+    png: symbols.png
+    skeleton: h2.json
+    staticSprite: h2_static.webp
+    animations: { win: h2_win }
+  H3:
+    atlas: symbols.atlas
+    png: symbols.png
+    skeleton: h3.json
+    staticSprite: h3_static.webp
+    animations: { win: h3_win }
+  H4:
+    atlas: symbols.atlas
+    png: symbols.png
+    skeleton: h4.json
+    staticSprite: h4_static.webp
+    animations: { win: h4_win }
+  L1:
+    atlas: symbols.atlas
+    png: symbols.png
+    skeleton: l1.json
+    staticSprite: l1_static.webp
+    animations: { win: l1_win }
+  L2:
+    atlas: symbols.atlas
+    png: symbols.png
+    skeleton: l2.json
+    staticSprite: l2_static.webp
+    animations: { win: l2_win }
+  L3:
+    atlas: symbols.atlas
+    png: symbols.png
+    skeleton: l3.json
+    staticSprite: l3_static.webp
+    animations: { win: l3_win }
+  L4:
+    atlas: symbols.atlas
+    png: symbols.png
+    skeleton: l4.json
+    staticSprite: l4_static.webp
+    animations: { win: l4_win }
+  L5:
+    atlas: symbols.atlas
+    png: symbols.png
+    skeleton: l5.json
+    staticSprite: l5_static.webp
+    animations: { win: l5_win }
+
+  # The wild carries behaviors: [expanding] in game-spec.yaml, so it needs
+  # three states beyond the usual set. Leave any of them out and `forge audit`
+  # reports it as an error before you scaffold.
+  W:
+    atlas: symbols.atlas
+    png: symbols.png
+    skeleton: w.json
+    staticSprite: w_static.webp
+    animations:
+      win: wild_win
+      expand_in: wild_expand_in
+      expand_loop: wild_expand_loop
+      expand_out: wild_expand_out
+
+  S:
+    atlas: symbols.atlas
+    png: symbols.png
+    skeleton: s.json
+    staticSprite: s_static.webp
+    animations: { win: scatter_win }
+
+# ── Screens ──────────────────────────────────────────────────────
+#  Keyed by the SLOT ID from game-spec.yaml's `screens:` block. Each slot
+#  registers under the asset key its component actually looks up — so
+#  `background.basegame` lands in assets.ts as "foregroundAnimation",
+#  which is what Background.svelte asks for.
+#
+#  Run `forge audit` for the full slot list and which component each drives.
+screens:
+  background.basegame:
+    atlas: bg_base.atlas
+    png: bg_base.png
+    skeleton: bg_base.json
+  background.freegame:
+    atlas: bg_feature.atlas
+    png: bg_feature.png
+    skeleton: bg_feature.json
+  freeSpins.intro:
+    atlas: fs_screen.atlas
+    png: fs_screen.png
+    skeleton: fs_screen.json
+  freeSpins.introNumber:
+    atlas: fs_screen.atlas
+    png: fs_screen.png
+    skeleton: fs_screen_number.json
+  freeSpins.outroNumber:
+    atlas: fs_screen.atlas
+    png: fs_screen.png
+    skeleton: fs_total_number.json
+  transition:
+    atlas: transition.atlas
+    png: transition.png
+    skeleton: transition.json
+  loading:
+    atlas: loader.atlas
+    png: loader.png
+    skeleton: loader.json
+  # The win-tier banner spine must contain intro/idle/exit for each of
+  # win levels 6-10: big_win_*, super_win_*, mega_win_*, epic_win_*, max_win_*.
+  winBanner:
+    atlas: bigwin.atlas
+    png: bigwin.png
+    skeleton: bigwin.json
+
+# ── Plain sprites ────────────────────────────────────────────────
+#  Anything referenced by key elsewhere (UI chrome, logo).
+sprites:
+  logo: logo.png

@@ -1,0 +1,43 @@
+# ─────────────────────────────────────────────────────────────────
+#  inspiration.yaml — a plain-language feature checklist.
+#
+#    forge inspire --in inspiration.yaml --out game-spec.draft.yaml
+#
+#  This produces a DRAFT game-spec.yaml with role/order/special/behaviors
+#  filled in, plus a report of what is off-the-shelf versus what needs
+#  custom code, pointing at the closest math-sdk/web-sdk sample for
+#  anything bespoke.
+#
+# ── THE HARD BOUNDARY ────────────────────────────────────────────
+#  The ONLY thing that belongs in this file is a plain-language
+#  description of mechanics you want. Never another game's asset files,
+#  source code, sprite sheets, or client bundle — not as file paths and
+#  not as pasted contents. `forge inspire` refuses to run on a file that
+#  points at images, archives, or code, and tells you what to do instead.
+#
+#  Working from a screenshot or a video? Look at it yourself, write down
+#  what it DOES in words, and put the words here. The tool never ingests
+#  another studio's pixels — that boundary is only enforceable if it lives
+#  at exactly one file, and this is that file.
+# ─────────────────────────────────────────────────────────────────
+
+name: my-next-game
+providerName: your_studio_name
+
+# One line per mechanic you want. Write them the way you would describe
+# the game to another designer.
+#
+# `forge inspire` maps each line onto:
+#   - the win_type it implies (lines / ways / cluster / scatter)
+#   - tier 2 (built in to both SDKs — just config)
+#     vs tier 3 (bespoke — needs a behavior recipe, existing or new)
+#
+# A line it cannot map is reported as undecided rather than guessed at.
+# Run `forge behaviors` to see the vocabulary it knows.
+features:
+  - "tumbling board where winning symbols explode and new ones drop in"
+  - "wild multiplier trail that grows across a tumble sequence"
+  - "sticky wilds during free spins"
+  - "ante bet unlocks a higher scatter chance"
+  - "buy-bonus at 100x"
+  - "max win capped at 5000x"

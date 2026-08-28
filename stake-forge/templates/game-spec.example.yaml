@@ -1,0 +1,191 @@
+# ─────────────────────────────────────────────────────────────────
+#  game-spec.yaml — the mechanics direction you hand the forge.
+#  This and assets-manifest.yaml are the ONLY per-game inputs.
+#
+#    forge audit         --spec game-spec.yaml --manifest assets-manifest.yaml
+#    forge math:scaffold --spec game-spec.yaml --math-sdk ./math-sdk
+#    forge scaffold      --spec game-spec.yaml --sdk ./web-sdk
+#    forge verify        --spec game-spec.yaml --math-sdk ./math-sdk --sdk ./web-sdk
+# ─────────────────────────────────────────────────────────────────
+
+game:
+  name: le-bandit                 # -> apps/le-bandit, must be kebab-case
+  providerName: your_studio_name
+  gameId: 0_0_le_bandit           # ALSO the math-sdk folder name: games/0_0_le_bandit
+                                  # (Config.construct_paths joins PATH_TO_GAMES with game_id)
+  workingName: "Le Bandit"
+  rtp: 0.965
+
+  # Which base mechanic to start from. Each maps to a real sample in BOTH SDKs,
+  # so you inherit a working spin/reveal/win/freespin flow on both sides:
+  #   lines   -> math games/0_0_lines    web apps/lines
+  #   ways    -> math games/0_0_ways     web apps/ways
+  #   cluster -> math games/0_0_cluster  web apps/cluster
+  #   scatter -> math games/0_0_scatter  web apps/scatter
+  mechanic: lines
+
+  reels:
+    count: 5
+    rows: [3, 3, 3, 3, 3]         # one entry per reel — the engine indexes num_rows[reel]
+
+  betModes:
+    base:
+      cost: 1.0
+      rtp: 0.965
+      maxWin: 5000
+      feature: true
+      buyBonus: false
+    bonus:
+      cost: 100.0
+      rtp: 0.965
+      maxWin: 5000
+      feature: false
+      buyBonus: true
+
+# Only used by mechanic: lines. "default_20" is the 20-line sample pattern,
+# or give your own map of line number -> [row per reel].
+paylines: default_20
+
+# ─────────────────────────────────────────────────────────────────
+#  SYMBOLS — taxonomy v2
+#
+#  role      low | high | wild | scatter
+#            The engine's real categories. Drives paytable ordering, the
+#            web-sdk HIGH_SYMBOLS constant, and the default animation states
+#            `forge audit` checks your manifest against.
+#
+#  order     int, 1 = strongest within the role. Optional — if you leave it
+#            out it is derived from the paytable, descending.
+#
+#  special   keys of the math-sdk's special_symbols dict. DERIVED FROM ROLE:
+#            role: wild implies [wild], role: scatter implies [scatter].
+#            Write it explicitly only to ADD keys (see W below).
+#
+#            Four keys get real default values from the engine, in
+#            src/calculations/symbol.py assign_default_attribute():
+#              wild        -> sym.wild = True
+#              scatter     -> sym.scatter = True
+#              multiplier  -> sym.has_multiplier = True, sym.multiplier = 1
+#              prize       -> sym.has_prize = True, sym.prize = 0
+#            Other keys are legal but get no default — a behavior recipe or
+#            your own game_override.py has to set them. forge warns about this.
+#
+#  behaviors free-form tags resolved against the recipe registry.
+#            Run `forge behaviors` to see what exists, what is generated
+#            automatically, and which sample each one came from.
+# ─────────────────────────────────────────────────────────────────
+symbols:
+  - name: H1
+    role: high
+    order: 1
+    label: "Bandit Boss"
+    paytable: { "5": 20, "4": 10, "3": 5 }
+  - name: H2
+    role: high
+    order: 2
+    label: "Sheriff Badge"
+    paytable: { "5": 15, "4": 5, "3": 3 }
+  - name: H3
+    role: high
+    order: 3
+    label: "Revolver"
+    paytable: { "5": 10, "4": 3, "3": 2 }
+  - name: H4
+    role: high
+    order: 4
+    label: "Money Bag"
+    paytable: { "5": 8, "4": 2, "3": 1 }
+  - name: L1
+    role: low
+    order: 1
+    label: "Ace"
+    paytable: { "5": 5, "4": 1, "3": 0.5 }
+  - name: L2
+    role: low
+    order: 2
+    label: "King"
+    paytable: { "5": 3, "4": 0.7, "3": 0.3 }
+  - name: L3
+    role: low
+    order: 3
+    label: "Queen"
+    paytable: { "5": 3, "4": 0.7, "3": 0.3 }
+  - name: L4
+    role: low
+    order: 4
+    label: "Jack"
+    paytable: { "5": 2, "4": 0.5, "3": 0.2 }
+  - name: L5
+    role: low
+    order: 5
+    label: "Ten"
+    paytable: { "5": 1, "4": 0.3, "3": 0.1 }
+
+  - name: W
+    role: wild
+    order: 1
+    label: "Wanted Poster (Wild)"
+    # role: wild already implies [wild]; adding "multiplier" makes the engine
+    # initialise has_multiplier/multiplier on it, which the expanding recipe sets.
+    special: [wild, multiplier]
+    behaviors: [expanding]
+    paytable: { "5": 20, "4": 10, "3": 5 }
+
+  - name: S
+    role: scatter
+    order: 1
+    label: "Gold Star (Scatter)"
+    # No paytable: scatters pay via freespin_triggers, not the paytable.
+
+freeSpins:
+  triggerSymbol: S
+  triggerCount: 3
+  awardedSpins: 10
+  spinsPerExtraScatter: 2         # 3 scatters -> 10, 4 -> 12, 5 -> 15...
+  retrigger: true
+
+# ─────────────────────────────────────────────────────────────────
+#  SCREENS — which of your art drives which web-sdk component.
+#  Every slot below names a real asset key consumed by a real component.
+#  `forge audit` reports which are supplied and which fall back to the
+#  sample app's art. Run it to see the full slot list.
+# ─────────────────────────────────────────────────────────────────
+screens:
+  background:
+    basegame: true                # -> assets.ts "foregroundAnimation" -> Background.svelte
+    freegame: true                # -> assets.ts "foregroundFeatureAnimation" -> Background.svelte
+  freeSpins:
+    intro: true                   # -> "fsIntro"        -> FreeSpinIntro.svelte
+    introNumber: true             # -> "fsIntroNumber"  -> FreeSpinIntro.svelte
+    outroNumber: true             # -> "fsOutroNumber"  -> FreeSpinOutro.svelte
+  transition: true                # -> "transition"     -> TransitionAnimation.svelte
+  loading: true                   # -> "loader"         -> LoadingScreen.svelte
+  progressBar: true               # -> "progressBar"    -> LoadingScreen.svelte
+  winBanner: true                 # -> "bigwin"         -> WinAnimation.svelte
+  winCoins: true                  # -> "coins"          -> WinCoins.svelte
+
+# Win-tier banners map onto math-sdk's Config.get_win_level(), which returns
+# 1..10 on two scales — "standard" (setWin) and "endFeature" (freeSpinEnd).
+# Only levels 6..10 render a banner in winLevelMap.ts; 1..5 are silent count-ups.
+# So the "bigwin" spine needs these animations:
+#    6  big_win_intro   / big_win_idle   / big_win_exit     "BIG WIN"
+#    7  super_win_intro / super_win_idle / super_win_exit   "SUPER WIN"
+#    8  mega_win_intro  / mega_win_idle  / mega_win_exit    "MEGA WIN"
+#    9  epic_win_intro  / epic_win_idle  / epic_win_exit    "EPIC WIN!"
+#   10  max_win_intro   / max_win_idle   / max_win_exit     "MAX WIN"
+
+# Weighting hint used ONLY to generate placeholder reel strips so both SDKs can
+# run immediately. This is NOT your math — real strips and RTP come from a
+# math-sdk optimisation run.
+placeholderReelWeights:
+  H1: 3
+  H2: 5
+  H3: 8
+  H4: 10
+  L1: 14
+  L2: 16
+  L3: 16
+  L4: 18
+  L5: 18
+  W: 2
+  S: 3

@@ -1,0 +1,118 @@
+/**
+ * Per-mechanic facts, read off real checkouts of both SDKs rather than assumed.
+ *
+ * The important one is `paddingReels`. Every sample app's config.ts declares it,
+ * and apps/<m>/src/game/types.ts derives `GameType = keyof typeof config.paddingReels`
+ * from it — so the KEYS are load-bearing for type-checking, and the VALUE shape
+ * differs per mechanic:
+ *
+ *   apps/lines/src/game/config.ts    paddingReels: { basegame: [[{name}...]...], freegame: [...] }
+ *   apps/scatter/src/game/config.ts  paddingReels: { basegame: [[{name}...]...], freegame: [...] }
+ *   apps/cluster/src/game/config.ts  paddingReels: { basegame: '', freegame: '' }
+ *   apps/ways/src/game/config.ts     paddingReels: { basegame: '', freegame: '', superspingame: '' }
+ *
+ * cluster and ways ship empty strings because those boards do not pre-render a
+ * padded strip above/below the visible area; writing reel arrays there (as
+ * stake-forge <= 0.1.0 did for every mechanic) both contradicts the sample and,
+ * for ways, silently drops the `superspingame` game type from the union.
+ */
+
+export const MECHANICS = {
+	lines: {
+		id: 'lines',
+		/** GameConfig.win_type in math-sdk. Documentation-only — see note below. */
+		winType: 'lines',
+		webApp: 'lines',
+		mathSample: '0_0_lines',
+		supportsPaylines: true,
+		tumbles: false,
+		gameTypes: ['basegame', 'freegame'],
+		paddingReelsStyle: 'strips',
+		defaultReels: { count: 5, rows: [3, 3, 3, 3, 3] },
+	},
+	ways: {
+		id: 'ways',
+		winType: 'ways',
+		webApp: 'ways',
+		mathSample: '0_0_ways',
+		supportsPaylines: false,
+		tumbles: false,
+		gameTypes: ['basegame', 'freegame', 'superspingame'],
+		paddingReelsStyle: 'empty',
+		defaultReels: { count: 5, rows: [3, 3, 3, 3, 3] },
+	},
+	cluster: {
+		id: 'cluster',
+		winType: 'cluster',
+		webApp: 'cluster',
+		mathSample: '0_0_cluster',
+		supportsPaylines: false,
+		tumbles: true,
+		gameTypes: ['basegame', 'freegame'],
+		paddingReelsStyle: 'empty',
+		defaultReels: { count: 7, rows: [7, 7, 7, 7, 7, 7, 7] },
+	},
+	scatter: {
+		id: 'scatter',
+		winType: 'scatter',
+		webApp: 'scatter',
+		mathSample: '0_0_scatter',
+		supportsPaylines: false,
+		tumbles: true,
+		// NOT ['basegame', 'freegame'] — apps/scatter really does key its second
+		// game type 'freeSpins'. See the note below.
+		gameTypes: ['basegame', 'freeSpins'],
+		paddingReelsStyle: 'strips',
+		defaultReels: { count: 6, rows: [5, 5, 5, 5, 5, 5] },
+		requiredSymbols: [
+			{
+				name: 'M',
+				special: ['multiplier'],
+				why:
+					"apps/scatter's own components compare rawSymbol.name === 'M' " +
+					'(stateGame.svelte.ts and utils.ts), and games/0_0_scatter registers ' +
+					'special_symbols["multiplier"] = ["M"]. A scatter game without an M symbol ' +
+					'fails to typecheck on those comparisons.',
+			},
+		],
+	},
+};
+
+export const MECHANIC_IDS = Object.keys(MECHANICS);
+
+export function getMechanic(id) {
+	const m = MECHANICS[id];
+	if (!m) throw new Error(`Unknown mechanic "${id}". Valid: ${MECHANIC_IDS.join(', ')}`);
+	return m;
+}
+
+/**
+ * NOTE on win_type, for anyone extending this file.
+ *
+ * `GameConfig.win_type` is NOT validated by the engine. Grepping a real math-sdk
+ * checkout, it is only ever ASSIGNED (in each game's own game_config.py) and never read
+ * by any code under src/ — games/fifty_fifty sets it to "other". What actually
+ * decides how wins are evaluated is which calculator your gamestate.py calls:
+ * src/calculations/{lines,ways,cluster,scatter}.py. The four ids above are the
+ * four that have both a math-sdk sample game AND a web-sdk sample app, which is
+ * what stake-forge needs in order to clone from something real.
+ */
+
+/**
+ * NOTE on scatter's game types, for anyone tempted to "fix" the list above.
+ *
+ * apps/scatter/src/game/config.ts really does declare
+ *     paddingReels: { basegame: [...], freeSpins: [...] }
+ * — camelCase `freeSpins`, not `freegame` — and its bookEventHandlerMap sets
+ * `stateGame.gameType = 'freeSpins'` on the freeSpinTrigger event. Since
+ * `GameType = keyof typeof config.paddingReels`, emitting `freegame` there is a
+ * type error, so stake-forge matches the sample.
+ *
+ * Worth knowing: the MATH side of the same sample emits `gameType: "freegame"`
+ * (src/events/events.py passes gamestate.gametype, and Config sets
+ * freegame_type = "freegame"). So the shipped scatter sample's reveal handler
+ * looks up `config.paddingReels['freegame']`, which is undefined. That is a
+ * pre-existing inconsistency in the SDK, not something stake-forge introduces —
+ * but if you build a scatter game and the free-game padding board looks wrong,
+ * that is where to look.
+ */
