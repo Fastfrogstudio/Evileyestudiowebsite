@@ -7,6 +7,7 @@ import { renderEditor } from './views/editor.js';
 import { renderPipeline } from './views/pipeline.js';
 import { renderAssets } from './views/assets.js';
 import { renderPreview } from './views/preview.js';
+import { renderInspire } from './views/inspire.js';
 
 const state = {
 	registry: null,
@@ -28,6 +29,7 @@ init();
 
 async function init() {
 	document.getElementById('new-game-btn').onclick = openNewGame;
+	document.getElementById('inspire-btn').onclick = openInspire;
 	document.getElementById('settings-btn').onclick = openSettings;
 
 	try {
@@ -365,6 +367,15 @@ function openNewGame() {
 		return h('div',
 			h('h2', 'New game'),
 			h('p.modal-sub', 'Starts from a complete, valid spec so you can scaffold and preview immediately.'),
+			h('div.msg.msg-info.small', { style: 'display:flex; align-items:center; gap:10px' },
+				h('span', { style: 'flex:1' },
+					'Know what you want it to play like? Describe the mechanics instead and the ',
+					'roles, behaviors and mechanic get filled in for you.',
+				),
+				h('button.btn.btn-small', {
+					onclick: () => { close(); openInspire(); },
+				}, 'Describe it'),
+			),
 			errorBox,
 			h('div.field', h('label', 'Title'), name),
 			h('div.field', h('label', 'Folder / app name'), id,
@@ -378,6 +389,24 @@ function openNewGame() {
 			),
 		);
 	});
+}
+
+// ── inspiration ─────────────────────────────────────────────────────────────
+function openInspire() {
+	if (!state.config?.workspace) {
+		toast('Set a games folder in Settings first', 'err');
+		return openSettings();
+	}
+	modal((close) =>
+		renderInspire({
+			registry: state.registry,
+			close,
+			onCreated: async (id) => {
+				await refreshGames();
+				selectGame(id);
+			},
+		}),
+	);
 }
 
 // ── settings ────────────────────────────────────────────────────────────────

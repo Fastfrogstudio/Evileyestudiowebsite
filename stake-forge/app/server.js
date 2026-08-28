@@ -8,6 +8,7 @@
 
 import express from 'express';
 import fs from 'fs-extra';
+import YAML from 'yaml';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,6 +17,7 @@ import { listGames, readGame, writeGame, createGame, validateSpecObject, gameDir
 import { STEPS, STEP_ORDER, runStep, auditJson } from './lib/runner.js';
 import { startPreview, stopPreview, previewState, previewStories, stopAllPreviews } from './lib/preview.js';
 
+import { analyseInspiration } from '../src/lib/inspire.js';
 import { BEHAVIOR_RECIPES } from '../src/lib/behaviorRecipes.js';
 import { MECHANICS } from '../src/lib/mechanics.js';
 import { SCREEN_SLOTS, WIN_LEVEL_ALIASES, WIN_LEVEL_ANIMATIONS, BANNER_WIN_LEVELS } from '../src/lib/screens.js';
@@ -122,6 +124,65 @@ app.post('/api/games', (req, res) => {
 		const config = loadConfig();
 		if (!config.workspace) throw new Error('Set a games folder in Settings first');
 		res.json(createGame(config.workspace, req.body ?? {}));
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+// ── inspiration ─────────────────────────────────────────────────────────────
+/**
+ * Map a plain-language feature list onto the taxonomy. Called as you type, so
+ * the tier-2/tier-3 split and the inferred mechanic update live.
+ *
+ * The boundary check runs first and its refusal is returned as a normal error,
+ * so the UI can show exactly which field was the problem rather than silently
+ * dropping it.
+ */
+app.post('/api/inspire/analyse', (req, res) => {
+	try {
+		res.json(analyseInspiration(req.body ?? {}));
+	} catch (err) {
+		res.status(400).json({ error: err.message });
+	}
+});
+
+/** Create a game folder from an analysed draft. */
+app.post('/api/inspire/create', (req, res) => {
+	try {
+		const config = loadConfig();
+		if (!config.workspace) throw new Error('Set a games folder in Settings first');
+
+		const { id } = req.body ?? {};
+		const result = analyseInspiration(req.body ?? {});
+		const draft = result.draft;
+		draft.game.name = id;
+		draft.game.gameId = `0_0_${String(id).replace(/-/g, '_')}`;
+
+		const dir = gameDir(config.workspace, id);
+		if (fs.existsSync(path.join(dir, 'game-spec.yaml'))) {
+			throw new Error(`A game called "${id}" already exists`);
+		}
+		fs.ensureDirSync(path.join(dir, 'assets-source'));
+
+		// Keep the report next to the game: it records what was off-the-shelf,
+		// what needs custom code, and which lines nothing matched.
+		writeGame(config.workspace, id, draft);
+		fs.writeFileSync(
+			path.join(dir, 'inspiration.yaml'),
+			`# What this game was drawn from, in words. No asset, code or bundle from\n` +
+				`# another game was read to produce the spec.\n\n` +
+				YAML.stringify(
+					{
+						name: id,
+						references: result.references,
+						features: result.lines.map((l) => l.text),
+					},
+					{ lineWidth: 0 },
+				),
+			'utf8',
+		);
+
+		res.json({ id, dir, result });
 	} catch (err) {
 		fail(res, err);
 	}

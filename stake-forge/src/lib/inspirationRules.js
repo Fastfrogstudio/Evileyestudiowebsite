@@ -83,7 +83,7 @@ export function assertNoExtractedMaterial(raw, parsed) {
 
 	if (problems.length) {
 		throw new Error(
-			`inspiration.yaml must contain a plain-language description only.\n\n` +
+			`Inspiration must be a plain-language description only.\n\n` +
 				problems.map((p) => `  - ${p}`).join('\n') +
 				`\n\nstake-forge will not process another game's assets, code, or client bundle as an\n` +
 				`inspiration source — not as files, and not as pasted contents.\n\n` +

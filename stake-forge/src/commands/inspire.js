@@ -3,66 +3,17 @@ import path from 'node:path';
 import YAML from 'yaml';
 import chalk from 'chalk';
 
-import { assertNoExtractedMaterial, matchLine, INSPIRATION_RULES } from '../lib/inspirationRules.js';
+import { analyseInspiration } from '../lib/inspire.js';
 import { getRecipe } from '../lib/behaviorRecipes.js';
-import { MECHANICS } from '../lib/mechanics.js';
+import { INSPIRATION_RULES } from '../lib/inspirationRules.js';
 
 /**
  * Turn a plain-language feature checklist into a draft game-spec.yaml plus a
  * report of what is off-the-shelf versus what needs custom code.
  *
- * The draft is explicitly a STARTING POINT: paytable values, reel weights and
- * RTP are placeholders, because none of those can be derived from a description
- * of mechanics. What the draft does get right is the taxonomy — role, order,
- * special and behaviors — and the mechanic, which is the part that is tedious
- * and error-prone to fill in by hand.
+ * The analysis itself lives in src/lib/inspire.js so the app and the CLI share
+ * one implementation. This command is the file IO and the human-readable report.
  */
-
-const DEFAULT_SYMBOLS = [
-	{ name: 'H1', role: 'high', label: 'High 1', paytable: { 5: 20, 4: 10, 3: 5 } },
-	{ name: 'H2', role: 'high', label: 'High 2', paytable: { 5: 15, 4: 5, 3: 3 } },
-	{ name: 'H3', role: 'high', label: 'High 3', paytable: { 5: 10, 4: 3, 3: 2 } },
-	{ name: 'H4', role: 'high', label: 'High 4', paytable: { 5: 8, 4: 2, 3: 1 } },
-	{ name: 'L1', role: 'low', label: 'Low 1', paytable: { 5: 5, 4: 1, 3: 0.5 } },
-	{ name: 'L2', role: 'low', label: 'Low 2', paytable: { 5: 3, 4: 0.7, 3: 0.3 } },
-	{ name: 'L3', role: 'low', label: 'Low 3', paytable: { 5: 3, 4: 0.7, 3: 0.3 } },
-	{ name: 'L4', role: 'low', label: 'Low 4', paytable: { 5: 2, 4: 0.5, 3: 0.2 } },
-	{ name: 'L5', role: 'low', label: 'Low 5', paytable: { 5: 1, 4: 0.3, 3: 0.1 } },
-	{ name: 'W', role: 'wild', label: 'Wild', paytable: { 5: 20, 4: 10, 3: 5 } },
-	{ name: 'S', role: 'scatter', label: 'Scatter' },
-];
-
-function baseDraft(input) {
-	const name = input.name ?? 'new-game';
-	return {
-		game: {
-			name,
-			providerName: input.providerName ?? 'your_studio_name',
-			gameId: name.replace(/-/g, '_'),
-			rtp: 0.965,
-			mechanic: 'lines',
-			reels: { count: 5, rows: [3, 3, 3, 3, 3] },
-			betModes: {
-				base: { cost: 1.0, rtp: 0.965, maxWin: 5000, feature: true, buyBonus: false },
-			},
-		},
-		paylines: 'default_20',
-		symbols: DEFAULT_SYMBOLS.map((s) => ({ ...s })),
-	};
-}
-
-/** Merge a rule's `spec:` fragment into the draft without clobbering siblings. */
-function deepMerge(target, source) {
-	for (const [key, value] of Object.entries(source)) {
-		if (value && typeof value === 'object' && !Array.isArray(value)) {
-			target[key] = target[key] ?? {};
-			deepMerge(target[key], value);
-		} else {
-			target[key] = value;
-		}
-	}
-	return target;
-}
 
 export function inspire({ inputPath, outPath, reportPath, force }) {
 	const raw = fs.readFileSync(inputPath, 'utf8');
@@ -73,10 +24,7 @@ export function inspire({ inputPath, outPath, reportPath, force }) {
 		throw new Error(`${path.basename(inputPath)} is not valid YAML: ${err.message}`);
 	}
 
-	// The boundary, enforced before anything else happens.
-	assertNoExtractedMaterial(raw, input);
-
-	const features = input.features ?? input.mechanics ?? [];
+	const features = input?.features ?? input?.mechanics ?? [];
 	if (!Array.isArray(features) || !features.length) {
 		throw new Error(
 			'inspiration.yaml needs a `features:` list of plain-language lines, e.g.\n' +
@@ -86,95 +34,14 @@ export function inspire({ inputPath, outPath, reportPath, force }) {
 		);
 	}
 
-	const draft = baseDraft(input);
-	const lines = [];
-	const winTypeVotes = new Map();
-	const unmatched = [];
-	const notes = [];
-
-	for (const feature of features) {
-		const text = String(feature);
-		const rules = matchLine(text);
-		if (!rules.length) {
-			unmatched.push(text);
-			lines.push({ text, rules: [] });
-			continue;
-		}
-
-		for (const rule of rules) {
-			for (const wt of rule.winTypes ?? []) {
-				winTypeVotes.set(wt, (winTypeVotes.get(wt) ?? 0) + 1);
-			}
-			if (rule.spec) deepMerge(draft, structuredClone(rule.spec));
-			for (const extractor of rule.extract ?? []) {
-				const match = extractor.pattern.exec(text);
-				if (match) {
-					extractor.apply(draft, match);
-					notes.push(`${rule.id}: ${extractor.describe(match)}`);
-				}
-			}
-		}
-		lines.push({ text, rules });
-	}
-
-	// ── mechanic ────────────────────────────────────────────────────────────
-	let mechanic = 'lines';
-	if (winTypeVotes.size) {
-		mechanic = [...winTypeVotes.entries()].sort((a, b) => b[1] - a[1])[0][0];
-	}
-	draft.game.mechanic = mechanic;
-	const mechanicProfile = MECHANICS[mechanic];
-	if (!mechanicProfile.supportsPaylines) delete draft.paylines;
-	draft.game.reels = { ...mechanicProfile.defaultReels };
-
-	// ── behaviors onto symbols ──────────────────────────────────────────────
-	const attached = [];
-	for (const { rules } of lines) {
-		for (const rule of rules) {
-			if (!rule.behavior && !rule.special) continue;
-			const recipe = rule.behavior ? getRecipe(rule.behavior) : null;
-			// tier-2 behaviors are game-level config, not symbol tags.
-			if (recipe && recipe.tier === 2 && !rule.role) continue;
-
-			const target = draft.symbols.find((s) => s.role === (rule.role ?? 'wild'));
-			if (!target) continue;
-			if (rule.behavior && recipe && recipe.tier === 3) {
-				target.behaviors = [...new Set([...(target.behaviors ?? []), rule.behavior])];
-				attached.push({ symbol: target.name, behavior: rule.behavior });
-			}
-			if (rule.special) {
-				target.special = [...new Set([...(target.special ?? []), ...rule.special])];
-			}
-		}
-	}
-
-	// Order within role, so the draft is complete rather than half-filled.
-	const counters = {};
-	for (const symbol of draft.symbols) {
-		counters[symbol.role] = (counters[symbol.role] ?? 0) + 1;
-		symbol.order = counters[symbol.role];
-	}
-
-	// Emit each symbol with a stable, readable key order: identity first, then
-	// the taxonomy fields, then the paytable. YAML.stringify preserves insertion
-	// order, so this is the only place that controls how the draft reads.
-	draft.symbols = draft.symbols.map((s) => {
-		const out = { name: s.name, role: s.role, order: s.order, label: s.label };
-		if (s.special?.length) out.special = s.special;
-		if (s.behaviors?.length) out.behaviors = s.behaviors;
-		if (s.paytable) {
-			// Descending kind, matching how a paytable is normally read.
-			out.paytable = Object.fromEntries(
-				Object.keys(s.paytable)
-					.map(Number)
-					.sort((a, b) => b - a)
-					.map((k) => [String(k), s.paytable[k]]),
-			);
-		}
-		return out;
+	const result = analyseInspiration({
+		name: input.name,
+		providerName: input.providerName,
+		features,
+		references: input.references ?? [],
+		raw,
 	});
 
-	// ── write ───────────────────────────────────────────────────────────────
 	if (fs.existsSync(outPath) && !force) {
 		throw new Error(`${path.basename(outPath)} already exists. Re-run with --force to overwrite it.`);
 	}
@@ -189,42 +56,48 @@ export function inspire({ inputPath, outPath, reportPath, force }) {
 		`#\n` +
 		`# Review it, then:  forge audit --spec ${path.basename(outPath)} --manifest assets-manifest.yaml\n\n`;
 
-	fs.writeFileSync(outPath, header + YAML.stringify(draft, { lineWidth: 0 }), 'utf8');
-
-	const report = renderReport({ input, lines, draft, mechanic, attached, unmatched, notes, outPath });
-	fs.writeFileSync(reportPath, report, 'utf8');
+	fs.writeFileSync(outPath, header + YAML.stringify(result.draft, { lineWidth: 0 }), 'utf8');
+	fs.writeFileSync(reportPath, renderReport({ input, result, outPath }), 'utf8');
 
 	// ── console ─────────────────────────────────────────────────────────────
-	console.log(chalk.bold(`\nInspiration intake — ${features.length} feature line(s)\n`));
-	console.log(`  mechanic: ${chalk.bold(mechanic)}  ${chalk.dim(`(${mechanicProfile.mathSample} / apps/${mechanicProfile.webApp})`)}\n`);
+	console.log(chalk.bold(`\nInspiration intake — ${result.lines.length} feature line(s)\n`));
+	console.log(
+		`  mechanic: ${chalk.bold(result.mechanic)}  ` +
+			chalk.dim(`(${result.mechanicProfile.mathSample} / apps/${result.mechanicProfile.webApp})`) +
+			'\n',
+	);
 
-	for (const { text, rules } of lines) {
-		if (!rules.length) {
-			console.log(`  ${chalk.yellow('?')} ${text}`);
+	for (const line of result.lines) {
+		if (!line.rules.length) {
+			console.log(`  ${chalk.yellow('?')} ${line.text}`);
 			console.log(`      ${chalk.dim('no rule matched — decide this one by hand')}`);
 			continue;
 		}
-		const worstTier = Math.max(...rules.map((r) => r.tier));
-		const tag = worstTier === 2 ? chalk.green('T2') : chalk.magenta('T3');
-		console.log(`  ${tag} ${text}`);
-		for (const rule of rules) {
+		const tag = line.tier === 2 ? chalk.green('T2') : chalk.magenta('T3');
+		console.log(`  ${tag} ${line.text}`);
+		for (const rule of line.rules) {
 			console.log(`      ${chalk.dim(`${rule.implies} — ${rule.reference}`)}`);
 		}
 	}
 
-	const t3 = lines.flatMap((l) => l.rules).filter((r) => r.tier === 3);
+	for (const r of result.refused) {
+		console.log(
+			chalk.yellow(`\n  ! behavior "${r.behavior}" was NOT attached: ${r.reason}, not "${r.mechanic}".`),
+		);
+	}
+
 	console.log(
 		`\n  ${chalk.green('T2')} built-in, config only · ${chalk.magenta('T3')} bespoke, needs a behavior recipe\n` +
-			`  ${t3.length} bespoke item(s), ${unmatched.length} undecided\n`,
+			`  ${result.tier3.length} bespoke item(s), ${result.unmatched.length} undecided\n`,
 	);
 	console.log(chalk.green('✓'), `wrote ${path.basename(outPath)}`);
 	console.log(chalk.green('✓'), `wrote ${path.basename(reportPath)}\n`);
 
-	return { ok: true, draft, mechanic };
+	return { ok: true, ...result };
 }
 
-function renderReport({ input, lines, draft, mechanic, attached, unmatched, notes, outPath }) {
-	const profile = MECHANICS[mechanic];
+function renderReport({ input, result, outPath }) {
+	const { lines, mechanic, mechanicProfile: profile, attached, refused, unmatched, notes, extracted, references } = result;
 	const out = [];
 
 	out.push(`# Inspiration report — ${input.name ?? 'new game'}`);
@@ -235,6 +108,10 @@ function renderReport({ input, lines, draft, mechanic, attached, unmatched, note
 	);
 	out.push('');
 	out.push(`**Mechanic:** \`${mechanic}\` — clone from math \`games/${profile.mathSample}\`, web \`apps/${profile.webApp}\`.`);
+	if (references.length) {
+		out.push('');
+		out.push(`**Drawing from:** ${references.join(', ')} — recorded as a note. No asset, code or bundle from any of them was read.`);
+	}
 	out.push('');
 
 	const tier2 = [];
@@ -290,10 +167,19 @@ function renderReport({ input, lines, draft, mechanic, attached, unmatched, note
 		out.push('');
 	}
 
-	if (notes.length) {
+	if (extracted.length) {
 		out.push('## Values read out of the checklist');
 		out.push('');
-		for (const note of notes) out.push(`- ${note}`);
+		for (const note of extracted) out.push(`- ${note}`);
+		out.push('');
+	}
+
+	if (refused.length) {
+		out.push('## Not attached');
+		out.push('');
+		for (const r of refused) {
+			out.push(`- \`${r.behavior}\` — ${r.reason}, but this spec uses \`${r.mechanic}\`.`);
+		}
 		out.push('');
 	}
 
