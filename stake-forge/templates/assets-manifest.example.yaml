@@ -146,6 +146,18 @@ screens:
     atlas: bigwin.atlas
     png: bigwin.png
     skeleton: bigwin.json
+  # Not every slot is a spine. progressBar is a `sprites` ATLAS — its frames
+  # (progressBar.png, progressBarBackground.png, progressBarFrame.png) are
+  # spread into the top-level asset dict and looked up directly by frame name,
+  # which is why LoadingScreen.svelte can ask for <Sprite key="progressBar.png" />
+  # without any such entry existing in assets.ts.
+  progressBar:
+    type: sprites
+    sprite: progressBar.json
+  # winCoins is a spriteSheet fed to ParticleEmitter, not a spine.
+  winCoins:
+    type: spriteSheet
+    sprite: coins.json
 
 # ── Plain sprites ────────────────────────────────────────────────
 #  Anything referenced by key elsewhere (UI chrome, logo).

@@ -17,6 +17,8 @@ export function behaviors({ json }) {
 							requiredAnimationStates: r.requiredAnimationStates,
 							requiredSpecialKeys: r.requiredSpecialKeys,
 							suggestedSpecialKeys: r.suggestedSpecialKeys,
+							verifiedForMechanics: r.verifiedForMechanics ?? null,
+							requiresMechanic: r.requiresMechanic ?? null,
 							referenceSample: r.referenceSample,
 							verifiedAgainst: r.verifiedAgainst,
 							generatesCode: Boolean(r.emitMath || r.emitWeb),
