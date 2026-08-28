@@ -116,7 +116,18 @@ export const BEHAVIOR_RECIPES = {
 		title: 'Sticky prize (hold-and-win respin round)',
 		status: 'verified',
 		tier: 3,
-		appliesToRoles: ['wild', 'high', 'low', 'scatter'],
+		/**
+		 * Deliberately NOT 'wild'.
+		 *
+		 * A sticky WILD that persists across free spins is a common and different
+		 * thing, and the tag name invites it — but what is verified here is the
+		 * prize hold-and-win from 0_0_expwilds, which locks a prize-carrying
+		 * symbol and pays from the final board. Offering this for a wild would
+		 * generate a whole hold-and-win bet mode for someone who wanted sticky
+		 * wilds. For a wild that persists within a free-spin round, "expanding"
+		 * is the verified recipe — its wilds stay for the rest of the round.
+		 */
+		appliesToRoles: ['high', 'low'],
 		/**
 		 * Verified on lines only, and that is the mechanic 0_0_expwilds is.
 		 *

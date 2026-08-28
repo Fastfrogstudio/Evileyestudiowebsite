@@ -66,8 +66,18 @@ inspiration.yaml ──forge inspire──> game-spec.yaml ──┬──forge 
      forge art:placeholder ──> stand-in symbol tiles, so it renders on day one
                     assets-manifest.yaml ──forge audit──> gaps, before anything is written
                                          ──forge assets:import──> your art, wired in
+                        sounds-source/ ──forge sound:build──> the one audio sprite the SDK loads
+
+     forge math:run ──> simulated rounds, books, lookup tables
+     forge math:optimise ──> reweighted until it pays the target RTP
+     forge math:sync ──> the real maths into the web app
+     forge math:report ──> what it actually pays
                                                           forge verify ──> proof it runs
+                                                          forge package ──> the upload folder
 ```
+
+Or run the whole thing in a browser: `npm run app` opens a local editor with the
+spec, your assets, this pipeline and a live preview.
 
 ### 1. `forge init`
 
@@ -213,6 +223,73 @@ A freshly scaffolded app is a new pnpm workspace package, so run `pnpm install` 
 before the tsc check — `forge verify` detects the missing `node_modules` and tells you.
 
 ---
+
+### 8. `forge math:run` -> `math:optimise` -> `math:report` — the maths, for real
+
+Scaffolding produces a game that *runs*. It does not produce a game that *pays what you asked for*.
+Three steps close that gap, and the order matters:
+
+```bash
+forge math:run      --spec game-spec.yaml --math-sdk ../math-sdk --sims 100000 --compress
+forge math:optimise --spec game-spec.yaml --math-sdk ../math-sdk
+forge math:report   --spec game-spec.yaml --math-sdk ../math-sdk
+```
+
+**Why the raw numbers are meaningless.** The generated distributions re-roll any round that pays
+nothing, so every simulated round is a winner and the measured RTP is far above target *by design*.
+`math:report` says so and refuses to judge a pre-optimisation run against your target. Only after
+the optimiser has reweighted the distribution do the figures mean anything — at which point, on the
+sample games here, both bet modes land on their target RTP to two decimal places.
+
+**Volatility is a spec field**, not a number to invent per game:
+
+```yaml
+game:
+  volatility: high   # low | medium | high
+```
+
+It decides how the RTP divides between base game and feature and what hit rates to aim for, and it
+generates `game_optimization.py`. That file is yours once written — `math:optimise` will not
+overwrite it without `--force`, because tuning those targets by hand is exactly the work the step
+exists to enable. Its header says which parts are asserted fact and which are opinions from the
+profile.
+
+**A hold-and-win mode** is a bet mode, not a modifier:
+
+```yaml
+betModes:
+  superspin: { cost: 50, rtp: 0.96, maxWin: 2000, feature: true, superspin: true }
+symbols:
+  - { name: P, role: high, special: [prize], behaviors: [sticky] }
+```
+
+### 9. `forge sound:build` — the audio sprite
+
+The web-sdk does not load loose audio files. It loads **one sprite** — a single timeline in four
+formats plus a JSON of millisecond offsets. Name your clips after the sounds they are and this
+assembles it:
+
+```bash
+forge sound:build --spec game-spec.yaml --sdk ../web-sdk --source sounds-source
+```
+
+Needs `ffmpeg`. `forge audit` cross-checks the result, and that check earns its keep: **a missing
+sound does not throw and does not log** — the moment just plays nothing.
+
+### 10. `forge package` — the upload folder
+
+A game goes to Stake Engine as two uploads from two different places. This builds and assembles
+both, and refuses to call the folder ready when it is not:
+
+```bash
+forge package --spec game-spec.yaml --sdk ../web-sdk --math-sdk ../math-sdk
+```
+
+It checks the four ways the math half looks finished and is not — missing compressed books, an
+empty or stale `sha256`, lookup tables the optimiser never touched, and tables optimised against a
+*different* simulation than the books beside them. Each of those uploads cleanly and then does the
+wrong thing.
+
 
 ## The spec
 
@@ -368,6 +445,12 @@ tumble-aware variant, which is design work rather than scaffolding.
 | `forge scaffold --spec <yaml> --sdk <path> [--force]` | Create `apps/<name>` |
 | `forge assets:import --manifest <yaml> --sdk <path> --game <name> [--spec <yaml>]` | Copy + wire your art |
 | `forge verify --spec <yaml> [--math-sdk <path>] [--sdk <path>] [--skip-spin]` | Run the generated output for real |
+| `forge sound:build --sdk <path> --source <dir> [--spec <yaml>\|--game <name>] [--dry-run]` | Mix your sound files into the audio sprite, in all four formats |
+| `forge math:run --spec <yaml> --math-sdk <path> [--sims <n>] [--compress]` | Simulate rounds — books, lookup tables, frontend config |
+| `forge math:optimise --spec <yaml> --math-sdk <path> [--volatility <p>] [--force] [--setup-only]` | Reweight until it pays the target RTP |
+| `forge math:sync --spec <yaml> --math-sdk <path> --sdk <path> [--dry-run]` | Replace placeholder config + story data with the real maths |
+| `forge math:report --spec <yaml> --math-sdk <path> [--json]` | Measured RTP, hit rate and spread against your targets |
+| `forge package --spec <yaml> --sdk <path> --math-sdk <path> [--out <dir>] [--skip-build]` | Build and assemble both upload halves |
 
 ## Tests
 
