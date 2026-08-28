@@ -154,6 +154,19 @@ export const STEPS = {
 			'--math-sdk', config.mathSdk,
 		],
 	},
+	package: {
+		id: 'package',
+		title: 'Package for upload',
+		blurb: 'Build the frontend and assemble both halves — frontend files and RGS math — in one folder.',
+		needs: ['webSdk', 'mathSdk', 'scaffolded', 'simulated'],
+		args: ({ dir, config }) => [
+			'package',
+			'--spec', path.join(dir, 'game-spec.yaml'),
+			'--sdk', config.webSdk,
+			'--math-sdk', config.mathSdk,
+			'--out', path.join(dir, 'upload'),
+		],
+	},
 	verify: {
 		id: 'verify',
 		title: 'Verify',
@@ -170,12 +183,15 @@ export const STEPS = {
 };
 
 /**
- * `verify` runs LAST, after the maths has been synced in.
+ * Order matters in two places, and both are about certifying the right thing.
  *
- * It is the only step that type-checks and executes the generated output, and
- * math:sync rewrites config.ts — so running it before the sync would certify a
- * state the game is no longer in. Ending on it means the thing that passed is
- * the thing you have.
+ * `verify` runs after math:sync: it is the only step that type-checks and
+ * executes the generated output, and math:sync rewrites config.ts, so running
+ * it earlier would certify a state the game is no longer in.
+ *
+ * `package` runs after verify: it produces the folder you actually upload, and
+ * it should only ever be built from output that has just been proven to compile,
+ * construct a GameConfig, spin, and type-check.
  */
 export const STEP_ORDER = [
 	'art:placeholder',
@@ -189,6 +205,7 @@ export const STEP_ORDER = [
 	'math:sync',
 	'math:report',
 	'verify',
+	'package',
 ];
 
 /**

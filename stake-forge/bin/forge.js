@@ -11,6 +11,7 @@ import { mathSync } from '../src/commands/mathSync.js';
 import { mathReport } from '../src/commands/mathReport.js';
 import { mathOptimise } from '../src/commands/mathOptimise.js';
 import { soundBuild } from '../src/commands/soundBuild.js';
+import { packageGame } from '../src/commands/packageGame.js';
 import { importAssets } from '../src/commands/importAssets.js';
 import { placeholderArt } from '../src/commands/placeholderArt.js';
 import { audit } from '../src/commands/audit.js';
@@ -217,6 +218,26 @@ program
 				sourceDir: path.resolve(opts.source),
 				gameName: opts.game,
 				dryRun: opts.dryRun,
+			}),
+		),
+	);
+
+program
+	.command('package')
+	.description('Build and assemble everything Stake Engine wants uploaded, in one folder')
+	.requiredOption('--spec <path>', 'path to game-spec.yaml')
+	.requiredOption('--sdk <path>', 'path to a checkout of StakeEngine/web-sdk')
+	.requiredOption('--math-sdk <path>', 'path to a checkout of StakeEngine/math-sdk')
+	.option('--out <path>', 'where to write the upload folder (default: <spec folder>/upload)')
+	.option('--skip-build', 'package what is already built, without rebuilding the frontend', false)
+	.action(
+		run((opts) =>
+			packageGame({
+				specPath: path.resolve(opts.spec),
+				sdkDir: path.resolve(opts.sdk),
+				mathSdkDir: path.resolve(opts.mathSdk),
+				outDir: opts.out ? path.resolve(opts.out) : null,
+				skipBuild: opts.skipBuild,
 			}),
 		),
 	);

@@ -54,6 +54,7 @@ import { summarise } from '../src/commands/mathReport.js';
 import { auditSound, readSoundVocabulary, readSoundsUsed, readSoundSprite } from '../src/lib/sound.js';
 import { planOptimisation, renderOptimisationPy, splitRtp, VOLATILITY_PROFILES, VOLATILITY_IDS } from '../src/lib/optimisation.js';
 import { planSprite, spriteJson, buildFilterGraph, looksLooping, readSoundSources, SPRITE_FORMATS, CLIP_GAP_MS } from '../src/lib/soundSprite.js';
+import { inspectMathPublish, collectFrontend } from '../src/commands/packageGame.js';
 
 /** A pristine sample app, for the checks that need real source to read. */
 const LINES_APP = process.env.FORGE_WEB_SDK
@@ -1593,6 +1594,179 @@ test('the source folder maps filenames to sound names', () => {
 		assert.deepEqual(found.map((f) => f.name), ['bgm_main', 'sfx_btn_spin']);
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+
+// ── packaging ───────────────────────────────────────────────────────────────
+// Every check here exists because the folder LOOKS finished in that state. An
+// upload that fails loudly is fine; one that succeeds and serves the wrong game
+// is what these are for.
+
+// node:fs, not fs-extra — no writeJsonSync here.
+const writeJson = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+
+function withPublishDir(setup, fn) {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-pkg-'));
+	try {
+		const publish = path.join(root, 'library', 'publish_files');
+		const tables = path.join(root, 'library', 'lookup_tables');
+		const configs = path.join(root, 'library', 'configs');
+		for (const d of [publish, tables, configs]) fs.mkdirSync(d, { recursive: true });
+
+		const rows = (n, weight) =>
+			Array.from({ length: n }, (_, i) => `${i},${weight},${i * 10}`).join('\n') + '\n';
+
+		// A healthy publish folder: compressed books present, optimised tables
+		// (different weights from raw), same row count, matching index.
+		fs.writeFileSync(path.join(tables, 'lookUpTable_base.csv'), rows(100, 1));
+		fs.writeFileSync(path.join(publish, 'lookUpTable_base_0.csv'), rows(100, 7));
+		fs.writeFileSync(path.join(publish, 'books_base.jsonl.zst'), 'compressed');
+		writeJson(path.join(publish, 'index.json'), {
+			modes: [{ name: 'base', cost: 1, events: 'books_base.jsonl.zst', weights: 'lookUpTable_base_0.csv' }],
+		});
+		setup({ root, publish, tables, configs, rows });
+		return fn({ root, publish, tables, configs });
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+}
+
+test('a complete publish folder passes', () => {
+	withPublishDir(() => {}, ({ root }) => {
+		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+		assert.deepEqual(result.problems, []);
+		assert.equal(result.ok, true);
+		assert.equal(result.optimised, true);
+	});
+});
+
+test('missing compressed books is caught, and named as the compression flag', () => {
+	// index.json names books_<mode>.jsonl.zst, which only exist when the
+	// simulation ran with compression. Without it the index points at nothing.
+	withPublishDir(({ publish }) => {
+		fs.rmSync(path.join(publish, 'books_base.jsonl.zst'));
+	}, ({ root }) => {
+		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+		assert.equal(result.ok, false);
+		assert.match(result.problems.join('\n'), /books_base\.jsonl\.zst is missing/);
+		assert.match(result.problems.join('\n'), /math:run --compress/);
+	});
+});
+
+test('un-optimised lookup tables are caught', () => {
+	// publish_files' table is a byte-for-byte COPY of the raw one until the
+	// optimiser runs, so its presence proves nothing. Uploading it publishes
+	// whatever RTP the raw simulation happened to have.
+	withPublishDir(({ publish, tables }) => {
+		fs.copyFileSync(path.join(tables, 'lookUpTable_base.csv'), path.join(publish, 'lookUpTable_base_0.csv'));
+	}, ({ root }) => {
+		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+		assert.equal(result.ok, false);
+		assert.match(result.problems.join('\n'), /RAW simulation, not the optimised/);
+	});
+});
+
+test('an optimisation against a DIFFERENT run is caught by row count', () => {
+	// The nastiest one: the table differs from the raw table, so it looks
+	// optimised, but its simulation ids no longer match the books beside it.
+	withPublishDir(({ publish, rows }) => {
+		fs.writeFileSync(path.join(publish, 'lookUpTable_base_0.csv'), rows(40, 7));
+	}, ({ root }) => {
+		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+		assert.equal(result.ok, false);
+		assert.match(result.problems.join('\n'), /40 rows but the simulation produced 100/);
+	});
+});
+
+test('an empty sha256 in config.json is caught', () => {
+	// The SDK only WARNS when it cannot hash the compressed books, and writes "".
+	withPublishDir(({ configs }) => {
+		writeJson(path.join(configs, 'config.json'), {
+			bookShelfConfig: [{ name: 'base', booksFile: { file: 'books_base.jsonl.zst', sha256: '' } }],
+		});
+	}, ({ root }) => {
+		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+		assert.equal(result.ok, false);
+		assert.match(result.problems.join('\n'), /EMPTY sha256/);
+	});
+});
+
+test('a sha256 that no longer matches the file is caught', () => {
+	// The books were rebuilt after the config was written.
+	withPublishDir(({ configs }) => {
+		writeJson(path.join(configs, 'config.json'), {
+			bookShelfConfig: [{ name: 'base', booksFile: { file: 'books_base.jsonl.zst', sha256: 'deadbeef' } }],
+		});
+	}, ({ root }) => {
+		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+		assert.equal(result.ok, false);
+		assert.match(result.problems.join('\n'), /does not match the file in publish_files/);
+	});
+});
+
+test('a missing index.json stops immediately — the RGS reads it first', () => {
+	withPublishDir(({ publish }) => {
+		fs.rmSync(path.join(publish, 'index.json'));
+	}, ({ root }) => {
+		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+		assert.equal(result.ok, false);
+		assert.match(result.problems.join('\n'), /index\.json is missing/);
+	});
+});
+
+test('the frontend is collected from build/ when the static adapter wrote one', () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-fe-'));
+	try {
+		const app = path.join(root, 'app');
+		fs.mkdirSync(path.join(app, 'build', '_app'), { recursive: true });
+		fs.writeFileSync(path.join(app, 'build', 'index.html'), '<html></html>');
+		fs.writeFileSync(path.join(app, 'build', '_app', 'chunk.js'), 'x');
+		const out = path.join(root, 'out');
+		const result = collectFrontend({ appDir: app, outDir: out });
+		assert.equal(result.assembled, false);
+		assert.ok(fs.existsSync(path.join(out, 'index.html')));
+		assert.ok(fs.existsSync(path.join(out, '_app', 'chunk.js')));
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('the frontend is assembled by hand when there is no build/ folder', () => {
+	// index.html comes out of prerendered/pages and everything else out of
+	// client/ — the layout the web-sdk README describes doing manually.
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-fe2-'));
+	try {
+		const app = path.join(root, 'app');
+		const output = path.join(app, '.svelte-kit', 'output');
+		fs.mkdirSync(path.join(output, 'prerendered', 'pages'), { recursive: true });
+		fs.mkdirSync(path.join(output, 'client', '_app'), { recursive: true });
+		fs.writeFileSync(path.join(output, 'prerendered', 'pages', 'index.html'), '<html></html>');
+		fs.writeFileSync(path.join(output, 'client', '_app', 'chunk.js'), 'x');
+		fs.writeFileSync(path.join(output, 'client', 'favicon.svg'), '<svg/>');
+		const out = path.join(root, 'out');
+		const result = collectFrontend({ appDir: app, outDir: out });
+		assert.equal(result.assembled, true);
+		// index.html must be at the ROOT — the one mistake that uploads cleanly
+		// and then serves nothing.
+		assert.ok(fs.existsSync(path.join(out, 'index.html')));
+		assert.ok(fs.existsSync(path.join(out, '_app', 'chunk.js')));
+		assert.ok(fs.existsSync(path.join(out, 'favicon.svg')));
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('a build that produced no index.html refuses to package', () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-fe3-'));
+	try {
+		fs.mkdirSync(path.join(root, 'app'), { recursive: true });
+		assert.throws(
+			() => collectFrontend({ appDir: path.join(root, 'app'), outDir: path.join(root, 'out') }),
+			/produced no index\.html/,
+		);
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
 	}
 });
 
