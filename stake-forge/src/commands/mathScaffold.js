@@ -73,13 +73,27 @@ function patchGameConfig(gameDir, spec, mechanic, { recipes }) {
 	const skipped = [];
 
 	const conditionKeys = [];
+
+	// `mult_values` is needed whenever ANY symbol carries special: [multiplier] —
+	// not only when a behavior recipe asks for it. That flag is what puts
+	// assign_mult_property into special_symbol_functions, and every sample's own
+	// game_override.py reads the condition unguarded, so a game without it dies
+	// with KeyError: 'mult_values' on the first simulated round.
+	//
+	// The SHAPE has to match that sample's reader: 0_0_ways reads it flat,
+	// everything else indexes it by gametype. See mechanics.js.
+	const hasMultiplierSymbol = spec.symbols.some((s) => s.special.includes('multiplier'));
+	if (hasMultiplierSymbol) {
+		conditionKeys.push(
+			mechanic.multValuesShape === 'flat'
+				? '"mult_values": {1: 20, 2: 50, 3: 80, 5: 40, 10: 10},'
+				: '"mult_values": {self.basegame_type: {1: 1}, self.freegame_type: {2: 100, 3: 50, 5: 20, 10: 5}},',
+		);
+	}
+
 	for (const recipe of recipes) {
 		for (const key of recipe.emitted?.requiredConditions ?? []) {
-			if (key === 'mult_values') {
-				conditionKeys.push(
-					'"mult_values": {self.basegame_type: {1: 1}, self.freegame_type: {2: 100, 3: 50, 5: 20, 10: 5}},',
-				);
-			} else if (key === 'landing_wilds') {
+			if (key === 'landing_wilds') {
 				conditionKeys.push('"landing_wilds": {0: 100, 1: 20, 2: 5},');
 			}
 		}
@@ -87,6 +101,12 @@ function patchGameConfig(gameDir, spec, mechanic, { recipes }) {
 
 	const edits = [
 		['self.game_id', `"${mathGameId(spec)}"`],
+		// provider_name and game_name are only set on the Config BASE class, so no
+		// sample game overrides them — which means a scaffolded game inherited
+		// "sample_provider" / "sample_lines" and, worse, carried them into
+		// config_fe_*.json, so a synced frontend config claimed to be the sample.
+		['self.provider_name', `"${spec.game.providerName ?? 'your_studio'}"`],
+		['self.game_name', `"${spec.game.name.replace(/-/g, '_')}"`],
 		['self.provider_number', String(spec.game.providerNumber ?? 0)],
 		['self.working_name', `"${spec.game.workingName ?? spec.game.name}"`],
 		['self.wincap', Number(maxWinAcross(spec)).toFixed(1)],

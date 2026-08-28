@@ -29,6 +29,16 @@ export const MECHANICS = {
 		gameTypes: ['basegame', 'freegame'],
 		paddingReelsStyle: 'strips',
 		defaultReels: { count: 5, rows: [3, 3, 3, 3, 3] },
+		/**
+		 * How this sample's OWN game_override.py reads the `mult_values`
+		 * distribution condition. It differs between samples, and the shape has to
+		 * match the reader or get_random_outcome() dies on a dict of dicts:
+		 *   'nested' -> conditions["mult_values"][gametype]
+		 *   'flat'   -> conditions["mult_values"]
+		 * Only relevant when a symbol carries special: [multiplier], because that
+		 * is what puts assign_mult_property in special_symbol_functions.
+		 */
+		multValuesShape: 'nested',
 	},
 	ways: {
 		id: 'ways',
@@ -40,6 +50,8 @@ export const MECHANICS = {
 		gameTypes: ['basegame', 'freegame', 'superspingame'],
 		paddingReelsStyle: 'empty',
 		defaultReels: { count: 5, rows: [3, 3, 3, 3, 3] },
+		// 0_0_ways reads it FLAT — see the note on lines above.
+		multValuesShape: 'flat',
 	},
 	cluster: {
 		id: 'cluster',
@@ -51,6 +63,8 @@ export const MECHANICS = {
 		gameTypes: ['basegame', 'freegame'],
 		paddingReelsStyle: 'empty',
 		defaultReels: { count: 7, rows: [7, 7, 7, 7, 7, 7, 7] },
+		// 0_0_cluster's assign_special_sym_function() is `pass`, so nothing reads it.
+		multValuesShape: 'nested',
 	},
 	scatter: {
 		id: 'scatter',
@@ -62,6 +76,7 @@ export const MECHANICS = {
 		// NOT ['basegame', 'freegame'] — apps/scatter really does key its second
 		// game type 'freeSpins'. See the note below.
 		gameTypes: ['basegame', 'freeSpins'],
+		multValuesShape: 'nested',
 		paddingReelsStyle: 'strips',
 		defaultReels: { count: 6, rows: [5, 5, 5, 5, 5, 5] },
 		requiredSymbols: [

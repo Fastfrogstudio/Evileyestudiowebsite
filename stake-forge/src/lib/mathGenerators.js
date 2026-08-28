@@ -234,11 +234,10 @@ export function renderNumRows(spec) {
 /**
  * `self.bet_modes` — a list of BetMode objects.
  *
- * Distributions are deliberately minimal: one `wincap`, one `freegame` and one
- * `basegame` criteria per mode, which is the smallest set the sample games use
- * and the smallest that lets create_books() run. Tuning the quotas and weights
- * is a math job, not a scaffolding job, so the generated block is marked TODO
- * rather than pretending to be balanced.
+ * Distributions are deliberately minimal: one `freegame` and one `basegame`
+ * criteria per mode — the smallest set that lets create_books() actually
+ * terminate. Tuning the quotas and weights is a maths job, not a scaffolding
+ * job, so the generated block does not pretend to be balanced.
  */
 export function renderBetModes(spec, { conditionKeys = [] } = {}) {
 	// Any Distribution with force_freegame: True MUST also carry scatter_triggers:
@@ -264,19 +263,16 @@ export function renderBetModes(spec, { conditionKeys = [] } = {}) {
                 is_feature=${mode.feature ? 'True' : 'False'},
                 is_buybonus=${mode.buyBonus ? 'True' : 'False'},
                 distributions=[
-                    Distribution(
-                        criteria="wincap",
-                        quota=0.001,
-                        win_criteria=${Number(mode.maxWin).toFixed(1)},
-                        conditions={
-                            "reel_weights": {
-                                self.basegame_type: {"BR0": 1},
-                                self.freegame_type: {"FR0": 1},
-                            },
-${extraConditions}                            "force_wincap": True,
-                            "force_freegame": True,
-                        },
-                    ),
+                    # NOTE: no "wincap" distribution here, deliberately.
+                    #
+                    # A wincap criteria sets win_criteria = max_win, and check_repeat()
+                    # re-rolls the round until final_win equals it EXACTLY. Placeholder
+                    # reel strips cannot reach a 5000x round, so that loop never
+                    # terminates — the SDK only warns ("High repeat count") and keeps
+                    # spinning. Add one once your reels are real:
+                    #
+                    #   Distribution(criteria="wincap", quota=0.001,
+                    #                win_criteria=self.wincap, conditions={...})
                     Distribution(
                         criteria="freegame",
                         quota=0.1,

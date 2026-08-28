@@ -6,6 +6,9 @@ import path from 'node:path';
 import { init } from '../src/commands/init.js';
 import { scaffoldGame } from '../src/commands/scaffold.js';
 import { mathScaffold } from '../src/commands/mathScaffold.js';
+import { mathRun } from '../src/commands/mathRun.js';
+import { mathSync } from '../src/commands/mathSync.js';
+import { mathReport } from '../src/commands/mathReport.js';
 import { importAssets } from '../src/commands/importAssets.js';
 import { placeholderArt } from '../src/commands/placeholderArt.js';
 import { audit } from '../src/commands/audit.js';
@@ -109,6 +112,60 @@ program
 	.action(
 		run((opts) =>
 			mathScaffold({ specPath: path.resolve(opts.spec), mathSdkDir: path.resolve(opts.mathSdk), force: opts.force }),
+		),
+	);
+
+program
+	.command('math:run')
+	.description('Run the real simulation — produces books, lookup tables and the authoritative frontend config')
+	.requiredOption('--spec <path>', 'path to game-spec.yaml')
+	.requiredOption('--math-sdk <path>', 'path to a checkout of StakeEngine/math-sdk')
+	.option('--sims <n>', 'rounds to simulate per bet mode', (v) => Number(v), 1000)
+	.option('--python <path>', 'python interpreter to use')
+	.option('--compress', 'write compressed books (needed for a real upload)', false)
+	.action(
+		run(async (opts) =>
+			mathRun({
+				specPath: path.resolve(opts.spec),
+				mathSdkDir: path.resolve(opts.mathSdk),
+				sims: opts.sims,
+				python: opts.python,
+				compress: opts.compress,
+			}),
+		),
+	);
+
+program
+	.command('math:sync')
+	.description('Replace the placeholder config and story data with the real maths')
+	.requiredOption('--spec <path>', 'path to game-spec.yaml')
+	.requiredOption('--math-sdk <path>', 'path to a checkout of StakeEngine/math-sdk')
+	.requiredOption('--sdk <path>', 'path to a checkout of StakeEngine/web-sdk')
+	.option('--dry-run', 'print what would be written and stop', false)
+	.action(
+		run((opts) =>
+			mathSync({
+				specPath: path.resolve(opts.spec),
+				mathSdkDir: path.resolve(opts.mathSdk),
+				sdkDir: path.resolve(opts.sdk),
+				dryRun: opts.dryRun,
+			}),
+		),
+	);
+
+program
+	.command('math:report')
+	.description('What the maths actually pays — measured RTP and hit rates against your targets')
+	.requiredOption('--spec <path>', 'path to game-spec.yaml')
+	.requiredOption('--math-sdk <path>', 'path to a checkout of StakeEngine/math-sdk')
+	.option('--json', 'machine-readable output', false)
+	.action(
+		run((opts) =>
+			mathReport({
+				specPath: path.resolve(opts.spec),
+				mathSdkDir: path.resolve(opts.mathSdk),
+				json: opts.json,
+			}),
 		),
 	);
 
