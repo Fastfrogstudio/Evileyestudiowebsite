@@ -139,6 +139,49 @@ function patchStoryEvents(appDir, emitted) {
 	}
 }
 
+/**
+ * Add a `<Story>` per new bookEvent to the Mode<Mode>BookEvent.stories.svelte
+ * files.
+ *
+ * Without this the fixtures written into <mode>_events.ts are unreachable:
+ * storybook only surfaces a story that has a <Story> block, so
+ * MODE_BONUS/bookEvent/newExpandingWilds simply would not appear. The web-sdk
+ * README calls this out as the FIRST step when adding a bookEvent — "it is a
+ * good start because we set up the testing environment first" — and it is the
+ * only way to exercise a new event in isolation before wiring it into a book.
+ */
+function patchBookEventStories(appDir, emitted) {
+	const storiesDir = path.join(appDir, 'src', 'stories');
+	if (!fs.existsSync(storiesDir) || !emitted.storyEvents) return;
+
+	const files = fs
+		.readdirSync(storiesDir)
+		.filter((f) => /^Mode.*BookEvent\.stories\.svelte$/.test(f));
+
+	for (const file of files) {
+		const full = path.join(storiesDir, file);
+		let source = fs.readFileSync(full, 'utf8');
+
+		// Match the shape the sample uses, including whether it passes {template}
+		// — apps differ, and a story that omits it renders nothing.
+		const usesTemplateProp = /\{template\}\s*\/>/.test(source);
+
+		const additions = Object.keys(emitted.storyEvents).filter(
+			(key) => !new RegExp(`name="${key}"`).test(source),
+		);
+		if (!additions.length) continue;
+
+		const blocks = additions
+			.map(
+				(key) =>
+					`\n<Story\n\tname="${key}"\n\targs={templateArgs({\n\t\tskipLoadingScreen: true,\n\t\tdata: events.${key},\n\t\taction: async (data) => await playBookEvent(data, { bookEvents: [] }),\n\t})}\n${usesTemplateProp ? '\t{template}\n' : ''}/>\n`,
+			)
+			.join('');
+
+		fs.writeFileSync(full, `${source.replace(/\s*$/, '')}\n${blocks}`, 'utf8');
+	}
+}
+
 export function applyWebRecipe(appDir, emitted) {
 	for (const file of emitted.files ?? []) {
 		const dest = path.join(appDir, file.path);
@@ -150,4 +193,5 @@ export function applyWebRecipe(appDir, emitted) {
 	if (emitted.handlers) patchBookEventHandlerMap(appDir, emitted);
 	if (emitted.emitterImport) patchTypesEmitterEvent(appDir, emitted);
 	patchStoryEvents(appDir, emitted);
+	patchBookEventStories(appDir, emitted);
 }

@@ -48,6 +48,7 @@ import { loadGameSpec, loadAssetsManifest, SpecValidationError } from '../src/li
 import { Canvas, encodePng } from '../src/lib/png.js';
 import { drawText, measureText } from '../src/lib/font5x7.js';
 import { renderSymbolTile, topPayoutOf } from '../src/lib/placeholderArt.js';
+import { applyWebRecipe } from '../src/lib/webRecipePatch.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -775,6 +776,114 @@ test('reel generation is deterministic per game and strip', () => {
 	const spec = specFor('lines');
 	assert.equal(renderReelCsv(spec, { seed: 'BR0' }), renderReelCsv(spec, { seed: 'BR0' }));
 	assert.notEqual(renderReelCsv(spec, { seed: 'BR0' }), renderReelCsv(spec, { seed: 'FR0' }));
+});
+
+// ── web recipe patching ─────────────────────────────────────────────────────
+group('webRecipePatch — storybook wiring');
+
+/** Build a throwaway app tree with the files a recipe patches. */
+function withApp(fn) {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-app-'));
+	fs.mkdirSync(path.join(dir, 'src', 'game'), { recursive: true });
+	fs.mkdirSync(path.join(dir, 'src', 'stories', 'data'), { recursive: true });
+	fs.mkdirSync(path.join(dir, 'src', 'components'), { recursive: true });
+
+	fs.writeFileSync(
+		path.join(dir, 'src', 'game', 'typesBookEvent.ts'),
+		"type BookEventReveal = { index: number; type: 'reveal' };\n\nexport type BookEvent = BookEventReveal;\n",
+	);
+	fs.writeFileSync(
+		path.join(dir, 'src', 'game', 'bookEventHandlerMap.ts'),
+		'export const bookEventHandlerMap = {\n\treveal: async () => {},\n};\n',
+	);
+	fs.writeFileSync(
+		path.join(dir, 'src', 'game', 'typesEmitterEvent.ts'),
+		"import type { EmitterEventBoard } from '../components/Board.svelte';\n\nexport type EmitterEventGame = EmitterEventBoard;\n",
+	);
+	fs.writeFileSync(path.join(dir, 'src', 'stories', 'data', 'bonus_events.ts'), 'export default {\n\treveal: { type: \'reveal\' },\n};\n');
+	fs.writeFileSync(
+		path.join(dir, 'src', 'stories', 'ModeBonusBookEvent.stories.svelte'),
+		'<Story\n\tname="reveal"\n\targs={templateArgs({ data: events.reveal })}\n\t{template}\n/>\n',
+	);
+
+	try {
+		return fn(dir);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+const EMITTED = {
+	files: [{ path: 'src/components/ExpandingWilds.svelte', contents: '<!-- c -->', mode: 'create' }],
+	bookEventTypes: "type BookEventNewExpandingWilds = { index: number; type: 'newExpandingWilds' };",
+	bookEventUnionMembers: ['BookEventNewExpandingWilds'],
+	handlers: "\tnewExpandingWilds: async () => {},",
+	emitterImport: { typeName: 'EmitterEventExpandingWilds', from: '../components/ExpandingWilds.svelte' },
+	storyEvents: { newExpandingWilds: { type: 'newExpandingWilds', newWilds: [] } },
+};
+
+test('adds a <Story> per new bookEvent, not just the fixture', () => {
+	// Without the <Story> block the fixture in <mode>_events.ts is unreachable:
+	// storybook only surfaces stories that have one, so the event could not be
+	// tested in isolation. Caught by actually opening storybook.
+	withApp((dir) => {
+		applyWebRecipe(dir, EMITTED);
+		const stories = fs.readFileSync(path.join(dir, 'src', 'stories', 'ModeBonusBookEvent.stories.svelte'), 'utf8');
+		assert.match(stories, /name="newExpandingWilds"/);
+		assert.match(stories, /data: events\.newExpandingWilds/);
+		assert.match(stories, /playBookEvent/);
+		assert.match(stories, /name="reveal"/, 'clobbered the existing story');
+	});
+});
+
+test('the generated <Story> matches the app’s own shape', () => {
+	// Apps differ on whether they pass {template}; a story that omits it when the
+	// app needs it renders nothing at all.
+	withApp((dir) => {
+		applyWebRecipe(dir, EMITTED);
+		const stories = fs.readFileSync(path.join(dir, 'src', 'stories', 'ModeBonusBookEvent.stories.svelte'), 'utf8');
+		assert.match(stories, /\{template\}/);
+	});
+
+	withApp((dir) => {
+		const file = path.join(dir, 'src', 'stories', 'ModeBonusBookEvent.stories.svelte');
+		fs.writeFileSync(file, '<Story\n\tname="reveal"\n\targs={templateArgs({ data: events.reveal })}\n/>\n');
+		applyWebRecipe(dir, EMITTED);
+		const stories = fs.readFileSync(file, 'utf8');
+		assert.ok(!stories.includes('{template}'), 'added {template} to an app that does not use it');
+	});
+});
+
+test('re-running the recipe does not duplicate stories, types or handlers', () => {
+	withApp((dir) => {
+		applyWebRecipe(dir, EMITTED);
+		applyWebRecipe(dir, EMITTED);
+		const read = (...p) => fs.readFileSync(path.join(dir, ...p), 'utf8');
+		const count = (text, needle) => text.split(needle).length - 1;
+
+		assert.equal(count(read('src', 'stories', 'ModeBonusBookEvent.stories.svelte'), 'name="newExpandingWilds"'), 1);
+		assert.equal(count(read('src', 'game', 'typesBookEvent.ts'), 'type BookEventNewExpandingWilds'), 1);
+		assert.equal(count(read('src', 'game', 'bookEventHandlerMap.ts'), 'newExpandingWilds:'), 1);
+		assert.equal(count(read('src', 'game', 'typesEmitterEvent.ts'), 'EmitterEventExpandingWilds'), 2); // import + union
+		assert.equal(count(read('src', 'stories', 'data', 'bonus_events.ts'), 'newExpandingWilds:'), 1);
+	});
+});
+
+test('story fixtures use the codebase style, not JSON', () => {
+	withApp((dir) => {
+		applyWebRecipe(dir, EMITTED);
+		const data = fs.readFileSync(path.join(dir, 'src', 'stories', 'data', 'bonus_events.ts'), 'utf8');
+		assert.ok(!data.includes('"type"'), 'emitted double-quoted JSON keys into a TS source file');
+		assert.match(data, /type: 'newExpandingWilds'/);
+	});
+});
+
+test('the BookEvent union gains the new members', () => {
+	withApp((dir) => {
+		applyWebRecipe(dir, EMITTED);
+		const types = fs.readFileSync(path.join(dir, 'src', 'game', 'typesBookEvent.ts'), 'utf8');
+		assert.match(types, /export type BookEvent =[\s\S]*BookEventNewExpandingWilds/);
+	});
 });
 
 // ── placeholder art ─────────────────────────────────────────────────────────
