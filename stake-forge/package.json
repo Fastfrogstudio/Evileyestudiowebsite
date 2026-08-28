@@ -8,13 +8,16 @@
   },
   "license": "MIT",
   "dependencies": {
+    "chalk": "^5.3.0",
     "commander": "^12.1.0",
-    "yaml": "^2.5.1",
+    "express": "^5.2.1",
     "fs-extra": "^11.2.0",
-    "chalk": "^5.3.0"
+    "yaml": "^2.5.1"
   },
   "scripts": {
     "test": "node test/run.mjs",
-    "test:e2e": "node test/e2e.mjs"
+    "test:e2e": "node test/e2e.mjs",
+    "start": "node app/server.js",
+    "app": "node app/server.js"
   }
 }

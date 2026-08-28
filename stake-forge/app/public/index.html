@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>stake-forge</title>
+		<link rel="stylesheet" href="/style.css" />
+		<link
+			rel="icon"
+			href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⚒️</text></svg>"
+		/>
+	</head>
+	<body>
+		<div id="app">
+			<aside class="sidebar">
+				<div class="brand">
+					<span class="brand-mark">⚒</span>
+					<div>
+						<div class="brand-name">stake-forge</div>
+						<div class="brand-sub" id="workspace-label">—</div>
+					</div>
+				</div>
+
+				<div class="sidebar-head">
+					<span>Games</span>
+					<button class="btn btn-small" id="new-game-btn">New</button>
+				</div>
+				<nav id="game-list" class="game-list"></nav>
+
+				<div class="sidebar-foot">
+					<button class="btn btn-ghost btn-block" id="settings-btn">Settings</button>
+				</div>
+			</aside>
+
+			<main class="main" id="main"></main>
+		</div>
+
+		<div class="modal-backdrop" id="modal-backdrop" hidden>
+			<div class="modal" id="modal"></div>
+		</div>
+
+		<div class="toasts" id="toasts"></div>
+
+		<script type="module" src="/app.js"></script>
+	</body>
+</html>

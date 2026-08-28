@@ -194,12 +194,19 @@ export function audit({ specPath, manifestPath, json }) {
 			Object.prototype.hasOwnProperty.call(manifestScreens, id) ||
 			Object.prototype.hasOwnProperty.call(manifestScreens, slot.assetKey);
 
-		if (slot.required && !inSpec && !supplied) {
+		if (slot.required && !supplied) {
+			// NOT an error. The sample app ships art for every required slot, so a
+			// game that has not replaced it still renders — reporting that as an
+			// error means a brand-new game opens with four red marks and nothing
+			// actually wrong, which teaches you to ignore the audit.
 			add(
-				'error',
+				'warn',
 				`screen ${id}`,
-				`required by ${slot.component} (asset key "${slot.assetKey}") but not supplied`,
-				`Add "${id}" under screens: in game-spec.yaml and a matching file under screens: in assets-manifest.yaml.`,
+				`${slot.component} still uses the sample app's ${slot.assetKey} — fine for now, ` +
+					`replace it before this ships`,
+				inSpec
+					? `Add a "${id}" entry under screens: in assets-manifest.yaml.`
+					: `Tick "${id}" under screens: in game-spec.yaml, then supply it in assets-manifest.yaml.`,
 			);
 		} else if (!slot.required && !supplied) {
 			add('info', `screen ${id}`, `not supplied — ${slot.component} will fall back to the sample app's art`);
