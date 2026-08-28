@@ -86,10 +86,16 @@ program
 	.description('Cross-check assets-manifest.yaml against the animation states the spec implies')
 	.requiredOption('--spec <path>', 'path to game-spec.yaml')
 	.requiredOption('--manifest <path>', 'path to assets-manifest.yaml')
+	.option('--sdk <path>', 'path to a checkout of StakeEngine/web-sdk, to also check sound')
 	.option('--json', 'machine-readable output', false)
 	.action(
 		run((opts) =>
-			audit({ specPath: path.resolve(opts.spec), manifestPath: path.resolve(opts.manifest), json: opts.json }),
+			audit({
+				specPath: path.resolve(opts.spec),
+				manifestPath: path.resolve(opts.manifest),
+				sdkDir: opts.sdk ? path.resolve(opts.sdk) : null,
+				json: opts.json,
+			}),
 		),
 	);
 

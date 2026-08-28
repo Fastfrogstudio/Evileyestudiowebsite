@@ -6,6 +6,7 @@ import { loadGameSpec, loadAssetsManifest } from '../lib/loadSpec.js';
 import { defaultAnimationStates } from '../lib/taxonomy.js';
 import { requiredStatesForSymbol, getRecipe } from '../lib/behaviorRecipes.js';
 import { SCREEN_SLOTS, slotsForMechanic, flattenScreens } from '../lib/screens.js';
+import { auditSound } from '../lib/sound.js';
 
 /**
  * Cross-check assets-manifest.yaml against everything the spec implies, BEFORE
@@ -52,7 +53,7 @@ function collectManifestStates(def) {
 /** States a flat static frame legitimately covers. */
 const STATIC_SPRITE_STATES = ['static', 'spin', 'land', 'postWinStatic'];
 
-export function audit({ specPath, manifestPath, json }) {
+export function audit({ specPath, manifestPath, sdkDir, json }) {
 	const spec = loadGameSpec(specPath);
 	const mechanic = spec._mechanic;
 
@@ -236,16 +237,59 @@ export function audit({ specPath, manifestPath, json }) {
 		}
 	}
 
-	return report({ spec, findings, json, symbolRows, screenRows });
+	// ── sound ───────────────────────────────────────────────────────────────
+	// Only possible with the scaffolded app: the vocabulary and the sounds a
+	// game plays both live in its own source, not in the spec.
+	let soundResult = null;
+	if (sdkDir) {
+		const appDir = path.join(sdkDir, 'apps', spec.game.name);
+		if (!fs.existsSync(appDir)) {
+			add('info', 'sound', `apps/${spec.game.name} not scaffolded yet — skipped the sound check`);
+		} else {
+			soundResult = auditSound(appDir);
+
+			for (const name of soundResult.missing) {
+				add(
+					'error',
+					`sound ${name}`,
+					'played by this game but not in its audio sprite — it will be SILENT, with no error',
+					`Add "${name}" to static/assets/audio/sounds.json and rebuild the sprite.`,
+				);
+			}
+			for (const name of soundResult.unknown) {
+				add(
+					'error',
+					`sound ${name}`,
+					'played by this game but not declared in sound.ts — almost certainly a typo',
+					'Fix the name, or add it to the MusicName / SoundEffectName union.',
+				);
+			}
+			if (!soundResult.sprite.found) {
+				add('warn', 'sound', 'no static/assets/audio/sounds.json — the game has no audio at all');
+			}
+			for (const file of soundResult.sprite.missingFiles ?? []) {
+				add('error', 'sound', `sounds.json references ${file}, which is not on disk`);
+			}
+			if (soundResult.unused.length) {
+				add(
+					'info',
+					'sound',
+					`${soundResult.unused.length} sound(s) supplied but never played — harmless weight`,
+				);
+			}
+		}
+	}
+
+	return report({ spec, findings, json, symbolRows, screenRows, soundResult });
 }
 
-function report({ spec, findings, json, symbolRows, screenRows }) {
+function report({ spec, findings, json, symbolRows, screenRows, soundResult }) {
 	const errors = findings.filter((f) => f.level === 'error');
 	const warns = findings.filter((f) => f.level === 'warn');
 	const infos = findings.filter((f) => f.level === 'info');
 
 	if (json) {
-		console.log(JSON.stringify({ game: spec.game.name, findings, symbolRows, screenRows }, null, 2));
+		console.log(JSON.stringify({ game: spec.game.name, findings, symbolRows, screenRows, sound: soundResult }, null, 2));
 		return { ok: errors.length === 0, findings };
 	}
 
@@ -271,6 +315,25 @@ function report({ spec, findings, json, symbolRows, screenRows }) {
 		console.log(
 			`  ${tag} ${row.slot.padEnd(24)} ${chalk.dim(`${row.assetKey} -> ${row.component}`)}${note}`,
 		);
+	}
+
+	if (soundResult) {
+		console.log(chalk.bold('\nSound'));
+		const tag = soundResult.missing.length || soundResult.unknown.length
+			? chalk.red('✗')
+			: soundResult.sprite.found
+				? chalk.green('✓')
+				: chalk.yellow('·');
+		console.log(
+			`  ${tag} ${String(soundResult.used.length).padStart(3)} played by this game · ` +
+				chalk.dim(
+					`${soundResult.sprite.supplied.length} supplied · ` +
+						`${soundResult.vocabulary.music.length + soundResult.vocabulary.effects.length} declared in sound.ts`,
+				),
+		);
+		if (soundResult.sprite.formats.length) {
+			console.log(chalk.dim(`      formats: ${soundResult.sprite.formats.join(', ')}`));
+		}
 	}
 
 	if (findings.length) console.log('');

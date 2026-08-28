@@ -49,6 +49,14 @@ import { Canvas, encodePng } from '../src/lib/png.js';
 import { drawText, measureText } from '../src/lib/font5x7.js';
 import { renderSymbolTile, topPayoutOf } from '../src/lib/placeholderArt.js';
 import { applyWebRecipe } from '../src/lib/webRecipePatch.js';
+import { buildConfigFromMath } from '../src/commands/mathSync.js';
+import { summarise } from '../src/commands/mathReport.js';
+import { auditSound, readSoundVocabulary, readSoundsUsed, readSoundSprite } from '../src/lib/sound.js';
+
+/** A pristine sample app, for the checks that need real source to read. */
+const LINES_APP = process.env.FORGE_WEB_SDK
+	? path.join(process.env.FORGE_WEB_SDK, 'apps', 'lines')
+	: '/home/user/web-sdk/apps/lines';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -979,6 +987,124 @@ test('a behavior state variant renders differently from the base tile', () => {
 test('topPayoutOf reads the highest paytable value', () => {
 	assert.equal(topPayoutOf({ paytable: { 3: 5, 5: 20, 4: 10 } }), 20);
 	assert.equal(topPayoutOf({ paytable: null }), null);
+});
+
+// ── math sync ───────────────────────────────────────────────────────────────
+group('math sync — converting the SDK\'s output');
+
+test('symbols convert from array-of-objects to an object', () => {
+	// The maths emits [{H1:{...}}, {L1:{...}}]; config.ts declares an object.
+	const { config } = buildConfigFromMath(
+		{ symbols: [{ H1: { paytable: [{ '5': 20 }] } }, { L1: { paytable: [{ '5': 5 }] } }], paddingReels: {} },
+		MECHANICS.lines,
+	);
+	assert.deepEqual(Object.keys(config.symbols), ['H1', 'L1']);
+	assert.deepEqual(config.symbols.H1.paytable, [{ '5': 20 }]);
+});
+
+test('game-type keys stay the app\'s, not the maths\'', () => {
+	// apps/scatter keys its second padding set `freeSpins`; the maths calls it
+	// `freegame`. GameType derives from these keys, so the app's name must win.
+	const { config, notes } = buildConfigFromMath(
+		{ symbols: [], paddingReels: { basegame: [[{ name: 'H1' }]], freegame: [[{ name: 'L1' }]] } },
+		MECHANICS.scatter,
+	);
+	assert.deepEqual(Object.keys(config.paddingReels), ['basegame', 'freeSpins']);
+	assert.deepEqual(config.paddingReels.freeSpins, [[{ name: 'L1' }]]);
+	assert.match(notes.join(' '), /mapped the maths' "freegame"/);
+});
+
+test('cluster and ways keep empty-string padding whatever the maths says', () => {
+	for (const mechanic of ['cluster', 'ways']) {
+		const { config } = buildConfigFromMath(
+			{ symbols: [], paddingReels: { basegame: [[{ name: 'H1' }]] } },
+			MECHANICS[mechanic],
+		);
+		assert.deepEqual(Object.keys(config.paddingReels), MECHANICS[mechanic].gameTypes, mechanic);
+		for (const v of Object.values(config.paddingReels)) assert.equal(v, '', mechanic);
+	}
+});
+
+test('a missing game type still gets a key, because GameType derives from them', () => {
+	const { config, notes } = buildConfigFromMath(
+		{ symbols: [], paddingReels: { basegame: [[{ name: 'H1' }]] } },
+		MECHANICS.lines,
+	);
+	assert.deepEqual(Object.keys(config.paddingReels), ['basegame', 'freegame']);
+	assert.equal(config.paddingReels.freegame, '');
+	assert.match(notes.join(' '), /no reel strip for "freegame"/);
+});
+
+test('paylines are dropped for a mechanic that has no such key', () => {
+	const { config, notes } = buildConfigFromMath(
+		{ symbols: [], paylines: { 1: [0, 0, 0] }, paddingReels: {} },
+		MECHANICS.cluster,
+	);
+	assert.equal(config.paylines, undefined);
+	assert.match(notes.join(' '), /dropped paylines/);
+});
+
+// ── math report ─────────────────────────────────────────────────────────────
+group('math report — reading the lookup tables');
+
+test('payouts are hundredths of the bet, not multipliers', () => {
+	// Book.to_json stores int(round(payout_multiplier * 100)). Reading them as
+	// multipliers reported an RTP 100x too high.
+	const summary = summarise([{ weight: 1, payout: 100 }], { wincap: 5000, cost: 1 });
+	assert.equal(summary.rtp, 1, 'a payout of 100 is 1.00x, so RTP is 1.0');
+	assert.equal(summary.maxPayout, 1);
+});
+
+test('RTP is divided by the bet cost', () => {
+	// A buy-bonus at 100x paying 200x the base bet is a 2x return on its cost.
+	const summary = summarise([{ weight: 1, payout: 20000 }], { wincap: 5000, cost: 100 });
+	assert.equal(summary.rtp, 2);
+});
+
+test('RTP is weighted, not a plain mean', () => {
+	const summary = summarise(
+		[{ weight: 9, payout: 0 }, { weight: 1, payout: 1000 }],
+		{ wincap: 5000, cost: 1 },
+	);
+	assert.equal(summary.rtp, 1, '(9*0 + 1*10) / 10 = 1.0');
+	assert.equal(summary.hitRate, 10, 'one winner in ten weighted rounds');
+});
+
+test('hit rate is Infinity rather than a divide-by-zero when nothing pays', () => {
+	assert.equal(summarise([{ weight: 1, payout: 0 }], { wincap: 100 }).hitRate, Infinity);
+});
+
+// ── sound ───────────────────────────────────────────────────────────────────
+group('sound audit');
+
+test('reads the vocabulary out of sound.ts', () => {
+	const v = readSoundVocabulary(LINES_APP);
+	assert.ok(v.found);
+	assert.ok(v.music.includes('bgm_main'));
+	assert.ok(v.effects.includes('sfx_btn_spin'));
+	assert.ok(v.music.length + v.effects.length > 40);
+});
+
+test('finds sounds played by a direct player call, not only by broadcast', () => {
+	// Sound.svelte does sound.players.once.play({ name: 'sfx_btn_spin' }).
+	// Missing that shape made the audit under-report by three sounds.
+	const used = readSoundsUsed(LINES_APP);
+	assert.ok(used.has('sfx_btn_spin'), 'direct .play({ name }) call not detected');
+	assert.ok(used.has('bgm_main'), 'broadcast not detected');
+});
+
+test('reads the audio sprite and its formats', () => {
+	const sprite = readSoundSprite(LINES_APP);
+	assert.ok(sprite.found);
+	assert.ok(sprite.supplied.length > 40);
+	assert.deepEqual(sprite.formats.sort(), ['ac3', 'm4a', 'mp3', 'ogg']);
+});
+
+test('a pristine sample app has no missing or unknown sounds', () => {
+	const result = auditSound(LINES_APP);
+	assert.deepEqual(result.missing, [], 'sample should supply everything it plays');
+	assert.deepEqual(result.unknown, [], 'sample should play nothing outside its own union');
+	assert.ok(result.unused.length > 0, 'the sample does ship sounds it never plays');
 });
 
 // ── inspiration boundary ────────────────────────────────────────────────────
