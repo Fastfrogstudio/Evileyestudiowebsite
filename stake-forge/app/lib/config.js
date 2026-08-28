@@ -22,6 +22,14 @@ const DEFAULTS = {
 	mathSdk: '',
 	/** Python to verify with; blank means auto-detect <mathSdk>/.venv/bin/python. */
 	python: '',
+	/**
+	 * Rounds to simulate per bet mode.
+	 *
+	 * 1000 is an iteration number, not a release number: it runs in a second or
+	 * two and is enough to prove the maths executes and to see the shape of the
+	 * paytable. Real RTP figures need hundreds of thousands, and the optimiser.
+	 */
+	sims: 1000,
 };
 
 export function loadConfig() {
@@ -40,6 +48,11 @@ export function saveConfig(next) {
 	for (const key of Object.keys(DEFAULTS)) {
 		clean[key] = next[key] ?? DEFAULTS[key];
 	}
+	// The settings form posts every field as a string. A sims of "1000" would be
+	// passed straight to --sims and parsed fine, but an empty or non-numeric one
+	// would become NaN and the simulation would produce nothing at all.
+	const sims = Math.floor(Number(clean.sims));
+	clean.sims = Number.isFinite(sims) && sims > 0 ? sims : DEFAULTS.sims;
 	fs.writeJsonSync(CONFIG_PATH, clean, { spaces: 2 });
 	return loadConfig();
 }

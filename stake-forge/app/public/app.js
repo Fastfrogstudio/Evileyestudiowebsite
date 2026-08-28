@@ -418,6 +418,7 @@ function openSettings({ firstRun = false } = {}) {
 			webSdk: h('input.mono', { value: state.config.webSdk || guesses.webSdk || '' }),
 			mathSdk: h('input.mono', { value: state.config.mathSdk || guesses.mathSdk || '' }),
 			python: h('input.mono', { value: state.config.python || '' }),
+			sims: h('input.mono', { type: 'number', min: '1', value: String(state.config.sims ?? 1000) }),
 		};
 		const problemBox = h('div');
 
@@ -460,6 +461,10 @@ function openSettings({ firstRun = false } = {}) {
 			h('div.field', h('label', 'math-sdk checkout'), fields.mathSdk),
 			h('div.field', h('label', 'Python (optional)'), fields.python,
 				h('div.field-hint', 'Blank auto-detects <math-sdk>/.venv/bin/python. The SDK needs 3.12+.')),
+			h('div.field', h('label', 'Rounds to simulate'), fields.sims,
+				h('div.field-hint',
+					'Per bet mode, each time you Simulate. 1000 runs in a second and shows the shape of ' +
+					'the paytable; a real RTP needs hundreds of thousands, and the optimiser.')),
 			h('div.modal-actions',
 				firstRun ? null : h('button.btn', { onclick: close }, 'Cancel'),
 				h('button.btn.btn-primary', { onclick: save }, 'Save'),

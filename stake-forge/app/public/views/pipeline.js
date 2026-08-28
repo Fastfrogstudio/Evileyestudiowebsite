@@ -6,7 +6,7 @@
  * into a shell and reproduced.
  */
 
-import { h, mount, clear, toast } from '../lib.js';
+import { h, mount, clear, toast, api } from '../lib.js';
 
 export function renderPipeline(ctx) {
 	const { game, registry, config } = ctx;
@@ -17,20 +17,31 @@ export function renderPipeline(ctx) {
 
 	const scrollLog = () => { log.scrollTop = log.scrollHeight; };
 
-	function blockedReason(step) {
+	/**
+	 * Whether a step can run, given the state of the game on disk.
+	 *
+	 * Takes the game rather than closing over it, because the steps depend on
+	 * each other: scaffold creates what assets:import needs, math:run creates
+	 * what math:sync and math:report need. Judging a whole run against the state
+	 * as it was when the tab rendered would skip every step whose prerequisite
+	 * the run itself was about to satisfy.
+	 */
+	function blockedReason(step, current = game) {
 		for (const need of step.needs) {
 			if (need === 'mathSdk' && !config.mathSdk) return 'math-sdk path not set (Settings)';
 			if (need === 'webSdk' && !config.webSdk) return 'web-sdk path not set (Settings)';
-			if (need === 'manifest' && !game.hasManifest) {
+			if (need === 'manifest' && !current.hasManifest) {
 				return 'no assets-manifest.yaml yet — run "Generate placeholder art" first';
 			}
-			if (need === 'scaffolded' && !game.scaffolded?.web) return 'web app not scaffolded yet';
+			if (need === 'scaffolded' && !current.scaffolded?.web) return 'web app not scaffolded yet';
+			if (need === 'mathScaffolded' && !current.scaffolded?.math) return 'math not scaffolded yet';
+			if (need === 'simulated' && !current.simulated) return 'nothing simulated yet — run "Simulate" first';
 		}
-		if (!game.valid) return 'the spec has errors — fix those first';
+		if (!current.valid) return 'the spec has errors — fix those first';
 		return null;
 	}
 
-	async function run(stepId) {
+	async function run(stepId, { refresh = true } = {}) {
 		if (state.running) return toast('A step is already running', 'err');
 		state.running = stepId;
 		state.results[stepId] = 'running';
@@ -64,24 +75,47 @@ export function renderPipeline(ctx) {
 
 		state.running = null;
 		renderSteps();
-		ctx.refreshGame();
+		// A refresh re-renders the whole tab, which detaches this log element —
+		// so during a full run it is deferred to the end, and the log keeps
+		// streaming into the element the user is actually looking at.
+		if (refresh) ctx.refreshGame();
 
 		const result = state.results[stepId];
-		toast(
-			`${registry.steps.find((s) => s.id === stepId).title}: ${result === 'done' ? 'done' : 'failed'}`,
-			result === 'done' ? 'ok' : 'err',
-		);
+		if (refresh) {
+			toast(
+				`${registry.steps.find((s) => s.id === stepId).title}: ${result === 'done' ? 'done' : 'failed'}`,
+				result === 'done' ? 'ok' : 'err',
+			);
+		}
 	}
 
 	async function runAll() {
+		let current = game;
 		for (const step of registry.steps) {
-			if (blockedReason(step)) continue;
-			await run(step.id);
+			const blocked = blockedReason(step, current);
+			if (blocked) {
+				state.lines.push({ stream: 'meta', text: `\n── ${step.title} — skipped: ${blocked}` });
+				mount(log, state.lines.map(logLine));
+				scrollLog();
+				continue;
+			}
+			await run(step.id, { refresh: false });
 			if (state.results[step.id] === 'failed') {
+				ctx.refreshGame();
 				toast('Stopped — a step failed', 'err');
 				return;
 			}
+			// Re-read after each step: this one may have created exactly what the
+			// next one is waiting for.
+			try {
+				current = await api(`/api/games/${game.id}`);
+			} catch {
+				// Keep going on the last known state rather than aborting a build
+				// because one status poll failed.
+			}
 		}
+		ctx.refreshGame();
+		toast('Build finished', 'ok');
 	}
 
 	function renderSteps() {

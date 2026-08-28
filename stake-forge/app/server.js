@@ -219,16 +219,27 @@ app.get('/api/games/:id', (req, res) => {
 		const config = loadConfig();
 		const game = readGame(config.workspace, req.params.id);
 		game.preview = previewState(game.raw?.game?.name ?? req.params.id);
+		// The same derivation mathGameId uses. Reading game.gameId alone reported
+		// every game without an explicit id as un-scaffolded, which blocked the
+		// math steps on games that were in fact scaffolded.
+		const gameId = game.raw?.game?.gameId ?? game.raw?.game?.name?.replace(/-/g, '_');
+		const mathDir = config.mathSdk && gameId ? path.join(config.mathSdk, 'games', gameId) : null;
+
 		game.scaffolded = {
 			web: Boolean(
 				config.webSdk && game.raw?.game?.name &&
 					fs.existsSync(path.join(config.webSdk, 'apps', game.raw.game.name)),
 			),
-			math: Boolean(
-				config.mathSdk && game.raw?.game?.gameId &&
-					fs.existsSync(path.join(config.mathSdk, 'games', game.raw.game.gameId)),
-			),
+			math: Boolean(mathDir && fs.existsSync(mathDir)),
 		};
+		// Lookup tables, not books: they are what math:report reads, and both are
+		// written by the same run, so their presence is the honest signal that a
+		// simulation has actually produced results.
+		game.simulated = Boolean(
+			mathDir &&
+				fs.existsSync(path.join(mathDir, 'library', 'lookup_tables')) &&
+				fs.readdirSync(path.join(mathDir, 'library', 'lookup_tables')).some((f) => f.endsWith('.csv')),
+		);
 		res.json(game);
 	} catch (err) {
 		fail(res, err, 404);

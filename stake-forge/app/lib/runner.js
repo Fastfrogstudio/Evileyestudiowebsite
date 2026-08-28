@@ -82,6 +82,45 @@ export const STEPS = {
 			'--spec', path.join(dir, 'game-spec.yaml'),
 		],
 	},
+	'math:run': {
+		id: 'math:run',
+		title: 'Simulate',
+		blurb: 'Run the real maths — produces books, lookup tables and the authoritative frontend config.',
+		needs: ['mathSdk', 'mathScaffolded'],
+		args: ({ dir, config }) => {
+			const args = [
+				'math:run',
+				'--spec', path.join(dir, 'game-spec.yaml'),
+				'--math-sdk', config.mathSdk,
+				'--sims', String(config.sims ?? 1000),
+			];
+			if (config.python) args.push('--python', config.python);
+			return args;
+		},
+	},
+	'math:sync': {
+		id: 'math:sync',
+		title: 'Sync maths into the app',
+		blurb: 'Replace the placeholder config and story data with what the simulation produced.',
+		needs: ['mathSdk', 'webSdk', 'scaffolded', 'simulated'],
+		args: ({ dir, config }) => [
+			'math:sync',
+			'--spec', path.join(dir, 'game-spec.yaml'),
+			'--math-sdk', config.mathSdk,
+			'--sdk', config.webSdk,
+		],
+	},
+	'math:report': {
+		id: 'math:report',
+		title: 'Report what it pays',
+		blurb: 'Measured RTP, hit rate and spread from the simulated rounds, against your targets.',
+		needs: ['mathSdk', 'simulated'],
+		args: ({ dir, config }) => [
+			'math:report',
+			'--spec', path.join(dir, 'game-spec.yaml'),
+			'--math-sdk', config.mathSdk,
+		],
+	},
 	verify: {
 		id: 'verify',
 		title: 'Verify',
@@ -97,12 +136,23 @@ export const STEPS = {
 	},
 };
 
+/**
+ * `verify` runs LAST, after the maths has been synced in.
+ *
+ * It is the only step that type-checks and executes the generated output, and
+ * math:sync rewrites config.ts — so running it before the sync would certify a
+ * state the game is no longer in. Ending on it means the thing that passed is
+ * the thing you have.
+ */
 export const STEP_ORDER = [
 	'art:placeholder',
 	'audit',
 	'math:scaffold',
 	'scaffold',
 	'assets:import',
+	'math:run',
+	'math:sync',
+	'math:report',
 	'verify',
 ];
 
