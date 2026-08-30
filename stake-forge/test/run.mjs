@@ -1310,6 +1310,37 @@ test('duplicate symbol names are an error', () => {
 	});
 });
 
+test('a symbol name that is not a safe identifier is an error', () => {
+	// The name is written out as an art FILENAME, a reel-strip CSV cell, a Python
+	// dict key and a TypeScript identifier. Two characters broke it in different
+	// ways, and the quiet one is why this is an error rather than a warning:
+	//
+	//   "H 1/A"  art:placeholder died with a raw ENOENT on assets-source/h 1/a.png
+	//   "H,1"    generated silently, and the comma became a CSV separator — one
+	//            row of every free-game strip carried SIX columns on a five-reel
+	//            board, with no error anywhere. The engine reads a shifted board.
+	for (const bad of ['H,1', 'H 1/A', 'H 1', '..', 'H\\1', '1H']) {
+		const yaml = MINIMAL.replace('name: H1', `name: ${JSON.stringify(bad)}`);
+		withSpec(yaml, (file) => {
+			assert.throws(
+				() => loadGameSpec(file),
+				/must be letters, digits and underscores/,
+				`"${bad}" should be refused`,
+			);
+		});
+	}
+});
+
+test('every symbol name in every shipped sample passes that rule', () => {
+	// The rule is narrower than "characters that happen to work", so it has to be
+	// checked against reality rather than taste. These are the distinct names
+	// across every reel strip in every shipped math-sdk sample.
+	const shipped = ['W', 'S', 'H', 'H1', 'H2', 'H3', 'H4', 'H5', 'L1', 'L2', 'L3', 'L4', 'L5', 'M', 'P', 'C', 'X'];
+	for (const name of shipped) {
+		assert.match(name, /^[A-Za-z][A-Za-z0-9_]*$/, `${name} is a real shipped symbol and must pass`);
+	}
+});
+
 test('an unknown screen slot is an error naming the valid ones', () => {
 	const yaml = `${MINIMAL}\nscreens:\n  bakcground: true\n`;
 	withSpec(yaml, (file) => {

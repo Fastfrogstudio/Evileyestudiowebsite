@@ -359,6 +359,37 @@ export function loadGameSpec(specPath) {
 		for (const s of symbols) {
 			if (names.has(s.name)) errors.push(`duplicate symbol name "${s.name}"`);
 			names.add(s.name);
+
+			// ── why a symbol name is not free text ───────────────────────────
+			// The name is not just a label. It is written out as a FILENAME for
+			// the art tile, as a bare cell in the reel-strip CSVs, as a quoted
+			// Python dict key in game_config.py, and as a TypeScript identifier
+			// in the web app's constants. Nothing validated it, and two
+			// characters broke it in different ways:
+			//
+			//   "H 1/A"  art:placeholder tried to open assets-source/h 1/a.png
+			//            in a directory that does not exist, and the step died
+			//            with a raw ENOENT naming a path nobody wrote.
+			//   "H,1"    generated silently. The comma became a CSV separator,
+			//            so one row of every free-game strip carried SIX columns
+			//            on a five-reel board. No error anywhere — the engine
+			//            just reads a shifted board.
+			//
+			// The second is the reason this is an error and not a warning: a
+			// crash is recoverable, a silently shifted reel strip is not.
+			//
+			// The pattern is deliberately narrower than "characters that happen
+			// to work". Checked against every reel strip in every shipped
+			// math-sdk sample: 19 distinct symbol names, all of them match.
+			if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(s.name)) {
+				errors.push(
+					`symbol name "${s.name}" must be letters, digits and underscores, starting with a ` +
+						`letter. The name is written out as an art FILENAME, as a cell in the reel-strip ` +
+						`CSVs, as a Python dict key and as a TypeScript identifier — a comma silently ` +
+						`corrupts the strips and a slash crashes the art step. Every symbol in every ` +
+						`shipped sample looks like W, S, H1 or L3.`,
+				);
+			}
 		}
 
 		assignOrders(symbols, { errors });
