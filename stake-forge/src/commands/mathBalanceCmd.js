@@ -62,6 +62,12 @@ export async function mathBalance({ specPath, volatility, apply = false, json = 
 	console.log('  Modelled on the base board only — no multipliers, no cascades, no free spins.');
 	console.log('  The simulation is the ground truth; this is the pre-flight check.');
 
+	// Non-zero when anything is out of band, so this can gate a pipeline. It is
+	// wired as an ADVISORY step in the app: a spec mid-iteration should be told,
+	// loudly, without being stopped from continuing.
+	const clean = report.inBand && report.cascadeSafe !== false && report.retriggerSafe !== false;
+	if (!clean) process.exitCode = 1;
+
 	let applied = false;
 	if (apply && !report.inBand) {
 		const scaled = scalePaytable(spec, report.paytableScale);
@@ -71,6 +77,9 @@ export async function mathBalance({ specPath, volatility, apply = false, json = 
 		console.log('');
 		console.log(`  Applied x${report.paytableScale} to every payout in ${path.basename(specPath)}.`);
 		console.log(`  Now models ${fmt(after.calibrated.ev)}x per spin against ${fmt(after.target.baseEv)}x — ${fmt(after.ratio)}x off, ${after.inBand ? 'in band' : 'STILL out of band'}.`);
+		if (after.inBand && after.cascadeSafe !== false && after.retriggerSafe !== false) {
+			process.exitCode = 0;
+		}
 	} else if (apply) {
 		console.log('');
 		console.log('  Nothing to apply — already in band.');

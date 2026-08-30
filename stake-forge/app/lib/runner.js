@@ -45,6 +45,21 @@ export const STEPS = {
 			'--manifest', path.join(dir, 'assets-manifest.yaml'),
 		],
 	},
+	'math:balance': {
+		id: 'math:balance',
+		title: 'Balance the maths',
+		blurb:
+			'Before anything is simulated: is this paytable payable at this RTP, on this board? ' +
+			'Runs in a second and catches what would otherwise cost an hour of simulation and a ' +
+			'failed optimiser run.',
+		needs: [],
+		// Advisory: it exits non-zero when the paytable is out of band, and that is
+		// worth seeing loudly, but a spec being iterated on is out of band most of
+		// the time and stopping the build over it would mean never reaching the
+		// maths. math:validate, at the far end, is the one that blocks.
+		advisory: true,
+		args: ({ dir }) => ['math:balance', '--spec', path.join(dir, 'game-spec.yaml')],
+	},
 	'math:scaffold': {
 		id: 'math:scaffold',
 		title: 'Scaffold math',
@@ -154,6 +169,19 @@ export const STEPS = {
 			'--math-sdk', config.mathSdk,
 		],
 	},
+	'math:validate': {
+		id: 'math:validate',
+		title: 'Is it shippable?',
+		blurb:
+			'Every rule measured against the optimised tables, with the number it was judged on: max ' +
+			'win reached, RTP on target, cap frequency, hit rate, no gaps, every mode within 0.5pp.',
+		needs: ['mathSdk', 'simulated'],
+		args: ({ dir, config }) => [
+			'math:validate',
+			'--spec', path.join(dir, 'game-spec.yaml'),
+			'--math-sdk', config.mathSdk,
+		],
+	},
 	package: {
 		id: 'package',
 		title: 'Package for upload',
@@ -196,6 +224,11 @@ export const STEPS = {
 export const STEP_ORDER = [
 	'art:placeholder',
 	'audit',
+	// Before math:scaffold, because it is the cheap check that makes the expensive
+	// ones worth running: a paytable that cannot pay its RTP on this board will
+	// simulate for an hour and then fail in the optimiser with a message about pig
+	// counts. This says the same thing in a second, with the fix.
+	'math:balance',
 	'math:scaffold',
 	'scaffold',
 	'assets:import',
@@ -204,6 +237,10 @@ export const STEP_ORDER = [
 	'math:optimise',
 	'math:sync',
 	'math:report',
+	// After math:report, because report says what it pays and this says whether
+	// that is good enough — and before verify, so a game that cannot ship on its
+	// maths is not packaged.
+	'math:validate',
 	'verify',
 	'package',
 ];
