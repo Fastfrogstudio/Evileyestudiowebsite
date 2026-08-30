@@ -13,6 +13,7 @@ import YAML from 'yaml';
 
 import { loadGameSpec, SpecValidationError } from '../../src/lib/loadSpec.js';
 import { MECHANICS } from '../../src/lib/mechanics.js';
+import { defaultPaytable } from '../../src/lib/taxonomy.js';
 
 const SPEC_FILE = 'game-spec.yaml';
 const MANIFEST_FILE = 'assets-manifest.yaml';
@@ -203,17 +204,25 @@ function starterSpec({ id, name, mechanic, providerName, profile }) {
 
 	if (profile.supportsPaylines) spec.paylines = 'default_20';
 
+	// Paytables are MECHANIC-SHAPED, not one-size-fits-all. lines/ways pay by
+	// kind (3/4/5); cluster and scatter pay by cluster SIZE via range tables and
+	// have higher minimums (5 and 8). A lines-shaped table on a cluster game is
+	// silently broken: cluster.py guards its lookup, so every cluster bigger than
+	// the table's top entry pays ZERO with no error.
+	const boardCells = spec.game.reels.rows.reduce((sum, r) => sum + r, 0);
+	const pay = (rank) => defaultPaytable({ mechanic: profile, rank, boardCells });
+
 	spec.symbols = [
-		{ name: 'H1', role: 'high', order: 1, label: 'High 1', paytable: { 5: 20, 4: 10, 3: 5 } },
-		{ name: 'H2', role: 'high', order: 2, label: 'High 2', paytable: { 5: 15, 4: 5, 3: 3 } },
-		{ name: 'H3', role: 'high', order: 3, label: 'High 3', paytable: { 5: 10, 4: 3, 3: 2 } },
-		{ name: 'H4', role: 'high', order: 4, label: 'High 4', paytable: { 5: 8, 4: 2, 3: 1 } },
-		{ name: 'L1', role: 'low', order: 1, label: 'Low 1', paytable: { 5: 5, 4: 1, 3: 0.5 } },
-		{ name: 'L2', role: 'low', order: 2, label: 'Low 2', paytable: { 5: 3, 4: 0.7, 3: 0.3 } },
-		{ name: 'L3', role: 'low', order: 3, label: 'Low 3', paytable: { 5: 3, 4: 0.7, 3: 0.3 } },
-		{ name: 'L4', role: 'low', order: 4, label: 'Low 4', paytable: { 5: 2, 4: 0.5, 3: 0.2 } },
-		{ name: 'L5', role: 'low', order: 5, label: 'Low 5', paytable: { 5: 1, 4: 0.3, 3: 0.1 } },
-		{ name: 'W', role: 'wild', order: 1, label: 'Wild', special: ['wild', 'multiplier'], paytable: { 5: 20, 4: 10, 3: 5 } },
+		{ name: 'H1', role: 'high', order: 1, label: 'High 1', paytable: pay(0) },
+		{ name: 'H2', role: 'high', order: 2, label: 'High 2', paytable: pay(1) },
+		{ name: 'H3', role: 'high', order: 3, label: 'High 3', paytable: pay(2) },
+		{ name: 'H4', role: 'high', order: 4, label: 'High 4', paytable: pay(3) },
+		{ name: 'L1', role: 'low', order: 1, label: 'Low 1', paytable: pay(4) },
+		{ name: 'L2', role: 'low', order: 2, label: 'Low 2', paytable: pay(5) },
+		{ name: 'L3', role: 'low', order: 3, label: 'Low 3', paytable: pay(6) },
+		{ name: 'L4', role: 'low', order: 4, label: 'Low 4', paytable: pay(7) },
+		{ name: 'L5', role: 'low', order: 5, label: 'Low 5', paytable: pay(8) },
+		{ name: 'W', role: 'wild', order: 1, label: 'Wild', special: ['wild', 'multiplier'], paytable: pay(0) },
 		{ name: 'S', role: 'scatter', order: 1, label: 'Scatter' },
 	];
 
@@ -225,7 +234,7 @@ function starterSpec({ id, name, mechanic, providerName, profile }) {
 			order: spec.symbols.filter((s) => s.role === 'low').length + 1,
 			label: required.name,
 			special: required.special ?? [],
-			paytable: { 5: 2, 4: 1, 3: 0.5 },
+			paytable: pay(6),
 		});
 	}
 

@@ -22,6 +22,22 @@ export const MECHANICS = {
 		id: 'lines',
 		/** GameConfig.win_type in math-sdk. Documentation-only — see note below. */
 		winType: 'lines',
+		/**
+		 * How the paytable is indexed, and the smallest winning count.
+		 *
+		 * lines/ways pay by "kind" — how many matching symbols run from reel 1,
+		 * minimum 3. cluster and scatter pay by SIZE and use RANGE tables:
+		 * 0_0_cluster declares (5,5)/(6,8)/(9,12)/(13,36) and 0_0_scatter
+		 * (8,8)/(9,10)/(11,13)/(14,36), expanded per-count by
+		 * Config.convert_range_table().
+		 *
+		 * This matters because both evaluators GUARD the lookup —
+		 * `if (size, sym) in config.paytable` — so a size with no entry pays
+		 * NOTHING and says nothing. A cluster of 10 on a table that stops at 5
+		 * is a win the player watches land and receives zero for.
+		 */
+		paytableStyle: 'kind',
+		minWinSize: 3,
 		webApp: 'lines',
 		mathSample: '0_0_lines',
 		supportsPaylines: true,
@@ -43,6 +59,8 @@ export const MECHANICS = {
 	ways: {
 		id: 'ways',
 		winType: 'ways',
+		paytableStyle: 'kind',
+		minWinSize: 3,
 		webApp: 'ways',
 		mathSample: '0_0_ways',
 		supportsPaylines: false,
@@ -56,6 +74,8 @@ export const MECHANICS = {
 	cluster: {
 		id: 'cluster',
 		winType: 'cluster',
+		paytableStyle: 'range',
+		minWinSize: 5,
 		webApp: 'cluster',
 		mathSample: '0_0_cluster',
 		supportsPaylines: false,
@@ -69,6 +89,8 @@ export const MECHANICS = {
 	scatter: {
 		id: 'scatter',
 		winType: 'scatter',
+		paytableStyle: 'range',
+		minWinSize: 8,
 		webApp: 'scatter',
 		mathSample: '0_0_scatter',
 		supportsPaylines: false,

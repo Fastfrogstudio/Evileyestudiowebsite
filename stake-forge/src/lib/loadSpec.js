@@ -3,7 +3,7 @@ import YAML from 'yaml';
 import path from 'node:path';
 
 import { MECHANIC_IDS, getMechanic } from './mechanics.js';
-import { normaliseSymbol, assignOrders, sortSymbols } from './taxonomy.js';
+import { normaliseSymbol, assignOrders, sortSymbols, reachableWinSizes } from './taxonomy.js';
 import { validateBehaviors } from './behaviorRecipes.js';
 import { validateScreens } from './screens.js';
 import { VOLATILITY_IDS } from './optimisation.js';
@@ -140,6 +140,54 @@ export function loadGameSpec(specPath) {
 				}
 			}
 		}
+
+			// ── paytable monotonicity ────────────────────────────────────────
+			// Both range evaluators GUARD their lookup — src/calculations/cluster.py:124
+			// and scatter.py:63 read `if (size, symbol) in config.paytable` — so an
+			// uncovered size pays NOTHING and reports nothing.
+			//
+			// The invariant that matters is not "every size is covered": a lines game
+			// paying only for 5-of-a-kind is perfectly normal, and the guard skipping
+			// a 3 is intended there. It is that a BIGGER win may never pay LESS than a
+			// smaller one. A cluster of 10 on a table that stops at 5, or a 4-of-a-kind
+			// between a paying 3 and a paying 5, is a win the player watches land and
+			// receives zero for.
+			if (mechanic && Array.isArray(spec?.game?.reels?.rows)) {
+				const { min, max } = reachableWinSizes({
+					mechanic,
+					reels: spec.game.reels.count,
+					rows: spec.game.reels.rows,
+				});
+				for (const symbol of symbols) {
+					if (!symbol.paytable) continue;
+
+					const below = Object.keys(symbol.paytable).map(Number).filter((n) => n < min);
+					if (below.length) {
+						errors.push(
+							`symbol ${symbol.name}: paytable pays for ${below.join(', ')}, but "${mechanic.id}" ` +
+								`never produces a win smaller than ${min} — those entries are unreachable.`,
+						);
+					}
+
+					const gaps = [];
+					let paying = false;
+					for (let n = min; n <= max; n += 1) {
+						if (n in symbol.paytable) paying = true;
+						else if (paying) gaps.push(n);
+					}
+					if (gaps.length) {
+						const shown = gaps.length > 8
+							? `${gaps.slice(0, 6).join(', ')} … ${gaps[gaps.length - 1]}`
+							: gaps.join(', ');
+						errors.push(
+							`symbol ${symbol.name}: size(s) ${shown} pay nothing, but a smaller size does. ` +
+								`On "${mechanic.id}" the board reaches ${max}, and an uncovered size pays ZERO ` +
+								`with no error — a bigger win paying less than a smaller one. ` +
+								`Use a range: paytable: { "${min}": 5.0, "${min + 1}-${max}": 60.0 }.`,
+						);
+					}
+				}
+			}
 
 		if (!symbols.some((s) => s.role === 'high')) {
 			warnings.push(

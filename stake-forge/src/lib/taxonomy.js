@@ -203,10 +203,18 @@ export function normaliseSymbol(raw, { errors, warnings }) {
 	if (!raw.paytable && !paysWithoutPaytable) {
 		errors.push(`symbol ${name}: paytable is required for role "${role}"`);
 	}
+	// Ranges are expanded once, here, so nothing downstream has to know they exist.
+	const paytable = expandPaytable(raw.paytable);
 	if (raw.paytable) {
 		for (const [kind, value] of Object.entries(raw.paytable)) {
-			if (!/^\d+$/.test(String(kind))) {
-				errors.push(`symbol ${name}: paytable key "${kind}" must be a whole number of symbols`);
+			// A key is either a count ("5") or a closed range ("6-8"). cluster and
+			// scatter paytables are written as ranges — 0_0_cluster declares
+			// (5,5)/(6,8)/(9,12)/(13,36) — and Config.convert_range_table()
+			// expands them per count, exactly as expandPaytable does above.
+			if (!/^\d+$/.test(String(kind)) && !/^\d+\s*-\s*\d+$/.test(String(kind))) {
+				errors.push(
+					`symbol ${name}: paytable key "${kind}" must be a count ("5") or a range ("6-8")`,
+				);
 			}
 			if (typeof value !== 'number') {
 				errors.push(`symbol ${name}: paytable["${kind}"] must be a number, got ${typeof value}`);
@@ -221,7 +229,7 @@ export function normaliseSymbol(raw, { errors, warnings }) {
 		label: raw.label ?? name,
 		special,
 		behaviors: [...new Set(behaviors)],
-		paytable: raw.paytable ?? null,
+		paytable: paytable ?? null,
 	};
 }
 
@@ -290,4 +298,95 @@ export function buildSpecialSymbols(symbols) {
 		}
 	}
 	return out;
+}
+
+/**
+ * Expand a paytable that may use RANGE keys into one entry per count.
+ *
+ * cluster and scatter games pay by cluster SIZE, and their paytables are written
+ * as ranges — 0_0_cluster declares (5,5)/(6,8)/(9,12)/(13,36), which
+ * Config.convert_range_table() expands to one entry per size. A spec may
+ * therefore write either form:
+ *
+ *     paytable: { "5": 5.0, "6-8": 12.5, "9-12": 25.0, "13-36": 60.0 }
+ *
+ * Expanding here rather than in the Python generator means every consumer — the
+ * ceiling analysis, the audit, the art brief — sees the same fully-expanded
+ * table and none of them has to understand ranges.
+ */
+export function expandPaytable(paytable) {
+	if (!paytable) return null;
+	const out = {};
+	for (const [key, value] of Object.entries(paytable)) {
+		const range = /^(\d+)\s*-\s*(\d+)$/.exec(String(key).trim());
+		if (range) {
+			const from = Number(range[1]);
+			const to = Number(range[2]);
+			for (let n = from; n <= to; n += 1) out[n] = value;
+			continue;
+		}
+		const single = Number(key);
+		if (Number.isFinite(single)) out[single] = value;
+	}
+	return out;
+}
+
+/**
+ * Every winning size a board can physically produce, for coverage checking.
+ *
+ * lines/ways top out at the reel count — you cannot have six of a kind on five
+ * reels. cluster and scatter count cells, so they top out at the whole board.
+ */
+export function reachableWinSizes({ mechanic, reels, rows }) {
+	const min = mechanic?.minWinSize ?? 3;
+	const max =
+		mechanic?.paytableStyle === 'range'
+			? rows.reduce((sum, r) => sum + r, 0)
+			: reels;
+	return { min, max };
+}
+
+/**
+ * A default paytable of the right SHAPE for a mechanic.
+ *
+ * The shapes are taken from the shipped samples, because the four evaluators
+ * count completely differently and a table of the wrong shape is silently broken
+ * rather than merely unbalanced:
+ *
+ *   lines/ways  by "kind" — 3, 4, 5 matching from reel 1 (0_0_lines, 0_0_ways)
+ *   cluster     by SIZE, as ranges — 0_0_cluster uses (5,5)(6,8)(9,12)(13,36)
+ *   scatter     by SIZE, as ranges — 0_0_scatter uses (8,8)(9,10)(11,13)(14,36)
+ *
+ * `rank` is 0 for the top-paying symbol and rises for weaker ones, so a caller
+ * can lay out a whole symbol set by index. Values follow the samples' curve:
+ * roughly x2.5 per tier, with the top tier jumping harder.
+ */
+export function defaultPaytable({ mechanic, rank = 0, boardCells = 36 }) {
+	// Each rank is worth ~55% of the one above, matching the sample spread from
+	// H1 down to L5 without ever reaching zero.
+	const scale = Math.pow(0.55, rank);
+	const round = (n) => Math.max(0.1, Math.round(n * 10) / 10);
+
+	if (mechanic?.paytableStyle !== 'range') {
+		return {
+			3: round(5 * scale),
+			4: round(12.5 * scale),
+			5: round(50 * scale),
+		};
+	}
+
+	const min = mechanic.minWinSize;
+	const top = Math.max(min + 3, boardCells);
+	// Four tiers, matching the samples: exact-minimum, then three widening bands.
+	const b1 = min;
+	const b2 = min + 1;
+	const b3 = Math.min(min + 4, top - 1);
+	const b4 = Math.min(min + 8, top - 1);
+
+	return {
+		[`${b1}`]: round(5 * scale),
+		[`${b2}-${b3}`]: round(12.5 * scale),
+		[`${b3 + 1}-${b4}`]: round(25 * scale),
+		[`${b4 + 1}-${top}`]: round(60 * scale),
+	};
 }
