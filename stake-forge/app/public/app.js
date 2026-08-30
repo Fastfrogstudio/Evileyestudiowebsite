@@ -6,6 +6,7 @@ import { h, mount, clear, api, toast, modal, clone } from './lib.js';
 import { renderEditor } from './views/editor.js';
 import { renderPipeline } from './views/pipeline.js';
 import { renderAssets } from './views/assets.js';
+import { renderGenerate } from './views/generate.js';
 import { renderPreview } from './views/preview.js';
 import { renderBrief } from './views/brief.js';
 import { renderInspire } from './views/inspire.js';
@@ -182,6 +183,7 @@ function renderGame() {
 				tab('spec', 'Spec', errorCount ? { count: errorCount, kind: 'err' } : warnCount ? { count: warnCount, kind: 'warn' } : null),
 				tab('build', 'Build'),
 				tab('brief', 'Art brief'),
+				tab('generate', 'Generate'),
 				tab('assets', 'Assets'),
 				tab('preview', 'Preview'),
 			),
@@ -201,6 +203,7 @@ function renderGame() {
 		if (state.tab === 'spec') mount(body, renderEditor(ctx));
 		else if (state.tab === 'build') mount(body, renderPipeline(ctx));
 		else if (state.tab === 'brief') mount(body, renderBrief(ctx));
+		else if (state.tab === 'generate') mount(body, renderGenerate(ctx));
 		else if (state.tab === 'assets') mount(body, renderAssets(ctx));
 		else mount(body, renderPreview(ctx));
 	}

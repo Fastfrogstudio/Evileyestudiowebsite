@@ -275,3 +275,31 @@ tr:last-child td { border-bottom: 0; }
 	letter-spacing: 0.05em; color: var(--ink-faint); font-weight: 600; }
 .card ul { margin: 0 0 4px; padding-left: 18px; }
 .card li { margin: 2px 0; }
+
+/* ── Generate tab ──────────────────────────────────────────────────────── */
+.gen-guide label { display: block; font-size: 12px; color: var(--dim, #8b8397); margin: 14px 0 6px; }
+.gen-guide textarea { width: 100%; background: #16131c; color: #ded7e8; border: 1px solid #322a3c;
+  border-radius: 6px; padding: 10px 12px; font-size: 12px; line-height: 1.55; resize: vertical; }
+.gen-list { margin-top: 10px; max-height: 620px; overflow-y: auto; }
+.gen-row { display: flex; gap: 10px; align-items: flex-start; padding: 9px 4px;
+  border-bottom: 1px solid #241f2c; }
+.gen-row:last-child { border-bottom: 0; }
+.gen-main { flex: 1; min-width: 0; }
+.gen-id { font-size: 12px; font-weight: 600; color: #d6cde4; }
+.gen-prompt { font-size: 11px; color: #857a97; line-height: 1.45; margin-top: 2px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gen-err { font-size: 11px; color: #ff8f8f; margin-top: 4px; }
+.gen-warn { font-size: 11px; color: #ffcf7a; margin-top: 4px; }
+.gen-size { text-align: right; white-space: nowrap; font-size: 11px; }
+.gen-kind, .gen-flag { display: block; color: #6f6683; font-size: 10px; margin-top: 2px; }
+.gen-flag { color: #5f7f9a; }
+.dot { width: 16px; text-align: center; font-size: 13px; color: #3d3548; flex: 0 0 16px; }
+.dot.ok { color: #6fd08c; } .dot.err { color: #ff7676; } .dot.pending { color: #d8b45c; }
+.chip { background: #1e1a26; border: 1px solid #322a3c; color: #9b90ad; border-radius: 999px;
+  padding: 4px 12px; font-size: 11px; cursor: pointer; }
+.chip.active { background: #2f2740; color: #e4dcf0; border-color: #4a3f5e; }
+.warn-box { background: #2a2216; border: 1px solid #4d3d1f; color: #e8cf9a; border-radius: 6px;
+  padding: 10px 12px; font-size: 12px; margin: 12px 0; }
+.err-box { background: #2c1a1c; border: 1px solid #5a2a2e; color: #f0b5b5; border-radius: 6px;
+  padding: 10px 12px; font-size: 12px; margin: 10px 0; }
+.row.between { display: flex; justify-content: space-between; align-items: center; gap: 12px; }

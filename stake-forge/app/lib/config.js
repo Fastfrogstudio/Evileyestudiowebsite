@@ -30,7 +30,32 @@ const DEFAULTS = {
 	 * paytable. Real RTP figures need hundreds of thousands, and the optimiser.
 	 */
 	sims: 1000,
+
+	// ── image generation ────────────────────────────────────────────────────
+	// The vendor contract is the one unsettled thing in the art pipeline, so all
+	// three parts of it are settings rather than code. A new model version is a
+	// config change; a different provider is an edit to one adapter.
+	//
+	// The key is stored here in the same file as the paths, which is a local-only
+	// app on a local-only port — but it IS a secret sitting on disk, so the app
+	// never sends it back to the browser.
+	imageEndpoint: '',
+	imageApiKey: '',
+	imageModel: 'seedance-2.5',
 };
+
+/** Config keys that must never be sent to the browser. */
+export const SECRET_KEYS = ['imageApiKey'];
+
+/** The config with secrets replaced by whether they are set. */
+export function redactConfig(config) {
+	const out = { ...config };
+	for (const key of SECRET_KEYS) {
+		out[`${key}Set`] = Boolean(out[key]);
+		delete out[key];
+	}
+	return out;
+}
 
 export function loadConfig() {
 	if (!fs.existsSync(CONFIG_PATH)) return { ...DEFAULTS, _path: CONFIG_PATH, _exists: false };

@@ -13,7 +13,7 @@ import YAML from 'yaml';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadConfig, saveConfig, validateConfig, guessPaths } from './lib/config.js';
+import { loadConfig, saveConfig, validateConfig, guessPaths , redactConfig, SECRET_KEYS } from './lib/config.js';
 import { listGames, readGame, writeGame, createGame, validateSpecObject, gameDir } from './lib/games.js';
 import { STEPS, STEP_ORDER, runStep, auditJson } from './lib/runner.js';
 import { startPreview, stopPreview, previewState, previewStories, stopAllPreviews } from './lib/preview.js';
@@ -38,7 +38,7 @@ import {
 
 import { analyseInspiration } from '../src/lib/inspire.js';
 import { BEHAVIOR_RECIPES } from '../src/lib/behaviorRecipes.js';
-import { MECHANICS } from '../src/lib/mechanics.js';
+import { MECHANICS, getMechanic } from '../src/lib/mechanics.js';
 import { SCREEN_SLOTS, WIN_LEVEL_ALIASES, WIN_LEVEL_ANIMATIONS, BANNER_WIN_LEVELS } from '../src/lib/screens.js';
 import { ROLES, ENGINE_SPECIAL_KEYS, typeRequiredStates, defaultAnimationStates } from '../src/lib/taxonomy.js';
 import { VOLATILITY_PROFILES } from '../src/lib/optimisation.js';
@@ -46,6 +46,8 @@ import { requiredStatesForSymbol } from '../src/lib/behaviorRecipes.js';
 import { INSPIRATION_RULES } from '../src/lib/inspirationRules.js';
 import { readSoundsUsed, readSoundVocabulary, readSoundSprite } from '../src/lib/sound.js';
 import { loadGameSpec } from '../src/lib/loadSpec.js';
+import { ART_GUIDE_TEMPLATE, loadArtGuide, buildGenerationManifest } from '../src/lib/artGuide.js';
+import { makeProvider, generateJob } from '../src/lib/imageProvider.js';
 import { buildArtBrief } from '../src/lib/artBrief.js';
 import { renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
 
@@ -137,13 +139,26 @@ app.get('/api/registry', (_req, res) => {
 // ── config ──────────────────────────────────────────────────────────────────
 app.get('/api/config', (_req, res) => {
 	const config = loadConfig();
-	res.json({ config, problems: validateConfig(config), guesses: config._exists ? null : guessPaths() });
+	// redactConfig, not config — the image API key lives in this file and the
+	// browser never needs it, only whether one is set.
+	res.json({
+		config: redactConfig(config),
+		problems: validateConfig(config),
+		guesses: config._exists ? null : guessPaths(),
+	});
 });
 
 app.post('/api/config', (req, res) => {
 	try {
-		const config = saveConfig(req.body ?? {});
-		res.json({ config, problems: validateConfig(config) });
+		// An empty string for a secret means "leave it alone", so the browser can
+		// post the redacted config back without wiping the stored key.
+		const patch = { ...(req.body ?? {}) };
+		const existing = loadConfig();
+		for (const key of SECRET_KEYS) {
+			if (!patch[key]) patch[key] = existing[key];
+		}
+		const config = saveConfig(patch);
+		res.json({ config: redactConfig(config), problems: validateConfig(config) });
 	} catch (err) {
 		fail(res, err);
 	}
@@ -307,6 +322,126 @@ app.get('/api/games/:id/brief', (req, res) => {
 			csv: renderCsv(data),
 			manifest: renderManifest(data),
 		});
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+// ── art generation ──────────────────────────────────────────────────────────
+/**
+ * The jobs this game needs generating, with the prompt each will use.
+ *
+ * The art guide supplies the STYLE and the spec supplies the requirements, so a
+ * "cartoony" brief and a "painterly" brief produce the same 178 assets at the
+ * same sizes with a different look — which is the whole point of separating them.
+ */
+app.get('/api/games/:id/generate/jobs', (req, res) => {
+	try {
+		const config = loadConfig();
+		const dir = gameDir(config.workspace, req.params.id);
+		const spec = loadGameSpec(path.join(dir, 'game-spec.yaml'));
+		const guidePath = path.join(dir, 'art-guide.yaml');
+		if (!fs.existsSync(guidePath)) {
+			return res.json({ jobs: [], needsGuide: true, guidePath });
+		}
+		const guide = loadArtGuide(guidePath);
+		const mechanic = getMechanic(spec.game.mechanic);
+		const referenceAppDir = config.webSdk
+			? path.join(config.webSdk, 'apps', mechanic.webApp)
+			: null;
+		const manifest = buildGenerationManifest({ spec, guide, referenceAppDir });
+		res.json({
+			jobs: manifest.jobs,
+			totals: manifest.totals,
+			guide: manifest.guide,
+			// Whether a provider is configured at all, without leaking the key.
+			ready: Boolean(config.imageEndpoint && config.imageApiKey),
+			model: config.imageModel,
+		});
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+/**
+ * Generate the requested jobs, straight to where each asset belongs.
+ *
+ * No candidate folder and no selection step: the brief describes the style, the
+ * job describes the asset, and the result lands at its path. Re-running with an
+ * edited brief overwrites, which is what makes the brief the thing you iterate
+ * on rather than a folder of near-misses.
+ *
+ * Streamed as newline-delimited JSON because a full set is 178 requests and a
+ * single response at the end would look identical to a hang.
+ */
+app.post('/api/games/:id/generate', async (req, res) => {
+	const config = loadConfig();
+	const provider = makeProvider(config);
+	if (!provider) {
+		return fail(res, new Error('No image endpoint or API key configured — set them in Settings.'));
+	}
+
+	try {
+		const dir = gameDir(config.workspace, req.params.id);
+		const spec = loadGameSpec(path.join(dir, 'game-spec.yaml'));
+		const guide = loadArtGuide(path.join(dir, 'art-guide.yaml'));
+		if (!guide) return fail(res, new Error('This game has no art-guide.yaml.'));
+
+		const mechanic = getMechanic(spec.game.mechanic);
+		const referenceAppDir = config.webSdk
+			? path.join(config.webSdk, 'apps', mechanic.webApp)
+			: null;
+		const manifest = buildGenerationManifest({ spec, guide, referenceAppDir });
+
+		const wanted = new Set(req.body?.ids ?? []);
+		const jobs = manifest.jobs.filter((j) => !j.skipped && (!wanted.size || wanted.has(j.id)));
+
+		res.setHeader('content-type', 'application/x-ndjson');
+		res.setHeader('cache-control', 'no-cache');
+		const send = (event) => res.write(`${JSON.stringify(event)}\n`);
+		send({ type: 'start', total: jobs.length, model: provider.model });
+
+		// Sequential on purpose. Image endpoints rate-limit, and a burst of 178
+		// parallel requests is the fastest way to get a 429 for the whole batch.
+		let done = 0;
+		for (const job of jobs) {
+			if (req.socket.destroyed) break;
+			send({ type: 'begin', id: job.id, width: job.width, height: job.height });
+			try {
+				const result = await generateJob({ job, provider, gameDir: dir });
+				done += result.ok ? 1 : 0;
+				send({ type: 'result', ...result });
+			} catch (err) {
+				send({ type: 'result', id: job.id, ok: false, error: err.message });
+			}
+		}
+		send({ type: 'done', generated: done, total: jobs.length });
+		res.end();
+	} catch (err) {
+		if (!res.headersSent) fail(res, err);
+		else res.end();
+	}
+});
+
+/** Write the art guide template, so the tab can offer it on an empty game. */
+app.post('/api/games/:id/art-guide', (req, res) => {
+	try {
+		const config = loadConfig();
+		const file = path.join(gameDir(config.workspace, req.params.id), 'art-guide.yaml');
+		if (!fs.existsSync(file) || req.body?.force) {
+			fs.writeFileSync(file, req.body?.content ?? ART_GUIDE_TEMPLATE, 'utf8');
+		}
+		res.json({ ok: true, content: fs.readFileSync(file, 'utf8') });
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+app.get('/api/games/:id/art-guide', (req, res) => {
+	try {
+		const config = loadConfig();
+		const file = path.join(gameDir(config.workspace, req.params.id), 'art-guide.yaml');
+		res.json({ exists: fs.existsSync(file), content: fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '' });
 	} catch (err) {
 		fail(res, err);
 	}
