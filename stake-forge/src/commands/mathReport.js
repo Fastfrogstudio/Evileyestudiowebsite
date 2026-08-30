@@ -4,6 +4,7 @@ import chalk from 'chalk';
 
 import { loadGameSpec } from '../lib/loadSpec.js';
 import { mathGameId } from './mathScaffold.js';
+import { staleAgainst } from './packageGame.js';
 
 /**
  * What the maths actually pays, measured against what the spec asked for.
@@ -113,8 +114,15 @@ export function mathReport({ specPath, mathSdkDir, json }) {
 		// run, that file is a byte-for-byte copy of the raw one — so its presence
 		// is not evidence of anything, and it has to be compared.
 		const optimised = path.join(publishDir, `lookUpTable_${name}_0.csv`);
-		const isOptimised =
+		const differs =
 			fs.existsSync(optimised) && fs.readFileSync(optimised, 'utf8') !== fs.readFileSync(raw, 'utf8');
+		// ...and differing is not enough either. Simulate, optimise, then simulate
+		// again: the published table still differs from the raw one, so it looks
+		// optimised, but its weights describe rounds the books no longer contain.
+		// Reporting from it would put a confident RTP on a game nobody computed —
+		// the worst failure available here, because it looks like success.
+		const stale = differs ? staleAgainst(raw, optimised) : null;
+		const isOptimised = differs && !stale;
 
 		const summary = summarise(readLookupTable(isOptimised ? optimised : raw), {
 			wincap: mode.maxWin,
@@ -126,6 +134,7 @@ export function mathReport({ specPath, mathSdkDir, json }) {
 		modes.push({
 			name,
 			optimised: isOptimised,
+			stale,
 			target: { rtp: targetRtp, maxWin: mode.maxWin, cost: mode.cost },
 			measured: summary,
 			// A tolerance rather than an exact match, because a finite simulation
@@ -174,8 +183,21 @@ export function mathReport({ specPath, mathSdkDir, json }) {
 		console.log(
 			chalk.bold(mode.name.padEnd(10)),
 			chalk.dim(`${mode.measured.rounds} rounds`),
-			mode.optimised ? chalk.green('optimised') : chalk.yellow('raw'),
+			mode.optimised ? chalk.green('optimised') : mode.stale ? chalk.red('STALE') : chalk.yellow('raw'),
 		);
+		if (mode.stale) {
+			console.log(
+				chalk.red(
+					`  The optimised table was built against a DIFFERENT simulation than the books
+` +
+						`  beside it (${mode.stale}). The numbers below are the RAW simulation, because
+` +
+						`  reporting from the stale table would describe a game that does not exist.
+` +
+						`  Re-run "forge math:optimise".`,
+				),
+			);
+		}
 		console.log(
 			`  RTP        ${chalk.bold(pct(mode.measured.rtp))}` +
 				chalk.dim(`  target ${pct(mode.target.rtp)}  `) +

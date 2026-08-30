@@ -6,6 +6,7 @@ import { loadGameSpec } from '../lib/loadSpec.js';
 import { mathGameId } from './mathScaffold.js';
 import { readLookupTable, summarise } from './mathReport.js';
 import { validateMode, RULE_PROVENANCE } from '../lib/mathValidate.js';
+import { staleAgainst } from './packageGame.js';
 
 /**
  * `forge math:validate` — is this game shippable?
@@ -43,17 +44,39 @@ export function mathValidate({ specPath, mathSdkDir, json = false }) {
 		// publish_files starts as a byte-for-byte copy, so its existence proves
 		// nothing — the files have to be compared.
 		const optimisedFile = path.join(publishDir, `lookUpTable_${name}_0.csv`);
-		const optimised =
+		const differs =
 			fs.existsSync(optimisedFile) &&
 			fs.readFileSync(optimisedFile, 'utf8') !== fs.readFileSync(raw, 'utf8');
+		// Differing is necessary but not sufficient — see mathReport. A table
+		// optimised against a superseded simulation still differs from the raw
+		// one, and validating from it would pass a game on numbers that describe
+		// rounds the books no longer contain.
+		const stale = differs ? staleAgainst(raw, optimisedFile) : null;
+		const optimised = differs && !stale;
 
 		const rows = readLookupTable(optimised ? optimisedFile : raw);
 		const summary = summarise(rows, { wincap: mode.maxWin, cost: mode.cost ?? 1 });
 		if (!summary) continue;
 
 		const result = validateMode({ name, mode, rows, summary, spec, baseRtp, optimised });
+		if (stale) {
+			// A hard failure, not a note. Every other rule in this gate is about
+			// whether the game is good enough; this one is about whether the
+			// numbers describe the game at all.
+			result.checks.unshift({
+				id: 'tables-match-books',
+				ok: false,
+				statement: 'the optimised weights describe the simulation they ship with',
+				detail:
+					`they do not — ${stale}. The optimiser ran against a superseded simulation, so ` +
+					`every number below is measured from the RAW rounds instead. Re-run ` +
+					`"forge math:optimise".`,
+			});
+			result.ok = false;
+			result.failed += 1;
+		}
 		if (baseRtp === null && optimised) baseRtp = summary.rtp;
-		results.push({ ...result, optimised });
+		results.push({ ...result, optimised, stale });
 	}
 
 	if (!results.length) throw new Error(`No lookup tables found in ${tablesDir}.`);
@@ -70,7 +93,11 @@ export function mathValidate({ specPath, mathSdkDir, json = false }) {
 	for (const mode of results) {
 		console.log(
 			chalk.bold(mode.name.padEnd(10)),
-			mode.optimised ? chalk.green('optimised') : chalk.yellow('raw — optimiser has not run'),
+			mode.optimised
+				? chalk.green('optimised')
+				: mode.stale
+					? chalk.red('STALE — optimised against a different simulation')
+					: chalk.yellow('raw — optimiser has not run'),
 		);
 		for (const check of mode.checks) {
 			// Three states, not two: a hard rule passes or fails, and an advisory or

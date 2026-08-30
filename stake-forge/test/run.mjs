@@ -55,7 +55,7 @@ import { summarise } from '../src/commands/mathReport.js';
 import { auditSound, readSoundVocabulary, readSoundsUsed, readSoundSprite } from '../src/lib/sound.js';
 import { planOptimisation, renderOptimisationPy, splitRtp, VOLATILITY_PROFILES, VOLATILITY_IDS } from '../src/lib/optimisation.js';
 import { planSprite, spriteJson, buildFilterGraph, looksLooping, readSoundSources, SPRITE_FORMATS, CLIP_GAP_MS } from '../src/lib/soundSprite.js';
-import { inspectMathPublish, collectFrontend } from '../src/commands/packageGame.js';
+import { inspectMathPublish, collectFrontend, staleAgainst } from '../src/commands/packageGame.js';
 import { renderStickyMath } from '../src/lib/recipes/sticky.js';
 import { renderSuperspinReelCsv, hasSuperspinMode, BLANK_SYMBOL, SUPERSPIN_PRIZE_DENSITY } from '../src/lib/mathGenerators.js';
 import { payingHitRate, wincapRtpAllocation, TARGET_WINCAP_HIT_RATE } from '../src/lib/optimisation.js';
@@ -1704,7 +1704,7 @@ test('un-optimised lookup tables are caught', () => {
 	});
 });
 
-test('an optimisation against a DIFFERENT run is caught by row count', () => {
+test('an optimisation against a DIFFERENT run is caught', () => {
 	// The nastiest one: the table differs from the raw table, so it looks
 	// optimised, but its simulation ids no longer match the books beside it.
 	withPublishDir(({ publish, rows }) => {
@@ -1712,7 +1712,7 @@ test('an optimisation against a DIFFERENT run is caught by row count', () => {
 	}, ({ root }) => {
 		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
 		assert.equal(result.ok, false);
-		assert.match(result.problems.join('\n'), /40 rows but the simulation produced 100/);
+		assert.match(result.problems.join('\n'), /40 rows against the simulation's 100/);
 	});
 });
 
@@ -3485,6 +3485,79 @@ test('the library no longer claims the mechanic doubles by default', () => {
 	assert.match(grid.rule, /DOUBLE/);
 	assert.equal(grid.math.sample, 'games/0_0_cluster');
 	assert.match(grid.math.notes, /0_0_gold_rush/, 'the wrong citation should be recorded, not erased');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stale optimisation
+//
+// Simulate, optimise, then simulate again. Every file is present, well-formed
+// and internally consistent — and the published weights now index rounds the
+// books no longer contain. The game would pay a distribution nobody computed,
+// and the pipeline would report a confident RTP for it. That is the worst
+// failure available here, because it looks exactly like success.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const csvTable = (rows) => rows.map((r) => r.join(',')).join('\n') + '\n';
+
+function withTables(rawRows, publishedRows, fn) {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-stale-'));
+	try {
+		const raw = path.join(dir, 'raw.csv');
+		const pub = path.join(dir, 'pub.csv');
+		fs.writeFileSync(raw, csvTable(rawRows), 'utf8');
+		fs.writeFileSync(pub, csvTable(publishedRows), 'utf8');
+		return fn(raw, pub);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+}
+
+test('reweighted rows from the same simulation are not stale', () => {
+	// The optimiser rewrites the WEIGHT column and nothing else — verified
+	// against a live optimised game, where the id and payout columns were
+	// identical in both files. Flagging that as stale would fail every correctly
+	// optimised game.
+	const result = withTables(
+		[['0', '1', '0'], ['1', '1', '44'], ['2', '1', '900']],
+		[['0', '1738586969127', '0'], ['1', '1193578433539', '44'], ['2', '77', '900']],
+		staleAgainst,
+	);
+	assert.equal(result, null);
+});
+
+test('a different simulation at the SAME row count is caught', () => {
+	// The case the first version of this check missed. It compared row counts, on
+	// the reasoning that the optimiser only reweights rows — true, and useless,
+	// because re-running math:run at the same sims count produces the same number
+	// of rows and completely different rounds.
+	const result = withTables(
+		[['0', '1', '0'], ['1', '1', '7744'], ['2', '1', '900']],
+		[['0', '99', '0'], ['1', '1193578433539', '44'], ['2', '77', '900']],
+		staleAgainst,
+	);
+	assert.ok(result, 'same row count, different payouts, must be caught');
+	assert.match(result, /pays 7744 in the books and 44 in the published/);
+});
+
+test('a row-count difference is still caught, and says so plainly', () => {
+	const result = withTables(
+		[['0', '1', '0'], ['1', '1', '44']],
+		[['0', '1', '0'], ['1', '1', '44'], ['2', '1', '900']],
+		staleAgainst,
+	);
+	assert.match(result, /3 rows against the simulation's 2/);
+});
+
+test('a re-ordered simulation id is caught', () => {
+	// Two runs can produce the same multiset of payouts in a different order.
+	// Comparing the id column catches that where comparing payouts alone would
+	// not.
+	const result = withTables(
+		[['0', '1', '0'], ['1', '1', '44']],
+		[['0', '1', '0'], ['7', '1', '44']],
+		staleAgainst,
+	);
+	assert.match(result, /row 2 is simulation 7, the books have 1/);
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

@@ -290,6 +290,7 @@ export const RULE_PROVENANCE = {
 	'hit-rate': 'Stake approval criteria (researched, CONFIRM before submitting)',
 	'no-gaps': 'Stake approval criteria (researched, CONFIRM before submitting)',
 	'modes-agree': 'Stake approval criteria (researched, CONFIRM before submitting)',
+	'tables-match-books': 'arithmetic — weights that index rounds the books do not contain are meaningless',
 	'volatility-shape': 'ours, ADVISORY and uncalibrated — no shipped sample has simulation output to calibrate against',
 };
 

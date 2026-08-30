@@ -153,6 +153,44 @@ const sha256 = (file) => crypto.createHash('sha256').update(fs.readFileSync(file
  *      whatever RTP the raw simulation happened to have, which is not the
  *      target and is usually wildly above it.
  */
+/**
+ * Are these two lookup tables from the same simulation?
+ *
+ * The optimiser rewrites the WEIGHT column and nothing else — verified against a
+ * live optimised game, where the id and payout columns were identical in both
+ * files and only the weights differed. So the id+payout pair is an exact
+ * fingerprint of the simulation that produced them.
+ *
+ * Returns null when they match, or a human description of the first divergence.
+ */
+export function staleAgainst(rawFile, publishedFile) {
+	const read = (file) =>
+		fs
+			.readFileSync(file, 'utf8')
+			.split('\n')
+			.map((l) => l.trim())
+			.filter(Boolean)
+			.map((l) => l.split(','));
+
+	const raw = read(rawFile);
+	const published = read(publishedFile);
+
+	if (raw.length !== published.length) {
+		return `${published.length} rows against the simulation's ${raw.length}`;
+	}
+	for (let i = 0; i < raw.length; i += 1) {
+		// Column 0 is the simulation id, column 2 the payout. Column 1 is the
+		// weight, which the optimiser is supposed to change.
+		if (raw[i][0] !== published[i][0]) {
+			return `row ${i + 1} is simulation ${published[i][0]}, the books have ${raw[i][0]}`;
+		}
+		if (raw[i][2] !== published[i][2]) {
+			return `simulation ${raw[i][0]} pays ${raw[i][2]} in the books and ${published[i][2]} in the published table`;
+		}
+	}
+	return null;
+}
+
 export function inspectMathPublish({ gameDir, gameId }) {
 	const publish = path.join(gameDir, 'library', 'publish_files');
 	const problems = [];
@@ -201,18 +239,31 @@ export function inspectMathPublish({ gameDir, gameId }) {
 		if (!fs.existsSync(raw) || !fs.existsSync(published)) continue;
 		if (fs.readFileSync(raw, 'utf8') !== fs.readFileSync(published, 'utf8')) optimised = true;
 
-		// A STALE optimisation: simulate, optimise, then re-simulate at a
-		// different count, and the published table still describes the old set of
-		// rounds. It looks optimised — it genuinely differs from the raw table —
-		// but its simulation ids no longer line up with the books beside it, so
-		// the RGS would weight rounds that are not the rounds it serves. The
-		// optimiser only reweights rows, so a row-count difference can only mean
-		// the two came from different runs.
-		if (rows(raw) !== rows(published)) {
+		// A STALE optimisation: simulate, optimise, then re-simulate, and the
+		// published table still describes the OLD set of rounds. It looks
+		// optimised — it genuinely differs from the raw table — but its weights
+		// index rounds that are no longer the rounds the books serve, so the RGS
+		// would pay a distribution nobody computed. Nothing else in the pipeline
+		// catches this: every file is present, well-formed and internally
+		// consistent.
+		//
+		// The first version of this check compared ROW COUNTS, on the reasoning
+		// that the optimiser only reweights rows so a count difference is the
+		// only way they can diverge. That is wrong in the case that actually
+		// happens: re-running math:run at the SAME sims count produces the same
+		// number of rows and completely different rounds.
+		//
+		// The payout column is the real fingerprint. Verified against a live
+		// optimised game: the optimiser preserves the id and payout columns
+		// exactly and rewrites only the weight. So if the payouts differ at all,
+		// the two files came from different simulations.
+		const stale = staleAgainst(raw, published);
+		if (stale) {
 			problems.push(
-				`${path.basename(published)} has ${rows(published)} rows but the simulation produced ` +
-					`${rows(raw)} — the optimiser ran against a DIFFERENT set of rounds than the books ` +
-					`beside it. Re-run "forge math:optimise" against the current simulation.`,
+				`${path.basename(published)} was optimised against a DIFFERENT simulation than the ` +
+					`books beside it (${stale}). Its weights index rounds the books no longer contain, ` +
+					`so the game would pay a distribution nobody computed. Re-run ` +
+					`"forge math:optimise" against the current simulation.`,
 			);
 		}
 	}
