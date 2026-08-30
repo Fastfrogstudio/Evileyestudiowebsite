@@ -26,6 +26,7 @@ import { behaviors } from '../src/commands/behaviors.js';
 import { preview } from '../src/commands/preview.js';
 import { artGuide, artPrompts } from '../src/commands/artPrompts.js';
 import { artAccept } from '../src/commands/artAccept.js';
+import { artCheck } from '../src/commands/artCheck.js';
 import { SpecValidationError } from '../src/lib/loadSpec.js';
 
 const program = new Command();
@@ -220,6 +221,30 @@ program
 	.option('--out <path>', 'where to write it', 'art-guide.yaml')
 	.option('--force', 'overwrite an existing guide', false)
 	.action(run((opts) => artGuide({ out: path.resolve(opts.out), force: opts.force })));
+
+program
+	.command('art:check')
+	.description('One request to the image provider, reported in full — run this before a batch')
+	.option('--endpoint <url>', 'override the configured endpoint')
+	.option('--key <key>', 'override the configured API key')
+	.option('--model <id>', 'override the configured model')
+	.option('--out <path>', 'where to write the returned image', 'art-check.png')
+	.option('--prompt <text>', 'use your own prompt instead of the default coin')
+	.action(
+		run(async (opts) => {
+			// Falls back to the app's config so the CLI and the app cannot disagree
+			// about which endpoint is being tested.
+			const { loadConfig } = await import('../app/lib/config.js');
+			const config = loadConfig();
+			return artCheck({
+				endpoint: opts.endpoint ?? config.imageEndpoint,
+				apiKey: opts.key ?? config.imageApiKey,
+				model: opts.model ?? config.imageModel,
+				out: path.resolve(opts.out),
+				prompt: opts.prompt,
+			});
+		}),
+	);
 
 program
 	.command('art:prompts')

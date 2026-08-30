@@ -536,10 +536,24 @@ what to ask for — and that is the part forge already derives.
 
 ```bash
 forge art:guide                                    # write art-guide.yaml, describe the look
+forge art:check                                    # one request, before spending on a batch
 forge art:prompts --spec game-spec.yaml --sdk ../web-sdk --out art-prompts.json
-# ...generate candidates with whatever model you use...
-forge art:accept --manifest art-prompts.json --id symbol.W --file candidates/wild-3.png
 ```
+
+Or do the whole loop in the app: **Generate** tab, brief at the top, assets below.
+
+**Seedream, not Seedance.** Seedance is ByteDance's video model — 30-second clips
+with audio, the wrong tool for a slot symbol. Seedream is the image line, from the
+same BytePlus ModelArk endpoint, and Seedream 5.0 Pro returns a background plus
+individual elements as separate transparent PNGs from one prompt — the exact shape
+a Spine screen is stored in.
+
+Two API details that are easy to get wrong and expensive to: `size` is a single
+`"WIDTHxHEIGHT"` string with each side in **512–2048**, and `watermark` must be
+explicitly `false`. Most of what a slot game needs is under that floor — symbol
+parts in the shipped atlas are 160x160 — so generation scales up to a valid master
+and records the target for the packer. That is the right artefact anyway: the
+sample symbol skeletons author at 1080x1080 and pack down.
 
 **A background is not one image.** `mm_bg.atlas` in the lines sample holds named
 layers — `bg_base` 2020x991, `bg_cart_add` 404x220, `bg_shovel_add` 130x282,
@@ -641,6 +655,7 @@ the 1-in-20,000,000 frequency in every tier because that frequency is *chosen*
 | `forge math:validate --spec <yaml> --math-sdk <path> [--json]` | Is it shippable? Every rule measured, with the number it was judged on |
 | `forge brief --spec <yaml> [--format md\|csv\|json\|manifest] [--out <path>]` | What to draw — the complete asset spec, before any art exists |
 | `forge art:guide [--out <path>]` | Write art-guide.yaml — the look, once, for every asset in this game |
+| `forge art:check [--endpoint <url>] [--key <key>] [--model <id>]` | One request to the image provider, reported in full — run before a batch |
 | `forge art:prompts --spec <yaml> [--guide <yaml>] [--sdk <path>] [--out <json>] [--only <kinds>]` | One prompt per asset part, at the exact size this game needs |
 | `forge art:accept --manifest <json> --id <id> --file <png> [--guide <yaml>] [--game <dir>]` | Promote a generated candidate and make it a style anchor |
 | `forge mechanics [--id <id>] [--win-type <t>] [--volatility <v>] [--games] [--combine <ids>] [--art <ids>]` | Browse the researched mechanics library |

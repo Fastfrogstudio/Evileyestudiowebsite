@@ -148,6 +148,11 @@ export function seedream({ endpoint, apiKey, model, fetchImpl = globalThis.fetch
 			};
 			if (job.negative) body.negative_prompt = job.negative;
 
+			// Carried on every result, success or failure. When a request is
+			// refused, the thing you need to see is what was actually sent — not a
+			// description of what the adapter intends to send.
+			const sent = { ...body };
+
 			const response = await fetchImpl(endpoint, {
 				method: 'POST',
 				signal,
@@ -165,6 +170,7 @@ export function seedream({ endpoint, apiKey, model, fetchImpl = globalThis.fetch
 					// The provider's own message, not a paraphrase — a 401 and a bad
 					// field name need completely different fixes and only it knows which.
 					error: `${response.status} ${response.statusText}${text ? `: ${text.slice(0, 300)}` : ''}`,
+					sent,
 				};
 			}
 
@@ -174,9 +180,10 @@ export function seedream({ endpoint, apiKey, model, fetchImpl = globalThis.fetch
 				return {
 					ok: false,
 					error: `${error}. Response keys: ${Object.keys(payload ?? {}).join(', ') || '(none)'}`,
+					sent,
 				};
 			}
-			return { ok: true, bytes, generatedAt: size };
+			return { ok: true, bytes, generatedAt: size, sent };
 		},
 	};
 }
