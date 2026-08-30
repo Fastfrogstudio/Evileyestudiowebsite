@@ -43,7 +43,7 @@ import {
 import { requiredStatesForSymbol, validateBehaviors, getRecipe, BEHAVIOR_RECIPES, BOARD_LIFETIMES, LIFETIMES_SURVIVING_CASCADE } from '../src/lib/behaviorRecipes.js';
 import { buildConfigObject, buildSymbolInfoMap, buildInitialBoard } from '../src/lib/generators.js';
 import { renderPaytable, renderSpecialSymbols, renderFreespinTriggers, renderReelCsv, renderNumRows, renderBetModes, betModeCriteria, REEL_STRIP_LENGTH, SCATTER_DENSITY } from '../src/lib/mathGenerators.js';
-import { MECHANICS, GRID_GROWTH_MODES, GRID_GROWTH_DEFAULT, GRID_CAP_DEFAULT } from '../src/lib/mechanics.js';
+import { MECHANICS, GRID_GROWTH_MODES, GRID_GROWTH_DEFAULT, GRID_CAP_DEFAULT, GLOBAL_MULT_GROWTH_MODES, GLOBAL_MULT_GROWTH_DEFAULT } from '../src/lib/mechanics.js';
 import { assertNoExtractedMaterial, matchLine } from '../src/lib/inspirationRules.js';
 import { loadGameSpec, loadAssetsManifest, SpecValidationError } from '../src/lib/loadSpec.js';
 import { Canvas, encodePng } from '../src/lib/png.js';
@@ -3047,9 +3047,14 @@ test('a built mechanic must have somewhere the code actually comes from', () => 
 	// a behavior recipe or a named sample, or it is just optimism.
 	for (const [id, m] of Object.entries(MECHANIC_LIBRARY)) {
 		if (m.status !== 'built') continue;
+		// Three valid provenances, because a mechanic can be built three ways: a
+		// behavior recipe on a symbol, an adaptation of a shipped sample, or code
+		// the scaffolder emits directly for a game-level setting. What is NOT
+		// valid is "built" with no traceable source — that is a claim, not a fact,
+		// and this assertion caught exactly that when freespin_reset was added.
 		assert.ok(
-			m.recipe || m.math.sample,
-			`${id} is marked built but names neither a recipe nor a sample`,
+			m.recipe || m.math.sample || m.generator,
+			`${id} is marked built but names no recipe, sample or generator`,
 		);
 	}
 });
@@ -3663,6 +3668,120 @@ test('the frontend build is spawned into its own process group', () => {
 		false,
 		'nothing before killGroup should still be killing the child directly',
 	);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mechanics taken from Stake Engine's own top performers
+//
+// Both researched from public descriptions of games Stake reports as top
+// performers on the platform we publish to, then built from math-sdk
+// primitives. Neither is copied from anyone.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('the global multiplier can double to a cap, not only increment forever', () => {
+	// executables.py:104 is `self.global_multiplier += 1` with no ceiling and no
+	// alternative. Samurai Dogs Unleashed (Twist Gaming), inside Stake Engine's
+	// top 50 by total bets, doubles on a winning spin and caps at 64x base /
+	// 256x free. Eight winning spins is 8x one way and 256x the other.
+	assert.deepEqual(GLOBAL_MULT_GROWTH_MODES, ['increment', 'double']);
+	assert.equal(GLOBAL_MULT_GROWTH_DEFAULT, 'increment', 'the engine default must stay the default');
+});
+
+test('a free-game cap below the base cap is flagged as backwards', () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-gm-'));
+	try {
+		const specPath = path.join(dir, 'game-spec.yaml');
+		fs.writeFileSync(
+			specPath,
+			[
+				'game:',
+				'  name: gm-test',
+				'  rtp: 0.965',
+				'  mechanic: cluster',
+				'  globalMultiplierPerSpin: true',
+				'  globalMultiplier: { growth: double, cap: 256, freegameCap: 64 }',
+				'  reels: { count: 7, rows: [7, 7, 7, 7, 7, 7, 7] }',
+				'  betModes:',
+				'    base: { cost: 1, rtp: 0.965, maxWin: 5000, feature: true }',
+				'symbols:',
+				'  - { name: H1, role: high, label: High 1, paytable: { "5": 5, "6-49": 60 } }',
+				'  - { name: L1, role: low, label: Low 1, paytable: { "5": 1, "6-49": 10 } }',
+				'  - { name: S, role: scatter, label: Scatter, special: [scatter] }',
+				'freeSpins: { triggerSymbol: S, triggerCount: 3, awardedSpins: 10, retrigger: true }',
+				'',
+			].join('\n'),
+			'utf8',
+		);
+		const spec = loadGameSpec(specPath);
+		assert.ok(
+			spec._warnings.some((w) => /BELOW the base cap/.test(w)),
+			'a feature ceilinged lower than the base game is almost certainly backwards',
+		);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('configuring the growth without switching it on is flagged', () => {
+	// game.globalMultiplier only says HOW it grows. Nothing increments it unless
+	// globalMultiplierPerSpin is set, so the block alone would sit at 1x forever.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-gm-'));
+	try {
+		const specPath = path.join(dir, 'game-spec.yaml');
+		fs.writeFileSync(
+			specPath,
+			[
+				'game:',
+				'  name: gm-test',
+				'  rtp: 0.965',
+				'  mechanic: cluster',
+				'  globalMultiplier: { growth: double, cap: 64 }',
+				'  reels: { count: 7, rows: [7, 7, 7, 7, 7, 7, 7] }',
+				'  betModes:',
+				'    base: { cost: 1, rtp: 0.965, maxWin: 5000, feature: true }',
+				'symbols:',
+				'  - { name: H1, role: high, label: High 1, paytable: { "5": 5, "6-49": 60 } }',
+				'  - { name: L1, role: low, label: Low 1, paytable: { "5": 1, "6-49": 10 } }',
+				'  - { name: S, role: scatter, label: Scatter, special: [scatter] }',
+				'freeSpins: { triggerSymbol: S, triggerCount: 3, awardedSpins: 10, retrigger: true }',
+				'',
+			].join('\n'),
+			'utf8',
+		);
+		const spec = loadGameSpec(specPath);
+		assert.ok(spec._warnings.some((w) => /sit\s+at 1x forever/.test(w)));
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('the free-spin reset is recorded as built, with its bound and its max()', () => {
+	// Scroll Keeper (Paperclip Gaming) resets its free spins to 3 whenever a new
+	// wild lands. Two things had to be true for it to be safe, and both were
+	// found by measuring rather than reasoning:
+	//
+	//   the reset COUNT is bounded — tot_fs growing on a common board event is a
+	//   branching process, and an unbounded one does not reliably terminate
+	//
+	//   the assignment is max(), never a bare tot_fs = fs + N — measured before
+	//   that fix, rounds awarded 12 spins were finishing in 4, because an early
+	//   wild TRUNCATED them
+	const reset = MECHANIC_LIBRARY.freespin_reset;
+	assert.equal(reset.status, 'built');
+	assert.match(reset.math.notes, /max\(\)/);
+	assert.match(reset.math.notes, /bounded/i);
+	assert.match(reset.math.notes, /truncat/i);
+});
+
+test('the new reference games attribute to the right studios', () => {
+	assert.equal(REFERENCE_GAMES.samurai_dogs_unleashed.studio, 'Twist Gaming');
+	assert.equal(REFERENCE_GAMES.scroll_keeper.studio, 'Paperclip Gaming');
+	// And their mechanics resolve, like every other entry.
+	for (const id of ['samurai_dogs_unleashed', 'scroll_keeper']) {
+		for (const m of REFERENCE_GAMES[id].mechanics) {
+			assert.ok(MECHANIC_LIBRARY[m], `${id} references unknown mechanic "${m}"`);
+		}
+	}
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

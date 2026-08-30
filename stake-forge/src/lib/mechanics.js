@@ -32,6 +32,30 @@
  * is 9x incrementing and 256x doubling. Both are legitimate; the sample only
  * implements one, and the tool now offers both and says which it generated.
  */
+/**
+ * How the round's global multiplier grows, and how far.
+ *
+ * ── Why this needed to become a knob ────────────────────────────────────────
+ * executables.py:104 is `self.global_multiplier += 1`, with no cap and no
+ * alternative. That is one shape of one mechanic, and it is not the shape the
+ * current top performers use.
+ *
+ * Samurai Dogs Unleashed (Twist Gaming) — a title Stake reports inside the
+ * Engine platform's top 50 by total bets — DOUBLES its global multiplier on a
+ * winning spin, and caps it at 64x in the base game and 256x in free spins.
+ * Doubling to a cap and incrementing without one are completely different
+ * games: eight winning spins is 8x one way and 256x the other.
+ *
+ * So three things are configurable where none were: the growth rule, the cap,
+ * and a SEPARATE cap for the free game, because a feature that shares the base
+ * game's ceiling has nothing extra to offer.
+ *
+ * `increment` stays the default: it is what the engine does today, and changing
+ * the default would silently re-shape every existing game.
+ */
+export const GLOBAL_MULT_GROWTH_MODES = ['increment', 'double'];
+export const GLOBAL_MULT_GROWTH_DEFAULT = 'increment';
+
 export const GRID_GROWTH_MODES = ['increment', 'double'];
 
 /** What the shipped cluster sample does, and therefore the default. */

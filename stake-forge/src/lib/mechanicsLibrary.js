@@ -259,6 +259,82 @@ export const MECHANIC_LIBRARY = {
 		trademark: null,
 		recipe: 'freespins',
 	},
+	freespin_reset: {
+		id: 'freespin_reset',
+		name: 'Free spins that reset on a symbol',
+		family: 'round',
+		rule:
+			'The free-spin counter resets whenever a qualifying symbol lands, so the round ends only ' +
+			'after N consecutive spins without one. The hold-and-win respin-reset rule applied to a ' +
+			'FREE-SPIN round rather than a separate bet mode — the player watches a countdown that ' +
+			'keeps being pushed back rather than ticking down.',
+		status: 'built',
+		difficulty: 'T2',
+		winTypes: ['lines', 'ways', 'cluster', 'scatter'],
+		volatility: ['medium', 'high'],
+		art: {
+			symbols: [],
+			states: [],
+			animations: ['the counter RESETTING — it must read as a reset, not a decrement'],
+			screens: ['a spin counter prominent enough that pushing it back is the beat'],
+			note: 'The reset is the whole mechanic. If the counter animation does not sell it, the ' +
+				'game just looks like it has a lot of free spins.',
+		},
+		frontend: { bookEvents: ['updateFreeSpin'], components: [] },
+		math: {
+			sample: null,
+			notes:
+				'Generated from freeSpins.resetOnSymbol as an override plus two splices into ' +
+				'run_freespin. The reset COUNT is bounded and the assignment uses max(), never a bare ' +
+				'tot_fs = fs + N: measured before that fix, rounds awarded 12 spins were finishing in ' +
+				'4 because an early wild TRUNCATED them. A reset must extend a feature or leave it ' +
+				'alone. Bounded because tot_fs growing on a common board event is a branching ' +
+				'process, and an unbounded one does not reliably terminate.',
+		},
+		combinesWith: ['freespins', 'sticky_wild', 'expanding_wild', 'tumble'],
+		conflictsWith: [],
+		trademark: null,
+		recipe: null,
+		// A third provenance beside "behavior recipe" and "math-sdk sample": some
+		// mechanics are generated straight by the scaffolder because they are a
+		// game-level setting rather than a symbol behaviour. Named so "built" can
+		// still be checked — a status nobody can trace is a claim, not a fact.
+		generator: 'mathScaffold.applyFreeSpinReset',
+	},
+	guaranteed_wild_per_cascade: {
+		id: 'guaranteed_wild_per_cascade',
+		name: 'Guaranteed wild on every cascade',
+		family: 'wild',
+		rule:
+			'At least one of the symbols dropped in by each cascade is a wild. Sustains a cascade ' +
+			'sequence without making the strips richer, which keeps the base board honest while the ' +
+			'sequence itself becomes the feature.',
+		status: 'roadmap',
+		difficulty: 'T1',
+		winTypes: ['cluster', 'scatter'],
+		volatility: ['high'],
+		art: {
+			symbols: 'A wild that reads as ARRIVING rather than landing — it is injected, not drawn.',
+			states: ['idle', 'win', 'spawn'],
+			animations: ['spawn-in, distinct from a normal fall'],
+			screens: [],
+		},
+		frontend: { bookEvents: ['tumbleBoard'], components: [] },
+		math: {
+			sample: null,
+			notes:
+				'A post-processor on the refill: after tumble_game_board(), rewrite one of the newly ' +
+				'dropped cells to the wild. Cheap, and it needs the cascade-safety check — a ' +
+				'guaranteed wild raises the chance the next board also wins, which is exactly the ' +
+				'quantity that has to stay under 1 for a round to terminate.',
+		},
+		combinesWith: ['tumble', 'cluster_pays', 'progressive_global_multiplier'],
+		conflictsWith: [
+			{ id: 'scatter_pays', why: 'Scatter-pays counts instances anywhere, so an injected wild has no gap to bridge.' },
+		],
+		trademark: null,
+		recipe: null,
+	},
 	retrigger_upgrade: {
 		id: 'retrigger_upgrade',
 		name: 'Upgrade on retrigger',
@@ -562,8 +638,11 @@ export const MECHANIC_LIBRARY = {
 		name: 'Progressive global multiplier',
 		family: 'multiplier',
 		rule:
-			'One number multiplying every win, incrementing on a trigger — per free spin, per cascade, ' +
-			'or per qualifying symbol — and never resetting within the round.',
+			'One number multiplying every win, growing on a trigger — per free spin, per cascade, or ' +
+			'per qualifying symbol — and never resetting within the round. Two growth modes: ' +
+			'INCREMENT (+1, what the engine does) and DOUBLE (x2), with separate caps for the base ' +
+			'game and the feature. Eight winning spins is 8x one way and 256x the other, so the mode ' +
+			'is one of the largest volatility dials available.',
 		status: 'built',
 		difficulty: 'T0',
 		winTypes: ['lines', 'ways', 'cluster', 'scatter'],
@@ -580,8 +659,10 @@ export const MECHANIC_LIBRARY = {
 			notes:
 				'executables.py update_global_mult() is `+= 1` with NO ceiling — the only uncapped ' +
 				'lever in the engine. Nothing calls it by default; the spec flag generates the call. ' +
-				'Note it is ignored entirely on a ways board unless multiplierStrategy is "global".',
+				'Note it is ignored entirely on a ways board unless multiplierStrategy is "global". ' +
+				'The growth rule and its caps are generated as an override of update_global_mult().',
 		},
+		generator: 'mathScaffold.applyGlobalMultiplierGrowth',
 		combinesWith: ['freespins', 'tumble', 'scatter_pays', 'mystery_stack'],
 		conflictsWith: [],
 		trademark: null,
@@ -649,6 +730,7 @@ export const MECHANIC_LIBRARY = {
 				'while the code beneath it does `+= 1`. Measured top cell 110 — not a power of two. ' +
 				'game.gridMultipliers now controls the cap (was a hardcoded 512) and the growth mode.',
 		},
+		generator: 'mathScaffold.applyGridMultipliers',
 		combinesWith: ['tumble', 'cluster_pays', 'freespins'],
 		conflictsWith: [{ id: 'lines_pays', why: 'Position multipliers only accumulate through repeat visits to the same cell, which needs cascades that a plain payline round does not have.' }],
 		trademark: null,

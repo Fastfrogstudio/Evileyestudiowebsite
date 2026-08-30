@@ -2,7 +2,7 @@ import fs from 'fs-extra';
 import YAML from 'yaml';
 import path from 'node:path';
 
-import { MECHANIC_IDS, getMechanic, GRID_GROWTH_MODES } from './mechanics.js';
+import { MECHANIC_IDS, getMechanic, GRID_GROWTH_MODES, GLOBAL_MULT_GROWTH_MODES } from './mechanics.js';
 import { normaliseSymbol, assignOrders, sortSymbols, reachableWinSizes } from './taxonomy.js';
 import { validateBehaviors } from './behaviorRecipes.js';
 import { validateScreens } from './screens.js';
@@ -134,6 +134,38 @@ export function loadGameSpec(specPath) {
 				`multiplier for the global one before applying it. Use multiplierStrategy: "global" for ` +
 				`the climbing multiplier to reach the win.`,
 		);
+	}
+
+	// ── global multiplier growth ────────────────────────────────────────────
+	if (spec?.game?.globalMultiplier) {
+		const gm = spec.game.globalMultiplier;
+		if (gm.growth && !GLOBAL_MULT_GROWTH_MODES.includes(gm.growth)) {
+			errors.push(
+				`game.globalMultiplier.growth must be one of: ${GLOBAL_MULT_GROWTH_MODES.join(', ')} ` +
+					`(got "${gm.growth}").`,
+			);
+		}
+		for (const key of ['cap', 'freegameCap']) {
+			if (gm[key] !== undefined && (!Number.isFinite(gm[key]) || gm[key] < 1)) {
+				errors.push(`game.globalMultiplier.${key} must be a number of at least 1.`);
+			}
+		}
+		if (Number.isFinite(gm.cap) && Number.isFinite(gm.freegameCap) && gm.freegameCap < gm.cap) {
+			warnings.push(
+				`game.globalMultiplier.freegameCap (${gm.freegameCap}) is BELOW the base cap ` +
+					`(${gm.cap}). The feature would ceiling lower than the base game, which is almost ` +
+					`certainly backwards — Samurai Dogs Unleashed runs 64x base and 256x free.`,
+			);
+		}
+		// The whole thing is generated as an override of update_global_mult(), and
+		// nothing calls that unless the spec asks for it.
+		if (!spec?.game?.globalMultiplierPerSpin) {
+			warnings.push(
+				'game.globalMultiplier configures how the global multiplier GROWS, but nothing ' +
+					'increments it unless game.globalMultiplierPerSpin is also true — so it would sit ' +
+					'at 1x forever.',
+			);
+		}
 	}
 
 	// ── grid multipliers ────────────────────────────────────────────────────

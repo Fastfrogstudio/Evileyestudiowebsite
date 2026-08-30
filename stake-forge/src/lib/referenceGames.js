@@ -166,6 +166,40 @@ export const REFERENCE_GAMES = {
 			'PAYLINES is well established commercially even though no math-sdk sample pairs them.',
 	},
 
+	// ── Stake Engine's own top performers ────────────────────────────────────
+	// Named studios shipping on the platform we publish to, which is a different
+	// question from what is popular in slots generally.
+	samurai_dogs_unleashed: {
+		id: 'samurai_dogs_unleashed',
+		title: 'Samurai Dogs Unleashed',
+		studio: 'Twist Gaming',
+		winType: 'cluster',
+		mechanics: ['tumble', 'progressive_global_multiplier', 'freespins', 'guaranteed_wild_per_cascade'],
+		volatility: 'high',
+		whyItMatters:
+			'A Stake Engine title inside the platform\'s top 50 by total bets, and the reason the ' +
+			'global multiplier became configurable here. It DOUBLES on a winning spin and caps at 64x ' +
+			'in the base game and 256x in free spins — where math-sdk\'s own update_global_mult() ' +
+			'increments by 1 with no ceiling. Eight winning spins is 8x one way and 256x the other. ' +
+			'It also guarantees at least one new wild on every cascade, which is a different way to ' +
+			'sustain a cascade sequence than making the strips richer.',
+	},
+	scroll_keeper: {
+		id: 'scroll_keeper',
+		title: 'Scroll Keeper',
+		studio: 'Paperclip Gaming',
+		winType: 'lines',
+		mechanics: ['sticky_wild', 'freespin_reset', 'sticky_multiplier', 'freespins', 'buy_bonus'],
+		maxWin: 5000,
+		volatility: 'medium',
+		whyItMatters:
+			'Passed a million bets in its first week on Stake Engine, built by one developer. Its ' +
+			'free spins RESET to 3 every time a new wild lands, so the round ends only after three ' +
+			'consecutive spins without one — the hold-and-win respin-reset rule applied to a ' +
+			'free-spin round rather than a separate bet mode. Wild multipliers also climb by 1 per ' +
+			'spin to 25x, and the wilds are sticky on the middle reels only.',
+	},
+
 	// ── Hold-and-win: the other dominant shape ───────────────────────────────
 	money_train_2: {
 		id: 'money_train_2',
