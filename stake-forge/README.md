@@ -524,6 +524,26 @@ balance model. What follows is the current honest boundary.
   cap with every rule passing: a 10,000x cluster game, a 5,000x lines game, and a 100,000x ways
   game, all on 96.50% against 96.50%.
 
+### Measured, on three generated games
+
+Not a claim about what the tool should do — the numbers three real games actually
+produced, each scaffolded from a spec, simulated, optimised and validated end to end.
+
+| | low | medium | high |
+|---|---|---|---|
+| game | `emberfall` (cluster) | `audit` (lines) | `titan` (ways) |
+| max win | 10,000x | 5,000x | 100,000x |
+| **max win reached** | yes, 1 in 20,000,000 | yes, 1 in 20,000,002 | yes, 1 in 20,000,000 |
+| RTP after optimisation | 96.50% (-0.00pp) | 96.50% (-0.00pp) | 96.50% (-0.00pp) |
+| base hit rate | 1 in 2.4 | 1 in 3.4 | 1 in 5.4 |
+| p99.9 | 68.7x | 68.8x | 189.5x |
+| `math:validate` | all rules pass | all rules pass | all rules pass |
+
+The hit rates come out ordered by volatility without being set directly — they fall
+out of the strip design, which is the thing that had to work. Max win is reached at
+the 1-in-20,000,000 frequency in every tier because that frequency is *chosen*
+(`maxWin ÷ the RTP allocated to the wincap distribution`), not discovered.
+
 ---
 
 ## Command reference

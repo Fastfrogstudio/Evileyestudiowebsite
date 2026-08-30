@@ -73,6 +73,7 @@ import { REFERENCE_GAMES, gamesUsing, gamesByMaxWin } from '../src/lib/reference
 import { buildArtBrief, winLevelBands, LOCALES, LOCALISED_SHEETS, WIN_LEVEL_SCALES } from '../src/lib/artBrief.js';
 import { brief as runBrief, renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
 import { audit } from '../src/commands/audit.js';
+import { brief } from '../src/commands/brief.js';
 import { STEPS, STEP_ORDER } from '../app/lib/runner.js';
 import YAML from 'yaml';
 import { addDictEntry, insertAfterLineInMethod, insertAfterImports } from '../src/lib/pyPatch.js';
@@ -3069,6 +3070,100 @@ test('the README quotes the real library counts', () => {
 		new RegExp(`${stats.referenceGames} reference games`),
 		`README should say "${stats.referenceGames} reference games"`,
 	);
+});
+
+test('a brief, once fulfilled, makes forge audit pass with zero errors', () => {
+	// This is the whole art-brief proposition as one assertion. The brief tells the
+	// art team what to draw BEFORE any art exists; audit later checks what they
+	// produced. If the two disagree — the brief omits something audit demands, or
+	// names something audit ignores — the team draws the wrong set and finds out
+	// at integration, which is the expensive end.
+	//
+	// So: generate the manifest from the brief, create EXACTLY the files it names
+	// and nothing else, and require audit to come back clean. Anything the brief
+	// forgot shows up here as an error rather than in a delivery.
+	const specFile = path.join(__dirname, '..', 'examples', 'tiered-buy-menu.yaml');
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-brief-'));
+	try {
+		const manifestPath = path.join(dir, 'assets-manifest.yaml');
+		const specCopy = path.join(dir, 'game-spec.yaml');
+		fs.copyFileSync(specFile, specCopy);
+		brief({ specPath: specCopy, format: 'manifest', out: manifestPath, quiet: true });
+
+		const manifest = YAML.parse(fs.readFileSync(manifestPath, 'utf8'));
+		// Relative to the MANIFEST, not the cwd — audit resolves it that way too.
+		const sourceDir = path.resolve(dir, manifest.assetsSourceDir);
+		fs.mkdirSync(sourceDir, { recursive: true });
+
+		// Every asset filename the manifest mentions, wherever it sits in the tree.
+		const named = new Set();
+		const walk = (node) => {
+			if (typeof node === 'string') {
+				if (/\.(png|json|atlas|webp)$/.test(node)) named.add(node);
+			} else if (Array.isArray(node)) node.forEach(walk);
+			else if (node && typeof node === 'object') Object.values(node).forEach(walk);
+		};
+		walk(manifest);
+		assert.ok(named.size > 10, `the brief should name real assets, got ${named.size}`);
+
+		for (const name of named) {
+			const file = path.join(sourceDir, name);
+			fs.mkdirSync(path.dirname(file), { recursive: true });
+			// A spine json has to parse; the others are only checked for existence.
+			fs.writeFileSync(file, name.endsWith('.json') ? '{"skeleton":{"spine":"4.0"},"animations":{}}' : '');
+		}
+
+		const result = audit({ specPath: specCopy, manifestPath, json: true });
+		const errors = (result.findings ?? []).filter((f) => f.level === "error");
+		assert.equal(
+			errors.length,
+			0,
+			`audit should be clean once the brief is fulfilled, got: ${JSON.stringify(errors, null, 1)}`,
+		);
+		assert.equal(result.ok, true, "audit should report ok once the brief is fulfilled");
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('every mechanic marked built names a generator that actually exists', () => {
+	// The library is the tool's honesty contract: `built` means the art team can
+	// commit to producing for it. An entry naming a generator that was renamed or
+	// removed would keep claiming that after the code stopped backing it, and the
+	// cost lands on the one resource the factory is short of.
+	//
+	// Resolved statically rather than by import, because most of these are
+	// module-private helpers — the string is a source reference for a reader, not
+	// an importable path. Checking the definition exists in the named file is what
+	// the string actually promises.
+	const FILES = {
+		boardMechanics: 'src/lib/boardMechanics.js',
+		mathScaffold: 'src/commands/mathScaffold.js',
+		mathGenerators: 'src/lib/mathGenerators.js',
+		generators: 'src/lib/generators.js',
+	};
+	let checked = 0;
+	for (const m of Object.values(MECHANIC_LIBRARY)) {
+		if (m.status !== 'built') continue;
+		assert.ok(
+			m.generator || m.recipe || m.math?.sample,
+			`${m.id} is marked built but names no recipe, sample or generator`,
+		);
+		if (!m.generator) continue;
+		// "mathScaffold.applyGridMultipliers" or "generators.fn (spec.game.flag)"
+		const [moduleName, rest] = m.generator.split('.');
+		const fnName = (rest ?? '').split(' ')[0];
+		const file = FILES[moduleName];
+		assert.ok(file, `${m.id} names module "${moduleName}", which is not a known source file`);
+		const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+		const defined =
+			moduleName === 'boardMechanics'
+				? new RegExp(`^\\t${fnName}:\\s*\\{`, 'm').test(source)
+				: new RegExp(`function ${fnName}\\b`).test(source);
+		assert.ok(defined, `${m.id} names ${m.generator}, but ${fnName} is not defined in ${file}`);
+		checked += 1;
+	}
+	assert.ok(checked >= 5, `expected several built mechanics to name a generator, checked ${checked}`);
 });
 
 test('docs/mechanics-library.md matches the library it claims to be generated from', () => {
