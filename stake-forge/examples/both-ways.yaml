@@ -1,0 +1,178 @@
+# A WORKED EXAMPLE: paylines that pay from both ends.
+#
+# lines.py evaluates left-to-right only and there is no right-to-left mode. But a
+# right-to-left win on a pattern IS a left-to-right win on that pattern REVERSED,
+# so both-ways costs no engine change — only the mirrored patterns appended to
+# the payline table.
+#
+# ── The trap, and why the table comes out at 22 and not 30 ───────────────────
+#
+# Mirrors are deduplicated against the patterns ALREADY in the table, not just
+# against self-symmetry. Two cases would otherwise pay the same win twice:
+#
+#   self-symmetric   [1,1,1,1,1] reversed is itself
+#   mirror PAIRS     [0,0,1,2,2] and [2,2,1,0,0] are BOTH in the default 20
+#
+# The default 20 is drawn as a symmetric fan: 10 patterns are self-symmetric and
+# 8 more form 4 pairs already present. Only 2 mirrors are genuinely new.
+#
+# ── It is NOT a hit-rate lever, whatever it is usually reputed to be ─────────
+#
+# Measured over 40,000 seeded spins against one strip set:
+#
+#   hit rate   x1.000     EV   x1.100     (line count x1.100)
+#   spins that won ONLY on a mirror:  ZERO
+#
+# A win needs 3 matching symbols FROM REEL 0, and both new mirrors share their
+# 3-reel prefix with a line already in the table — so the original wins on
+# exactly the same boards. The extra money is entirely 4- and 5-of-a-kind
+# top-ups on wins that were already paying. Hold RTP by scaling the paytable down
+# and the value concentrates on longer combinations, which nudges volatility UP.
+#
+# forge warns at spec time when every mirror shares a prefix like this. A line
+# set that genuinely LEANS one direction is the case where both-ways buys hit
+# rate; a symmetric fan is not.
+#
+# ── Try it ───────────────────────────────────────────────────────────────────
+#   forge math:scaffold --spec examples/both-ways.yaml --math-sdk ../math-sdk
+#     -> warns, then writes a 22-line table
+#   forge verify --spec examples/both-ways.yaml --math-sdk ../math-sdk
+
+game:
+  name: bothways
+  providerName: evil_eye_studio
+  gameId: 0_0_bothways
+  workingName: Both Ways
+  rtp: 0.965
+  mechanic: lines
+  paysBothWays: true
+  reels:
+    count: 5
+    rows:
+    - 3
+    - 3
+    - 3
+    - 3
+    - 3
+  betModes:
+    base:
+      cost: 1
+      rtp: 0.965
+      maxWin: 5000
+      feature: true
+      buyBonus: false
+    bonus:
+      cost: 100
+      rtp: 0.965
+      maxWin: 5000
+      feature: false
+      buyBonus: true
+  multiplierStrategy: combined
+  globalMultiplierPerSpin: true
+paylines: default_20
+symbols:
+- name: H1
+  role: high
+  order: 1
+  label: High 1
+  paytable:
+    '3': 5
+    '4': 10
+    '5': 20
+- name: H2
+  role: high
+  order: 2
+  label: High 2
+  paytable:
+    '3': 3
+    '4': 5
+    '5': 15
+- name: H3
+  role: high
+  order: 3
+  label: High 3
+  paytable:
+    '3': 2
+    '4': 3
+    '5': 10
+- name: H4
+  role: high
+  order: 4
+  label: High 4
+  paytable:
+    '3': 1
+    '4': 2
+    '5': 8
+- name: L1
+  role: low
+  order: 1
+  label: Low 1
+  paytable:
+    '3': 0.5
+    '4': 1
+    '5': 5
+- name: L2
+  role: low
+  order: 2
+  label: Low 2
+  paytable:
+    '3': 0.3
+    '4': 0.7
+    '5': 3
+- name: L3
+  role: low
+  order: 3
+  label: Low 3
+  paytable:
+    '3': 0.3
+    '4': 0.7
+    '5': 3
+- name: L4
+  role: low
+  order: 4
+  label: Low 4
+  paytable:
+    '3': 0.2
+    '4': 0.5
+    '5': 2
+- name: L5
+  role: low
+  order: 5
+  label: Low 5
+  paytable:
+    '3': 0.1
+    '4': 0.3
+    '5': 1
+- name: W
+  role: wild
+  order: 1
+  label: Wild
+  special:
+  - wild
+  - multiplier
+  paytable:
+    '3': 5
+    '4': 10
+    '5': 20
+- name: S
+  role: scatter
+  order: 1
+  label: Scatter
+freeSpins:
+  triggerSymbol: S
+  triggerCount: 3
+  awardedSpins: 10
+  spinsPerExtraScatter: 2
+  retrigger: true
+placeholderReelWeights:
+  H1: 6
+  H2: 6
+  H3: 6
+  H4: 6
+  L1: 14
+  L2: 14
+  L3: 14
+  L4: 14
+  L5: 14
+  W: 2
+  S: 3

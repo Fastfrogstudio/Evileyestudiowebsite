@@ -58,6 +58,61 @@ git clone https://github.com/StakeEngine/math-sdk.git  && (cd math-sdk && python
 
 ---
 
+## Run it locally
+
+Two things run in a browser on your own machine, and they are different things.
+
+### The editor — needs only this repo
+
+```bash
+cd stake-forge && npm install
+npm run app          # http://localhost:4173
+```
+
+The spec, your assets, the whole pipeline and a live preview, with no SDK
+checkouts required to open it. It runs commands and reads and writes files on the
+machine it is running on, so it binds to localhost and nothing else.
+
+### A game — needs both SDK checkouts
+
+`forge preview` starts the web-sdk's own story server, which replays REAL
+simulated books through the REAL renderer. No RGS backend, no wallet, no deploy.
+
+```bash
+# from a clean clone, with ../web-sdk and ../math-sdk checked out as above
+forge math:scaffold --spec examples/sticky-wilds.yaml --math-sdk ../math-sdk
+forge scaffold      --spec examples/sticky-wilds.yaml --sdk ../web-sdk
+forge deps:link     --sdk ../web-sdk
+
+forge math:run      --spec examples/sticky-wilds.yaml --math-sdk ../math-sdk --sims 2000
+forge math:optimise --spec examples/sticky-wilds.yaml --math-sdk ../math-sdk
+forge math:sync     --spec examples/sticky-wilds.yaml --math-sdk ../math-sdk --sdk ../web-sdk
+
+forge preview --spec examples/sticky-wilds.yaml --sdk ../web-sdk   # http://localhost:6006
+```
+
+`deps:link` is not optional on a freshly scaffolded app — it is a new pnpm
+workspace package, and until the workspace is re-linked its `node_modules` does
+not exist and nothing can resolve its imports.
+
+The three story groups, and what each is for:
+
+| Story | What you get |
+|---|---|
+| `MODE_BASE/book`, `MODE_BONUS/book` | A whole round, end to end. Click **Action** to start. |
+| `MODE_*/bookEvent` | One event at a time — the one to use when an animation is wrong and you need to see the state it is wrong in. |
+| `COMPONENTS/<Symbol>` | The symbol sheet at real size. Fastest check that art dropped in right. |
+
+The stories read `src/stories/data/*.ts`, which `math:sync` writes from the
+simulation. **Preview a game you have not synced and you are looking at the SDK
+sample's rounds, not yours** — `forge preview` checks and says which one you are
+about to see, because reviewing the wrong game is a silent waste of a review.
+
+Skip `math:run`/`optimise`/`sync` if you only want to see the art and the layout;
+the game still renders, it just plays the sample's maths.
+
+---
+
 ## Workflow
 
 ```
@@ -494,6 +549,7 @@ balance model. What follows is the current honest boundary.
 | `forge brief --spec <yaml> [--format md\|csv\|json\|manifest] [--out <path>]` | What to draw — the complete asset spec, before any art exists |
 | `forge mechanics [--id <id>] [--win-type <t>] [--volatility <v>] [--games] [--combine <ids>] [--art <ids>]` | Browse the researched mechanics library |
 | `forge package --spec <yaml> --sdk <path> --math-sdk <path> [--out <dir>] [--skip-build]` | Build and assemble both upload halves |
+| `forge preview --sdk <path> [--spec <yaml>\|--name <app>] [--port <n>]` | Look at the game — real books through the real renderer, in your browser |
 
 ## Tests
 

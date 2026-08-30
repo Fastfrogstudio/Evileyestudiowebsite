@@ -1,0 +1,186 @@
+# A WORKED EXAMPLE: sticky wilds that grow every spin.
+#
+# Scroll Keeper's rule. A wild locks to its cell for the rest of the free-spin
+# round and its multiplier steps up every spin, to a cap. Wilds accumulate, so a
+# round that starts rich gets richer.
+#
+# ── Three engine facts that decide whether this works ────────────────────────
+#
+# 1. Multipliers SUM, they do not multiply. apply_added_symbol_mult() in
+#    src/wins/multiplier_strategy.py adds up the multipliers of the winning
+#    positions, so two stuck wilds worth 3 and 5 on one line pay 8x, not 15x.
+#    A wild sitting OFF the winning line pays nothing at all.
+#
+# 2. start must be at least 2. That same function ignores any multiplier that is
+#    not GREATER than 1, so a ladder starting at 1 pays nothing on the spin a
+#    wild lands, which reads as a bug to a player and to a tester.
+#
+# 3. The wild must be in special: [wild, multiplier]. json_ready_sym() only
+#    serialises the symbol attributes named in special_symbols — without the
+#    multiplier group the value is applied to the win but never reaches the
+#    client, so the round pays more than the board can explain. forge refuses
+#    the spec rather than letting that ship.
+#
+# ── What it costs, measured against the identical game with it switched off ──
+#
+#   raw RTP                     21.8x  ->  338.4x
+#   after optimisation, BOTH:   96.50% RTP, 1-in-3.4 hit rate, 0.5% feature rate
+#   mean free-game payout        34x -> 73x  (plain: weighted UP toward target)
+#                             3,329x -> 73x  (sticky: weighted DOWN 45x)
+#   richest free round the feature reaches on its own:  290x  ->  5,000x (cap)
+#
+# Nothing downstream fails — every math:validate rule passes on both. What moves
+# is the weight INSIDE the feature: the optimiser holds RTP by leaning on the
+# poorest sticky rounds, so the saturated boards the mechanic exists for are
+# simulated and then rarely served. Run `forge math:balance` on this spec and it
+# reports the saturation with the numbers for YOUR strips.
+#
+# The upside from the same run: this is the mechanic to reach for when max win
+# should come out of the FEATURE rather than a forced wincap round.
+#
+# ── Try it ───────────────────────────────────────────────────────────────────
+#   forge math:balance  --spec examples/sticky-wilds.yaml
+#   forge math:scaffold --spec examples/sticky-wilds.yaml --math-sdk ../math-sdk
+#   forge verify        --spec examples/sticky-wilds.yaml --math-sdk ../math-sdk
+
+game:
+  name: stickywild
+  providerName: evil_eye_studio
+  gameId: 0_0_stickywild
+  workingName: Sticky Wild
+  rtp: 0.965
+  mechanic: lines
+  stickyMultiplierWilds:
+    start: 2
+    step: 1
+    cap: 25
+  reels:
+    count: 5
+    rows:
+    - 3
+    - 3
+    - 3
+    - 3
+    - 3
+  betModes:
+    base:
+      cost: 1
+      rtp: 0.965
+      maxWin: 5000
+      feature: true
+      buyBonus: false
+    bonus:
+      cost: 100
+      rtp: 0.965
+      maxWin: 5000
+      feature: false
+      buyBonus: true
+  multiplierStrategy: combined
+  globalMultiplierPerSpin: true
+paylines: default_20
+symbols:
+- name: H1
+  role: high
+  order: 1
+  label: High 1
+  paytable:
+    '3': 5
+    '4': 10
+    '5': 20
+- name: H2
+  role: high
+  order: 2
+  label: High 2
+  paytable:
+    '3': 3
+    '4': 5
+    '5': 15
+- name: H3
+  role: high
+  order: 3
+  label: High 3
+  paytable:
+    '3': 2
+    '4': 3
+    '5': 10
+- name: H4
+  role: high
+  order: 4
+  label: High 4
+  paytable:
+    '3': 1
+    '4': 2
+    '5': 8
+- name: L1
+  role: low
+  order: 1
+  label: Low 1
+  paytable:
+    '3': 0.5
+    '4': 1
+    '5': 5
+- name: L2
+  role: low
+  order: 2
+  label: Low 2
+  paytable:
+    '3': 0.3
+    '4': 0.7
+    '5': 3
+- name: L3
+  role: low
+  order: 3
+  label: Low 3
+  paytable:
+    '3': 0.3
+    '4': 0.7
+    '5': 3
+- name: L4
+  role: low
+  order: 4
+  label: Low 4
+  paytable:
+    '3': 0.2
+    '4': 0.5
+    '5': 2
+- name: L5
+  role: low
+  order: 5
+  label: Low 5
+  paytable:
+    '3': 0.1
+    '4': 0.3
+    '5': 1
+- name: W
+  role: wild
+  order: 1
+  label: Wild
+  special:
+  - wild
+  - multiplier
+  paytable:
+    '3': 5
+    '4': 10
+    '5': 20
+- name: S
+  role: scatter
+  order: 1
+  label: Scatter
+freeSpins:
+  triggerSymbol: S
+  triggerCount: 3
+  awardedSpins: 10
+  spinsPerExtraScatter: 2
+  retrigger: true
+placeholderReelWeights:
+  H1: 6
+  H2: 6
+  H3: 6
+  H4: 6
+  L1: 14
+  L2: 14
+  L3: 14
+  L4: 14
+  L5: 14
+  W: 2
+  S: 3

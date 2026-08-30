@@ -23,6 +23,7 @@ import { audit } from '../src/commands/audit.js';
 import { verify } from '../src/commands/verify.js';
 import { inspire } from '../src/commands/inspire.js';
 import { behaviors } from '../src/commands/behaviors.js';
+import { preview } from '../src/commands/preview.js';
 import { SpecValidationError } from '../src/lib/loadSpec.js';
 
 const program = new Command();
@@ -209,6 +210,38 @@ program
 	.option('--with-scripts', 'run postinstall scripts too (slower; fetches browsers)', false)
 	.action(
 		run((opts) => depsLink({ sdkDir: path.resolve(opts.sdk), ignoreScripts: !opts.withScripts })),
+	);
+
+program
+	.command('preview')
+	.description('Look at the game — real books through the real renderer, in your browser')
+	.requiredOption('--sdk <path>', 'path to a checkout of StakeEngine/web-sdk')
+	.option('--spec <path>', 'path to game-spec.yaml (to name the app)')
+	.option('--name <name>', 'app name under apps/, if you would rather not pass --spec')
+	.option('--port <n>', 'port to serve on', '6006')
+	.option('--host <host>', 'host to bind', 'localhost')
+	.option('--open', 'open a browser automatically', false)
+	.action(
+		run(async (opts) => {
+			// --spec is the normal path because it is the same argument every other
+			// command takes; --name is the escape hatch for an app scaffolded before
+			// the spec moved, or one of the SDK's own samples.
+			let name = opts.name;
+			if (!name) {
+				if (!opts.spec) {
+					throw new Error('Pass --spec <game-spec.yaml> or --name <app> so I know what to open.');
+				}
+				const { loadGameSpec } = await import('../src/lib/loadSpec.js');
+				name = loadGameSpec(path.resolve(opts.spec)).game.name;
+			}
+			return preview({
+				sdkDir: path.resolve(opts.sdk),
+				name,
+				port: Number(opts.port),
+				host: opts.host,
+				open: opts.open,
+			});
+		}),
 	);
 
 program
