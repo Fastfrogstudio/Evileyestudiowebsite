@@ -397,11 +397,60 @@ export function renderLadder(ladder) {
  * exactly the cap and a shorter strip reaches that board sooner.
  */
 export const STRIP_PROFILES = {
-	BR0: { wildPct: 0.009, wildStack: 1, rows: 220, gametype: 'basegame' },
-	FR0: { wildPct: 0.06, wildStack: 3, rows: 220, gametype: 'freegame' },
-	WCAP: { wildPct: 0.13, wildStack: 'full', rows: 100, gametype: 'basegame', cap: true },
-	FRWCAP: { wildPct: 0.13, wildStack: 'full', rows: 100, gametype: 'freegame', cap: true },
+	BR0: { wildPct: 0.009, wildStack: 1, rows: 220, gametype: 'basegame', scatterPct: 0.0145 },
+	FR0: { wildPct: 0.06, wildStack: 3, rows: 220, gametype: 'freegame', scatterPct: 0.009 },
+	WCAP: { wildPct: 0.13, wildStack: 'full', rows: 100, gametype: 'basegame', cap: true, scatterPct: 0.007 },
+	FRWCAP: { wildPct: 0.13, wildStack: 'full', rows: 100, gametype: 'freegame', cap: true, scatterPct: 0.007 },
 };
+
+/**
+ * ...and the profiles above are LINES AND WAYS profiles. They were measured off
+ * 0_0_lines and 0_0_ways only, and applying them to the other two mechanics is
+ * what hung a simulation.
+ *
+ * Measured across every shipped sample, wild density per strip:
+ *
+ *   0_0_lines     BR0 0.9%   FR0 6.4%   FRWCAP 13.0%
+ *   0_0_ways      BR0 0.5%   FR0 5.9%   FRWCAP 10.1%
+ *   0_0_cluster   BR0 0.0%   FR0 2.4%   WCAP    7.1%
+ *   0_0_scatter   BR0 0.0%   FR0 0.0%   WCAP    0.0%   — no wilds at all
+ *
+ * The reason is in what a max-win board looks like per evaluator. A lines or
+ * ways cap board needs whole REELS of wilds, so the cap strip is wild-dense and
+ * stacked taller than the board. A cluster cap board needs one big CONNECTED
+ * group, and since a wild joins every group it touches, the same density makes
+ * every board a winner — which on a tumbling mechanic means a round that never
+ * ends. A scatter game counts symbols anywhere and has no use for substitution
+ * at all.
+ *
+ * Applying the lines profile to a 7x7 cluster game put 13% wilds in stacks nine
+ * tall on the cap strip. 93% of boards won, the expected round ran 14 cascades,
+ * and the forced max-win loop never finished a batch.
+ */
+const CLUSTER_STRIP_PROFILES = {
+	BR0: { wildPct: 0, wildStack: 1, rows: 251, gametype: 'basegame', scatterPct: 0.012 },
+	FR0: { wildPct: 0.024, wildStack: 1, rows: 251, gametype: 'freegame', scatterPct: 0.008 },
+	WCAP: { wildPct: 0.071, wildStack: 1, rows: 172, gametype: 'basegame', cap: true, scatterPct: 0.008 },
+	FRWCAP: { wildPct: 0.071, wildStack: 1, rows: 172, gametype: 'freegame', cap: true, scatterPct: 0.008 },
+};
+
+const SCATTER_STRIP_PROFILES = {
+	BR0: { wildPct: 0, wildStack: 1, rows: 251, gametype: 'basegame', scatterPct: 0.0126 },
+	FR0: { wildPct: 0, wildStack: 1, rows: 251, gametype: 'freegame', scatterPct: 0.008 },
+	WCAP: { wildPct: 0, wildStack: 1, rows: 251, gametype: 'basegame', cap: true, scatterPct: 0.008 },
+	FRWCAP: { wildPct: 0, wildStack: 1, rows: 251, gametype: 'freegame', cap: true, scatterPct: 0.008 },
+};
+
+/** The profile for one strip, on the mechanic that will actually read it. */
+export function stripProfileFor(mechanic, stripId) {
+	const table =
+		mechanic?.winType === 'cluster'
+			? CLUSTER_STRIP_PROFILES
+			: mechanic?.winType === 'scatter'
+				? SCATTER_STRIP_PROFILES
+				: STRIP_PROFILES;
+	return table[stripId] ?? STRIP_PROFILES[stripId];
+}
 
 /**
  * How often each symbol should appear, from what it pays.
@@ -511,10 +560,15 @@ function seededRng(key) {
  * a re-derivation of it. Scatters are excluded on purpose: they do not pay as
  * ordinary symbols, so they contribute nothing to the level being measured.
  */
-export function stripColumns(spec, stripId, { alpha } = {}) {
-	const profile = STRIP_PROFILES[stripId];
+export function stripColumns(spec, stripId, { alpha, withScatters = false } = {}) {
+	const mechanic = spec._mechanic ?? (spec.game?.mechanic ? getMechanic(spec.game.mechanic) : null);
+	const profile = stripProfileFor(mechanic, stripId);
 	if (!profile) throw new Error(`unknown strip "${stripId}"`);
-	return designStrip(spec, { profile, rng: seededRng(`${spec.game.name}:${stripId}`), alpha });
+	const rng = seededRng(`${spec.game.name}:${stripId}`);
+	const columns = designStrip(spec, { profile, rng, alpha });
+	// Off by default: scatters do not pay as ordinary symbols, so leaving them out
+	// keeps the EV model measuring only what pays. The retrigger check needs them.
+	return withScatters ? placeScatters(spec, columns, { profile, stripId, rng }) : columns;
 }
 
 /**
@@ -531,34 +585,67 @@ export function stripColumns(spec, stripId, { alpha } = {}) {
  *   Prize symbols never appear on an ordinary strip. Nothing in a normal spin
  *   collects a prize, so one landing there looks valuable and pays nothing.
  */
-export function renderDesignedReelCsv(spec, { stripId = 'BR0', scatterDensity = 0.014, alpha } = {}) {
-	const profile = STRIP_PROFILES[stripId];
+/**
+ * Place scatters into an already-built strip, in place.
+ *
+ * Split out of renderDesignedReelCsv because the retrigger-safety check needs
+ * the strip a player actually spins, scatters and all. Reading the scatterless
+ * strip made that check measure a 0% trigger rate on every game — a check that
+ * silently passes everything is worse than no check.
+ */
+export function placeScatters(spec, columns, { profile, stripId, rng, scatterDensity }) {
+	const scatterNames = spec.symbols.filter((s) => s.special.includes('scatter')).map((s) => s.name);
+	if (!scatterNames.length) return columns;
+
+	const length = profile.rows;
+	const reels = spec.game.reels.count;
+	const window = Math.max(...spec.game.reels.rows) + 2;
+
+	// Per-strip, because every shipped sample thins scatters on the free-game
+	// and cap strips and one constant density does not:
+	//
+	//   0_0_cluster   BR0 1.2%   FR0 0.8%   WCAP 1.2%
+	//   0_0_lines     BR0 1.6%   FR0 1.1%   FRWCAP 0.6%
+	//   0_0_ways      BR0 1.6%   FR0 1.5%   FRWCAP 2.1%
+	//
+	// The reason is the retrigger loop. A free-game strip as scatter-rich as the
+	// base strip keeps re-awarding spins: at 1.4% on a 7x7 board, a round
+	// awarding 12 free spins ran to 194 of them, and the simulation spent minutes
+	// inside single rounds. The expansion factor is
+	// awardedSpins x P(trigger during the feature), and it has to stay below 1 or
+	// the round does not end at all. mathBalance checks it.
+	const density = scatterDensity ?? profile.scatterPct ?? 0.014;
+	const perReel = Math.max(2, Math.round(length * density));
+	const slot = Math.floor(length / perReel);
+	if (slot <= window) {
+		throw new Error(
+			`strip "${stripId}" of ${length} rows cannot hold ${perReel} spaced scatters for a ` +
+				`${window - 2}-row board — raise its rows in STRIP_PROFILES`,
+		);
+	}
+	for (let reel = 0; reel < reels; reel += 1) {
+		for (let n = 0; n < perReel; n += 1) {
+			const at = (n * slot + Math.floor(rng() * (slot - window))) % length;
+			columns[reel][at] = scatterNames[Math.floor(rng() * scatterNames.length)];
+		}
+	}
+	return columns;
+}
+
+export function renderDesignedReelCsv(spec, { stripId = 'BR0', scatterDensity, alpha } = {}) {
+	const mechanic = spec._mechanic ?? (spec.game?.mechanic ? getMechanic(spec.game.mechanic) : null);
+	const profile = stripProfileFor(mechanic, stripId);
 	if (!profile) throw new Error(`unknown strip "${stripId}" — expected one of ${Object.keys(STRIP_PROFILES).join(', ')}`);
 
 	const rng = seededRng(`${spec.game.name}:${stripId}`);
-	const columns = designStrip(spec, { profile, rng, alpha });
+	const columns = placeScatters(spec, designStrip(spec, { profile, rng, alpha }), {
+		profile,
+		stripId,
+		rng,
+		scatterDensity,
+	});
+
 	const length = profile.rows;
-	const reels = spec.game.reels.count;
-
-	const scatterNames = spec.symbols.filter((s) => s.special.includes('scatter')).map((s) => s.name);
-	if (scatterNames.length) {
-		const window = Math.max(...spec.game.reels.rows) + 2;
-		const perReel = Math.max(2, Math.round(length * scatterDensity));
-		const slot = Math.floor(length / perReel);
-		if (slot <= window) {
-			throw new Error(
-				`strip "${stripId}" of ${length} rows cannot hold ${perReel} spaced scatters for a ` +
-					`${window - 2}-row board — raise STRIP_PROFILES.${stripId}.rows`,
-			);
-		}
-		for (let reel = 0; reel < reels; reel += 1) {
-			for (let n = 0; n < perReel; n += 1) {
-				const at = (n * slot + Math.floor(rng() * (slot - window))) % length;
-				columns[reel][at] = scatterNames[Math.floor(rng() * scatterNames.length)];
-			}
-		}
-	}
-
 	const rows = [];
 	for (let i = 0; i < length; i += 1) rows.push(columns.map((col) => col[i]).join(','));
 	return `${rows.join('\n')}\n`;

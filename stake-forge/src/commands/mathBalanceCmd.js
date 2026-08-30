@@ -30,6 +30,23 @@ export async function mathBalance({ specPath, volatility, apply = false, json = 
 	console.log(`  as designed it pays       ${fmt(report.asDesigned.ev)}x per spin, winning 1 in ${fmt(report.asDesigned.hitRate)}`);
 	console.log(`  best reel calibration     ${fmt(report.calibrated.ev)}x per spin at alpha ${report.calibrated.alpha}, winning 1 in ${fmt(report.calibrated.hitRate)}`);
 	console.log(`  target hit rate           1 in ${report.target.baseHitRate}`);
+
+	// Always shown, not only when they fail. Both of these hung a simulation
+	// before they were checked, and a number you can see beats a rule you trip.
+	if (report.tumbles) {
+		const worst = report.cascade.reduce((a, b) => (b.hitProbability > a.hitProbability ? b : a));
+		console.log(
+			`  longest cascade           ${fmt(worst.expectedDrops)} drops on ${worst.strip} ` +
+				`(${(worst.hitProbability * 100).toFixed(0)}% of boards win, limit ${(worst.limit * 100).toFixed(0)}%)`,
+		);
+	}
+	if (report.retrigger) {
+		console.log(
+			`  retrigger expansion       ${fmt(report.retrigger.roundMultiplier)}x the ` +
+				`${report.retrigger.awarded} spins awarded ` +
+				`(${(report.retrigger.triggerProbability * 100).toFixed(1)}% of ${report.retrigger.strip} boards retrigger)`,
+		);
+	}
 	console.log('');
 
 	if (report.inBand) {

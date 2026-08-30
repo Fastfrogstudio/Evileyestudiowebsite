@@ -62,6 +62,9 @@ import { payingHitRate, wincapRtpAllocation, TARGET_WINCAP_HIT_RATE } from '../s
 import { analyseMaxWin, boardCeiling, multiplierCeiling, symbolFrequencies, STRIP_PROFILES, renderDesignedReelCsv, stripColumns, multiplierLadder, renderLadder } from '../src/lib/reelDesign.js';
 import { estimateStripEv, payoutTable } from '../src/lib/rtpModel.js';
 import { balanceSpec, baseGameTarget, calibrateAlpha, scalePaytable, EV_TOLERANCE } from '../src/lib/mathBalance.js';
+import { validateMode, topShareOfRtp, RULE_PROVENANCE } from '../src/lib/mathValidate.js';
+import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS } from '../src/lib/mathBalance.js';
+import { stripProfileFor, placeScatters } from '../src/lib/reelDesign.js';
 import { addDictEntry, insertAfterLineInMethod, insertAfterImports } from '../src/lib/pyPatch.js';
 import { auditSpriteFrames, readSpriteFrames, readSpriteAssetKeys } from '../src/lib/spriteFrames.js';
 
@@ -2573,6 +2576,349 @@ test('the scatter symbol never pays as an ordinary symbol in the model', () => {
 		],
 	};
 	assert.equal(payoutTable(spec).has('S'), false);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// math:validate — the honesty gate
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Lookup-table rows: payouts in hundredths of the bet, as the SDK writes them. */
+const lut = (pairs) => pairs.map(([weight, payout]) => ({ weight, payout: payout * 100 }));
+
+const validateSpec = (overrides = {}) => ({
+	game: {
+		name: 'gate-test',
+		mechanic: 'lines',
+		rtp: 0.965,
+		volatility: 'high',
+		reels: { count: 5, rows: [3, 3, 3, 3, 3] },
+		betModes: {},
+		...overrides,
+	},
+	_mechanic: MECHANICS.lines,
+	symbols: [],
+});
+
+/** A distribution that satisfies every hard rule, to vary one thing at a time. */
+function healthyRows(maxWin) {
+	const rows = [
+		[800000, 0],
+		[150000, 0.5],
+		[40000, 5],
+		[8000, maxWin * 0.005],
+		[1500, maxWin * 0.05],
+		[100, maxWin * 0.3],
+	];
+	// Weight chosen so the cap lands at 1-in-20,000,000 by weight.
+	const total = rows.reduce((s, [w]) => s + w, 0);
+	rows.push([total / (20_000_000 - 1), maxWin]);
+	return lut(rows);
+}
+
+const summaryOf = (rows, { maxWin, cost = 1 }) => summarise(rows, { wincap: maxWin, cost });
+
+test('the gate passes a distribution that satisfies every hard rule', () => {
+	const rows = healthyRows(5000);
+	const mode = { cost: 1, rtp: 0.965, maxWin: 5000 };
+	const summary = summaryOf(rows, { maxWin: 5000 });
+	// The synthetic distribution is not on 96.5% RTP, so that rule is expected to
+	// fail; every OTHER hard rule must pass, which is what this is checking.
+	const result = validateMode({
+		name: 'base',
+		mode,
+		rows,
+		summary,
+		spec: validateSpec(),
+		baseRtp: null,
+		optimised: true,
+	});
+	const failed = result.checks.filter((c) => c.ok === false).map((c) => c.id);
+	assert.deepEqual(failed, ['rtp-on-target'], `unexpected failures: ${failed.join(', ')}`);
+});
+
+test('a cap no round reaches is caught, and the message says what to do', () => {
+	const rows = healthyRows(5000).filter((r) => r.payout < 5000 * 100);
+	const result = validateMode({
+		name: 'base',
+		mode: { cost: 1, rtp: 0.965, maxWin: 5000 },
+		rows,
+		summary: summaryOf(rows, { maxWin: 5000 }),
+		spec: validateSpec(),
+		baseRtp: null,
+		optimised: true,
+	});
+	const check = result.checks.find((c) => c.id === 'max-win-reached');
+	assert.equal(check.ok, false);
+	assert.match(check.detail, /math:balance/);
+});
+
+test('cap frequency is judged per unit STAKED, not per round', () => {
+	// A 100x bonus buy reaching its cap once in 200,000 rounds is reaching it once
+	// in 20,000,000 units staked — the same frequency as the base mode. Judging
+	// rounds against rounds failed that mode at "0.01x the target" when nothing
+	// was wrong with it.
+	const rows = healthyRows(5000);
+	// Re-weight so the cap lands 100x more often per ROUND.
+	const total = rows.reduce((s, r) => s + r.weight, 0);
+	const capRow = rows[rows.length - 1];
+	capRow.weight = total / 200_000;
+
+	const judge = (cost) =>
+		validateMode({
+			name: 'bonus',
+			mode: { cost, rtp: 0.965, maxWin: 5000, buyBonus: true },
+			rows,
+			summary: summaryOf(rows, { maxWin: 5000, cost }),
+			spec: validateSpec(),
+			baseRtp: null,
+			optimised: true,
+		}).checks.find((c) => c.id === 'wincap-frequency');
+
+	assert.equal(judge(1).ok, false, 'at 1x cost this really is 100x too frequent');
+	assert.equal(judge(100).ok, true, 'at 100x cost it is exactly on target');
+});
+
+test('a hole in the win range is caught and named', () => {
+	// Everything pays either pennies or the cap, with nothing in between — the
+	// shape Stake\'s "no gaps" criterion exists to reject.
+	const rows = lut([
+		[900000, 0],
+		[100000, 0.5],
+		[1, 5000],
+	]);
+	const result = validateMode({
+		name: 'base',
+		mode: { cost: 1, rtp: 0.965, maxWin: 5000 },
+		rows,
+		summary: summaryOf(rows, { maxWin: 5000 }),
+		spec: validateSpec(),
+		baseRtp: null,
+		optimised: true,
+	});
+	const check = result.checks.find((c) => c.id === 'no-gaps');
+	assert.equal(check.ok, false);
+	assert.match(check.detail, /medium|large/);
+});
+
+test('hit rate and volatility are not judged on a bought bonus', () => {
+	// A bonus buy triggers every round by definition, so 1-in-1 is correct there,
+	// and its shape is compressed by construction. Holding it to the base game\'s
+	// bands fails it for being exactly what it is.
+	const rows = healthyRows(5000);
+	const result = validateMode({
+		name: 'bonus',
+		mode: { cost: 100, rtp: 0.965, maxWin: 5000, buyBonus: true },
+		rows,
+		summary: summaryOf(rows, { maxWin: 5000, cost: 100 }),
+		spec: validateSpec(),
+		baseRtp: 0.965,
+		optimised: true,
+	});
+	assert.equal(result.checks.some((c) => c.id === 'hit-rate'), false);
+	assert.equal(result.checks.some((c) => c.id === 'volatility-shape'), false);
+});
+
+test('RTP is not judged before the optimiser has run', () => {
+	// Pre-optimisation every simulated round is a re-rolled winner, so the RTP is
+	// above target BY DESIGN. Failing it there would be a lie in the other
+	// direction from passing a broken game.
+	const rows = healthyRows(5000);
+	const result = validateMode({
+		name: 'base',
+		mode: { cost: 1, rtp: 0.965, maxWin: 5000 },
+		rows,
+		summary: summaryOf(rows, { maxWin: 5000 }),
+		spec: validateSpec(),
+		baseRtp: null,
+		optimised: false,
+	});
+	const check = result.checks.find((c) => c.id === 'rtp-on-target');
+	assert.equal(check.ok, null);
+	assert.match(check.detail, /optimiser has not run/);
+});
+
+test('the volatility check is advisory and never fails the gate', () => {
+	// A flat distribution declared high-volatility: the shape is wrong and the
+	// gate should SAY so without failing, because the band is ours and uncalibrated.
+	const rows = lut([
+		[500000, 0.9],
+		[500000, 1],
+		[1, 5000],
+	]);
+	const result = validateMode({
+		name: 'base',
+		mode: { cost: 1, rtp: 0.965, maxWin: 5000 },
+		rows,
+		summary: summaryOf(rows, { maxWin: 5000 }),
+		spec: validateSpec({ volatility: 'high' }),
+		baseRtp: null,
+		optimised: true,
+	});
+	const check = result.checks.find((c) => c.id === 'volatility-shape');
+	assert.equal(check.advisory, true);
+	assert.notEqual(check.ok, false, 'an advisory check must never report a hard failure');
+	assert.match(check.detail, /flatter/);
+});
+
+test('topShareOfRtp splits the row straddling the cutoff', () => {
+	// Taking whole rows makes the answer jump with how the simulation happened to
+	// bucket rounds, which would make the measure noise rather than shape.
+	const rows = lut([
+		[99, 0],
+		[1, 100],
+	]);
+	// The top 1% of weight is exactly the paying row, which carries all the RTP.
+	assert.equal(topShareOfRtp(rows, 0.01), 1);
+	// Half of it carries half.
+	assert.equal(topShareOfRtp(rows, 0.005), 0.5);
+});
+
+test('every rule states where it came from', () => {
+	// Four of these are our reading of Stake\'s criteria, gathered from research
+	// rather than handed to us. A gate that overstates its authority is worse than
+	// no gate, so the provenance is data and is asserted to be complete.
+	const rows = healthyRows(5000);
+	const result = validateMode({
+		name: 'base',
+		mode: { cost: 1, rtp: 0.965, maxWin: 5000 },
+		rows,
+		summary: summaryOf(rows, { maxWin: 5000 }),
+		spec: validateSpec(),
+		baseRtp: null,
+		optimised: true,
+	});
+	for (const check of result.checks) {
+		assert.ok(RULE_PROVENANCE[check.id], `rule "${check.id}" does not say where it came from`);
+	}
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cascade and retrigger safety
+//
+// Both were found by hanging a simulation, not by reading code, and both are
+// the same shape of bug: a quantity that is fine below 1 and fatal at 1.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('the retrigger threshold never drops below 3 scatters', () => {
+	// It used to be max(2, triggerCount - 1). Two scatters is not "slightly
+	// easier than three" on a large board: 6.8% of free-spin boards on a 7x7
+	// carried two or more, so a round awarding 12 free spins retriggered its way
+	// to 186 and the simulation spent minutes inside single rounds. Measured at
+	// 0.91% once the floor was in.
+	const rendered = renderFreespinTriggers({
+		game: { reels: { count: 7 } },
+		freeSpins: { triggerCount: 3, awardedSpins: 12, retrigger: true },
+	});
+	const freegame = rendered.slice(rendered.indexOf('freegame_type'));
+	assert.equal(/\b2:/.test(freegame), false, 'free-game table must not trigger on 2 scatters');
+	assert.ok(/\b3:/.test(freegame), 'free-game table should start at 3');
+});
+
+test('a spec asking for a 2-scatter retrigger still gets one', () => {
+	// The floor is a default, not a prohibition — an explicit retriggerCount is
+	// the designer's call, and mathBalance reports what it costs either way.
+	const rendered = renderFreespinTriggers({
+		game: { reels: { count: 7 } },
+		freeSpins: { triggerCount: 3, awardedSpins: 12, retrigger: true, retriggerCount: 2 },
+	});
+	assert.ok(/\b2:/.test(rendered.slice(rendered.indexOf('freegame_type'))));
+});
+
+test('retrigger safety reads a strip that actually has scatters on it', () => {
+	// stripColumns leaves scatters off by default, because they do not pay and
+	// would distort the EV model. Reading that strip made this check measure a 0%
+	// trigger rate on every game — a check that silently passes everything is
+	// worse than no check at all.
+	const spec = {
+		game: {
+			name: 'retrigger-test',
+			mechanic: 'cluster',
+			rtp: 0.965,
+			volatility: 'low',
+			reels: { count: 7, rows: Array(7).fill(7) },
+			betModes: { base: { cost: 1, rtp: 0.965, maxWin: 10000 } },
+		},
+		_mechanic: MECHANICS.cluster,
+		symbols: [
+			{ name: 'H1', special: [], paytable: { 5: 5, 6: 12, 7: 12 } },
+			{ name: 'L1', special: [], paytable: { 5: 1, 6: 2, 7: 2 } },
+			{ name: 'S', special: ['scatter'] },
+		],
+		freeSpins: { triggerSymbol: 'S', triggerCount: 3, awardedSpins: 12, retrigger: true },
+	};
+	const safety = retriggerSafety(spec, { spins: 4000 });
+	assert.ok(safety, 'a retriggering game should be measurable');
+	assert.ok(safety.triggerProbability > 0, 'measured a 0% trigger rate — the strip has no scatters');
+});
+
+test('a runaway retrigger is caught before the round can diverge', () => {
+	// The expansion factor is retriggerSpins x P(retrigger). Above 1 the round
+	// never ends; the flagged game sat at 0.54, whose MEAN is only 2.2x but whose
+	// tail the simulation runs thousands of times.
+	const base = {
+		game: {
+			name: 'runaway',
+			mechanic: 'cluster',
+			rtp: 0.965,
+			volatility: 'low',
+			reels: { count: 7, rows: Array(7).fill(7) },
+			betModes: { base: { cost: 1, rtp: 0.965, maxWin: 10000 } },
+		},
+		_mechanic: MECHANICS.cluster,
+		symbols: [
+			{ name: 'H1', special: [], paytable: { 5: 5, 6: 12, 7: 12 } },
+			{ name: 'L1', special: [], paytable: { 5: 1, 6: 2, 7: 2 } },
+			{ name: 'S', special: ['scatter'] },
+		],
+		freeSpins: { triggerSymbol: 'S', triggerCount: 3, awardedSpins: 12, retrigger: true },
+	};
+	const safe = retriggerSafety(base, { spins: 4000 });
+	// Two scatters on a 49-cell board is common, so this is the configuration
+	// that hung.
+	const risky = retriggerSafety(
+		{ ...base, freeSpins: { ...base.freeSpins, retriggerCount: 2, retriggerSpins: 12 } },
+		{ spins: 4000 },
+	);
+	assert.ok(
+		risky.expansion > safe.expansion,
+		`a 2-scatter retrigger should expand more (${safe.expansion} vs ${risky.expansion})`,
+	);
+	assert.ok(safe.ok, `the 3-scatter default should be safe, measured ${safe.expansion}`);
+});
+
+test('a game without retriggers has nothing to measure', () => {
+	const spec = {
+		game: { name: 'x', mechanic: 'cluster', reels: { count: 7, rows: Array(7).fill(7) } },
+		_mechanic: MECHANICS.cluster,
+		symbols: [{ name: 'S', special: ['scatter'] }],
+		freeSpins: { triggerCount: 3, awardedSpins: 10, retrigger: false },
+	};
+	assert.equal(retriggerSafety(spec), null);
+});
+
+test('strip profiles differ per mechanic, because the samples do', () => {
+	// The originals were measured off 0_0_lines and 0_0_ways only. Applied to a
+	// 7x7 cluster board they put 13% wilds in stacks nine tall on the cap strip;
+	// a wild joins every group it touches, 93% of boards won, and the round never
+	// ended. Measured across the shipped samples:
+	//   0_0_lines  FRWCAP 13.0%   0_0_cluster WCAP 7.1%   0_0_scatter WCAP 0%
+	const linesCap = stripProfileFor(MECHANICS.lines, 'FRWCAP');
+	const clusterCap = stripProfileFor(MECHANICS.cluster, 'WCAP');
+	const scatterCap = stripProfileFor(MECHANICS.scatter, 'WCAP');
+	assert.ok(linesCap.wildPct > clusterCap.wildPct);
+	assert.equal(scatterCap.wildPct, 0, '0_0_scatter ships no wilds on any strip');
+	assert.equal(linesCap.wildStack, 'full', 'a lines cap board needs whole reels of wilds');
+	assert.equal(clusterCap.wildStack, 1, 'a cluster cap board needs a big group, not a full reel');
+});
+
+test('scatter density thins on the free-game and cap strips', () => {
+	// Every shipped sample does this and ours did not, which is what let the
+	// retrigger loop run away. 0_0_cluster: BR0 1.2%, FR0 0.8%.
+	for (const mechanic of [MECHANICS.lines, MECHANICS.cluster, MECHANICS.scatter]) {
+		const base = stripProfileFor(mechanic, 'BR0').scatterPct;
+		const free = stripProfileFor(mechanic, 'FR0').scatterPct;
+		assert.ok(free < base, `${mechanic.id}: free strip (${free}) should be thinner than base (${base})`);
+	}
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

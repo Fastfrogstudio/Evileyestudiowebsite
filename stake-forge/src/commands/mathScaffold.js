@@ -497,17 +497,25 @@ function applyMultiplierStrategy(gameDir, spec) {
 
 	if (spec.game.globalMultiplierPerSpin) {
 		const file = path.join(gameDir, 'gamestate.py');
-		let source = fs.readFileSync(file, 'utf8');
-		const result = prependToMethod(
+		const source = fs.readFileSync(file, 'utf8');
+		// INSIDE the spin loop, not at the top of run_freespin. Prepending it to
+		// the method fires it once per ROUND, so a 15-spin feature reached 2x
+		// rather than 15x — the setting is called globalMultiplierPerSpin and it
+		// was per round. update_freespin() is the first statement of every
+		// iteration of `while self.fs < self.tot_fs`, in every sample, so
+		// inserting after it is one increment per spin by construction.
+		const result = insertAfterLineInMethod(
 			source,
 			'run_freespin',
+			/^\s*self\.update_freespin\(\)/,
 			['self.update_global_mult()'],
 			'multiplier:global_per_spin',
 		);
 		if (!result.replaced) {
 			throw new Error(
-				'gamestate.py has no run_freespin() to increment the global multiplier in — ' +
-					'globalMultiplierPerSpin needs a free-spin round.',
+				'gamestate.py has no run_freespin() with an update_freespin() call to increment the ' +
+					'global multiplier after — globalMultiplierPerSpin needs a free-spin round with a ' +
+					'per-spin loop.',
 			);
 		}
 		fs.writeFileSync(file, result.source, 'utf8');

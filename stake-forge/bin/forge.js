@@ -10,6 +10,7 @@ import { mathRun } from '../src/commands/mathRun.js';
 import { mathSync } from '../src/commands/mathSync.js';
 import { mathReport } from '../src/commands/mathReport.js';
 import { mathBalance } from '../src/commands/mathBalanceCmd.js';
+import { mathValidate } from '../src/commands/mathValidateCmd.js';
 import { mathOptimise } from '../src/commands/mathOptimise.js';
 import { soundBuild } from '../src/commands/soundBuild.js';
 import { packageGame } from '../src/commands/packageGame.js';
@@ -214,6 +215,22 @@ program
 	.action(
 		run((opts) =>
 			mathReport({
+				specPath: path.resolve(opts.spec),
+				mathSdkDir: path.resolve(opts.mathSdk),
+				json: opts.json,
+			}),
+		),
+	);
+
+program
+	.command('math:validate')
+	.description('Is this game shippable? Every rule measured, with the number it was judged on')
+	.requiredOption('--spec <path>', 'path to game-spec.yaml')
+	.requiredOption('--math-sdk <path>', 'path to a checkout of StakeEngine/math-sdk')
+	.option('--json', 'machine-readable output', false)
+	.action(
+		run((opts) =>
+			mathValidate({
 				specPath: path.resolve(opts.spec),
 				mathSdkDir: path.resolve(opts.mathSdk),
 				json: opts.json,

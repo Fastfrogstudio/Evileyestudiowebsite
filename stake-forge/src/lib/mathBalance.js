@@ -34,7 +34,7 @@
  * The simulation remains the ground truth; this is the pre-flight check.
  */
 
-import { stripColumns, VOLATILITY_ALPHA } from './reelDesign.js';
+import { stripColumns, VOLATILITY_ALPHA, STRIP_PROFILES, stripProfileFor } from './reelDesign.js';
 import { estimateStripEv } from './rtpModel.js';
 import { VOLATILITY_PROFILES, wincapRtpAllocation, splitRtp } from './optimisation.js';
 import { getMechanic } from './mechanics.js';
@@ -53,6 +53,35 @@ export const EV_TOLERANCE = { low: 0.4, high: 2.5 };
 /** The alpha search range. Below 0.2 the paytable stops meaning anything; above
  * 4 only the cheapest symbol survives on the strip and the game has no shape. */
 const ALPHA_RANGE = { min: 0.2, max: 4 };
+
+/**
+ * On a TUMBLING mechanic, how often a board may win is a hard constraint.
+ *
+ * ── Found by hanging a simulation ───────────────────────────────────────────
+ * A cluster game whose EV landed correctly on target still ran for minutes at
+ * 100% CPU with memory climbing past 2.8 GB and never finished a batch. Nothing
+ * about its RTP was wrong. What was wrong was its hit rate.
+ *
+ * A cascade repeats while the refilled board keeps winning, so the expected
+ * number of drops in ONE round is 1/(1 - p) where p is the chance a board pays.
+ * That is 1.6 drops at p=0.38, 5 at p=0.80, 20 at p=0.95, and unbounded as p
+ * approaches 1. The generated game sat at p=0.76 on its base strip and p=0.94 on
+ * its cap strip, so every forced max-win attempt was a very long round and the
+ * re-roll loop did thousands of them.
+ *
+ * Measured for comparison, with this same model, off the SHIPPED 0_0_cluster
+ * sample — the only ground truth available, since no sample ships with
+ * simulation output:
+ *
+ *     BR0   EV 0.774/spin   p = 38%
+ *     FR0   EV 2.104/spin   p = 57%
+ *     WCAP  EV 10.06/spin   p = 77%
+ *
+ * The EV levels were right; only p was out. So p is now calibrated for, not just
+ * reported. The cap strip is allowed to run hotter on purpose: it has to sustain
+ * a long round to reach the cap at all.
+ */
+export const CASCADE_LIMITS = { ordinary: 0.8, cap: 0.92, comfortable: 0.65 };
 
 /**
  * The base game's share of RTP, matching how planOptimisation splits it, so the
@@ -108,8 +137,23 @@ export function baseGameTarget(spec, { volatility } = {}) {
  *
  * So: scan the range, keep the closest point. Twenty-five samples over a bounded
  * range is a few hundred milliseconds and cannot be fooled by the shape.
+ *
+ * ── Two objectives, because they are two independent knobs ──────────────────
+ * Strip composition sets HOW OFTEN a board pays. The paytable sets HOW MUCH.
+ * Trying to hit an EV target by moving frequency alone makes them fight, and on
+ * a tumbling mechanic the frequency side has to win: hit rate there is not a
+ * preference but the expected cascade length, 1/(1 - p).
+ *
+ * So a caller passing `targetHitRate` gets frequency solved for that, and the
+ * level is then corrected exactly by the paytable scale balanceSpec reports —
+ * which is a one-step solve, since EV is linear in the paytable. A caller
+ * passing only `target` gets the older EV-first behaviour, which is what the
+ * non-cascading mechanics use and what the 100,000x ways game was proved on.
  */
-export function calibrateAlpha(spec, { target, stripId = 'BR0', spins = 6000 } = {}) {
+export function calibrateAlpha(
+	spec,
+	{ target, stripId = 'BR0', spins = 6000, maxHitProbability = null, targetHitRate = null } = {},
+) {
 	const measure = (alpha) => {
 		const columns = stripColumns(spec, stripId, { alpha });
 		return { alpha, ...estimateStripEv(spec, columns, { spins, seed: `cal:${stripId}` }) };
@@ -124,9 +168,19 @@ export function calibrateAlpha(spec, { target, stripId = 'BR0', spins = 6000 } =
 			Math.round((ALPHA_RANGE.min + ((ALPHA_RANGE.max - ALPHA_RANGE.min) * i) / steps) * 1000) /
 			1000;
 		const point = measure(alpha);
-		curve.push({ alpha, ev: point.ev });
+		const hitProbability = 1 / point.hitRate;
+		curve.push({ alpha, ev: point.ev, hitProbability });
 		// Ratio error, so being 10x under scores the same as being 10x over.
-		const err = Math.abs(Math.log((point.ev || 1e-9) / target));
+		let err = targetHitRate
+			? Math.abs(Math.log(point.hitRate / targetHitRate))
+			: Math.abs(Math.log((point.ev || 1e-9) / target));
+		// On a tumbling mechanic an over-hot board is not a shape preference, it is
+		// a round that never ends. Penalise heavily rather than exclude, so a game
+		// where NOTHING qualifies still returns its least-bad point and the caller
+		// reports why instead of throwing.
+		if (maxHitProbability !== null && hitProbability > maxHitProbability) {
+			err += 10 + (hitProbability - maxHitProbability) * 100;
+		}
 		if (err < bestErr) {
 			bestErr = err;
 			best = point;
@@ -148,6 +202,90 @@ export function calibrateAlpha(spec, { target, stripId = 'BR0', spins = 6000 } =
 }
 
 /**
+ * How far a free-spin round expands through retriggers.
+ *
+ * ── Found by hanging a simulation, again ────────────────────────────────────
+ * With the cascade limits satisfied and the RTP on target, a cluster game still
+ * ran one round for minutes. The stack showed it inside run_freespin, and the
+ * count showed why: a round awarding 12 free spins had reached 194 of them. Each
+ * free-game board landing the trigger count again calls update_fs_retrigger_amt
+ * and awards another 12.
+ *
+ * The arithmetic is a branching process. If one free spin awards `awarded` more
+ * with probability `p`, the expected total is a geometric series that converges
+ * only while `awarded x p < 1`, to a factor of 1/(1 - awarded x p). At 0.54 —
+ * where that game sat — the mean is 2.2x the awarded spins but the tail is long,
+ * and a simulation runs the tail thousands of times. At 1 it never ends.
+ *
+ * Every shipped sample avoids this by thinning scatters on the free-game strip
+ * (0_0_cluster runs 1.2% on BR0 and 0.8% on FR0). Ours used one density on every
+ * strip, which is the whole bug.
+ */
+export const RETRIGGER_LIMIT = { safe: 0.35, hard: 0.6 };
+
+export function retriggerSafety(spec, { alpha, spins = 4000 } = {}) {
+	if (!spec.freeSpins?.retrigger) return null;
+	const mechanic = spec._mechanic ?? getMechanic(spec.game.mechanic);
+	const stripId = stripProfileFor(mechanic, 'FRWCAP') ? 'FRWCAP' : 'FR0';
+	const columns = stripColumns(spec, stripId, { alpha, withScatters: true });
+	const rows = spec.game.reels.rows;
+	// The RETRIGGER threshold, which is not the trigger count. renderFreespinTriggers
+	// floors it at 3 and a spec may set it lower explicitly; either way the number
+	// that matters here is the one the engine will compare against, since
+	// check_fs_condition takes min(freespin_triggers[freegame].keys()).
+	const triggerCount = Math.max(
+		spec.freeSpins.retriggerCount ?? 3,
+		spec.freeSpins.retriggerCount ? 1 : 3,
+	);
+	const awardedOnRetrigger =
+		spec.freeSpins.retriggerSpins ?? Math.ceil((spec.freeSpins.awardedSpins ?? 10) / 2);
+	const scatterNames = new Set(
+		spec.symbols.filter((s) => s.special?.includes('scatter')).map((s) => s.name),
+	);
+	if (!scatterNames.size) return null;
+
+	// Count trigger boards directly off the designed strip rather than deriving a
+	// Poisson approximation: scatters are PLACED at fixed spacing, not rolled, so
+	// their on-screen count is not Poisson and an approximation would be wrong in
+	// the direction that matters.
+	let hits = 0;
+	let h = 99991;
+	const rng = () => {
+		h ^= h << 13;
+		h ^= h >>> 17;
+		h ^= h << 5;
+		return ((h >>> 0) % 100000) / 100000;
+	};
+	for (let n = 0; n < spins; n += 1) {
+		let seen = 0;
+		for (let reel = 0; reel < columns.length; reel += 1) {
+			const col = columns[reel];
+			const stop = Math.floor(rng() * col.length);
+			for (let row = 0; row < rows[reel]; row += 1) {
+				if (scatterNames.has(col[(stop + row) % col.length])) seen += 1;
+			}
+		}
+		if (seen >= triggerCount) hits += 1;
+	}
+
+	const p = hits / spins;
+	// The spins a RETRIGGER awards, not the spins the feature starts with — the
+	// branching factor is how many more each retrigger adds.
+	const awarded = awardedOnRetrigger;
+	const expansion = awarded * p;
+	return {
+		strip: stripId,
+		triggerProbability: p,
+		awarded,
+		expansion,
+		// The mean round length as a multiple of the spins awarded.
+		roundMultiplier: expansion >= 1 ? Infinity : 1 / (1 - expansion),
+		ok: expansion <= RETRIGGER_LIMIT.hard,
+		comfortable: expansion <= RETRIGGER_LIMIT.safe,
+	};
+}
+
+/**
  * The full pre-flight report.
  *
  * `paytableScale` is the number that matters when calibration cannot get there
@@ -159,11 +297,22 @@ export function balanceSpec(spec, { volatility, spins = 6000 } = {}) {
 	const target = baseGameTarget(spec, { volatility });
 	const defaultAlpha = VOLATILITY_ALPHA[target.volatility] ?? 0.7;
 
+	// On a tumbling mechanic the hit rate sets the expected cascade length, so it
+	// is calibrated for and not merely reported. See CASCADE_LIMITS.
+	const tumbles = Boolean(mechanic.tumbles);
 	const asDesigned = estimateStripEv(spec, stripColumns(spec, 'BR0'), {
 		spins,
 		seed: 'balance',
 	});
-	const calibrated = calibrateAlpha(spec, { target: target.baseEv, spins });
+	const calibrated = calibrateAlpha(spec, {
+		target: target.baseEv,
+		spins,
+		maxHitProbability: tumbles ? CASCADE_LIMITS.ordinary : null,
+		// A cascading game solves frequency for the hit rate and corrects the level
+		// with the paytable; everything else solves frequency for the level. See
+		// the note on calibrateAlpha.
+		targetHitRate: tumbles ? target.baseHitRate : null,
+	});
 
 	// How much of the win comes from geometry alone, reported because it is the
 	// single most common reason a paytable is out: a ways paytable copied from a
@@ -188,7 +337,74 @@ export function balanceSpec(spec, { volatility, spins = 6000 } = {}) {
 	// every payout by 0".
 	const paytableScale = achieved > 0 ? sigFigs(target.baseEv / achieved, 3) : 1;
 
+	// ── cascade safety ───────────────────────────────────────────────────────
+	// Measured on every strip, because the one that hung a simulation was the CAP
+	// strip, not the base strip — and the cap strip is the one nothing else
+	// looks at.
+	const cascade = [];
+	if (tumbles) {
+		for (const stripId of ['BR0', 'FR0', 'WCAP', 'FRWCAP']) {
+			const profile = stripProfileFor(mechanic, stripId);
+			if (!profile) continue;
+			const alphaFor = calibrated.alpha;
+			const measured = estimateStripEv(spec, stripColumns(spec, stripId, { alpha: alphaFor }), {
+				spins: Math.min(spins, 4000),
+				seed: `cascade:${stripId}`,
+			});
+			const p = 1 / measured.hitRate;
+			const limit = profile.cap ? CASCADE_LIMITS.cap : CASCADE_LIMITS.ordinary;
+			cascade.push({
+				strip: stripId,
+				hitProbability: p,
+				expectedDrops: p >= 1 ? Infinity : 1 / (1 - p),
+				limit,
+				ok: p <= limit,
+			});
+		}
+	}
+	const cascadeRisk = cascade.filter((c) => !c.ok);
+
+	const retrigger = retriggerSafety(spec, { alpha: calibrated.alpha });
+
 	const findings = [];
+	if (retrigger && !retrigger.ok) {
+		findings.push(
+			`A free-spin round expands ${fmt(retrigger.roundMultiplier)}x through retriggers: the ` +
+				`${retrigger.strip} strip triggers on ${pctOf(retrigger.triggerProbability)} of boards and ` +
+				`each trigger awards ${retrigger.awarded} more spins, so every spin awards ` +
+				`${fmt(retrigger.expansion)} on average. Above 1 the round never ends; even at this level ` +
+				`the tail is long enough that the simulation spends minutes inside single rounds.`,
+		);
+		findings.push(
+			`Thin the scatters on the free-game strip (STRIP_PROFILES.${retrigger.strip}.scatterPct), ` +
+				`award fewer spins per retrigger, or set freeSpins.retrigger: false. Every shipped ` +
+				`sample carries roughly a third fewer scatters on its free strip than its base strip.`,
+		);
+	}
+	for (const risk of cascadeRisk) {
+		findings.push(
+			`${risk.strip} wins ${pctOf(risk.hitProbability)} of boards, above the ${pctOf(risk.limit)} ` +
+				`limit for a cascading game — one round would run ${fmt(risk.expectedDrops)} drops on ` +
+				`average. The simulation does not fail on this, it HANGS: every forced max-win attempt ` +
+				`becomes a very long round and the re-roll loop does thousands of them.`,
+		);
+	}
+	if (cascadeRisk.length) {
+		const payable = spec.symbols.filter((s) => s.paytable && !s.special?.includes('scatter')).length;
+		const capRisk = cascadeRisk.some((c) => c.strip.includes('CAP'));
+		findings.push(
+			capRisk && cascadeRisk.length === 1
+				? `Only the cap strip is over. That strip is meant to run hot — it has to sustain a long ` +
+					`round to reach the cap at all — so the fix is its wild density in ` +
+					`reelDesign.js, not the paytable. Raise the minimum win size, or cut the cap strip's ` +
+					`wildPct: a wild joins every group it touches, so on a cluster board wild density ` +
+					`translates almost directly into hit rate.`
+				: `Add payable symbols (this game has ${payable}) or shrink the grid. With few symbols ` +
+					`on a large grid some group of the minimum size lands on almost every board — the ` +
+					`shipped 0_0_cluster sample wins 38% of boards on the same 7x7.`,
+		);
+	}
+
 	if (!inBand) {
 		findings.push(
 			`Base strip models ${fmt(achieved)}x per spin against a target of ${fmt(target.baseEv)}x — ` +
@@ -235,6 +451,11 @@ export function balanceSpec(spec, { volatility, spins = 6000 } = {}) {
 		ratio,
 		inBand,
 		paytableScale,
+		tumbles,
+		cascade,
+		cascadeSafe: cascadeRisk.length === 0,
+		retrigger,
+		retriggerSafe: !retrigger || retrigger.ok,
 		findings,
 	};
 }
@@ -270,6 +491,8 @@ function sigFigs(n, digits) {
 	const factor = Math.pow(10, digits - magnitude);
 	return Math.round(n * factor) / factor;
 }
+
+const pctOf = (v) => `${(v * 100).toFixed(0)}%`;
 
 const fmt = (n) =>
 	!Number.isFinite(n)

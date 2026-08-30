@@ -101,7 +101,24 @@ export function renderFreespinTriggers(spec) {
 	const parts = [`self.basegame_type: ${pyLiteral(numericKeys(base), 3)}`];
 
 	if (fs.retrigger) {
-		const retriggerFrom = fs.retriggerCount ?? Math.max(2, fs.triggerCount - 1);
+		// ── The floor is 3, and it cost a hung simulation to learn why ──────────
+		// This used to be max(2, triggerCount - 1), on the reasoning that a
+		// retrigger should be a little easier than the initial trigger. Two
+		// scatters is not "a little easier". On a 7x7 cluster board 6.8% of
+		// free-spin boards carry two or more scatters, so a round awarding 12 free
+		// spins retriggered its way to 186 and the simulation spent minutes inside
+		// single rounds.
+		//
+		// Every shipped sample floors at 3: 0_0_cluster triggers on 4 and
+		// retriggers on 3; 0_0_lines and 0_0_ways trigger and retrigger on 3.
+		// None of them goes to 2, and the reason is arithmetic — the expansion
+		// factor is retriggerSpins x P(retrigger), and it has to stay well under 1.
+		//
+		// mathBalance measures the resulting expansion and reports it, so a spec
+		// that sets retriggerCount explicitly still gets told what it costs.
+		const RETRIGGER_FLOOR = 3;
+		const retriggerFrom =
+			fs.retriggerCount ?? Math.max(RETRIGGER_FLOOR, Math.min(fs.triggerCount, fs.triggerCount - 1));
 		const free = {};
 		const retriggerSpins = fs.retriggerSpins ?? Math.ceil(fs.awardedSpins / 2);
 		for (let count = retriggerFrom; count <= maxScatters; count += 1) {
