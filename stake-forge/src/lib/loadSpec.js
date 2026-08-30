@@ -6,6 +6,7 @@ import { MECHANIC_IDS, getMechanic, GRID_GROWTH_MODES, GLOBAL_MULT_GROWTH_MODES 
 import { normaliseSymbol, assignOrders, sortSymbols, reachableWinSizes } from './taxonomy.js';
 import { validateBehaviors } from './behaviorRecipes.js';
 import { validateScreens } from './screens.js';
+import { BOARD_MECHANICS } from './boardMechanics.js';
 import { VOLATILITY_IDS } from './optimisation.js';
 
 // Allows a single-character name: `^[a-z][a-z0-9-]*[a-z0-9]$` required at least
@@ -338,6 +339,40 @@ export function loadGameSpec(specPath) {
 				`freeSpins.triggerSymbol "${trigger}" must carry special: [scatter] — ` +
 					`the engine counts triggers via count_special_symbols(scatter_key).`,
 			);
+		}
+	}
+
+	// ── board mechanics ─────────────────────────────────────────────────────
+	// Each declares the evaluators it is meaningful on, and a mechanic on the
+	// wrong one is refused rather than generated. A wild-substitution mechanic on
+	// scatter-pays would generate, run, and do nothing — the worst outcome,
+	// because it looks like it works.
+	for (const definition of Object.values(BOARD_MECHANICS)) {
+		const raw = spec?.game?.[definition.specKey];
+		if (!raw) continue;
+		if (mechanic && !definition.winTypes.includes(mechanic.winType)) {
+			errors.push(
+				`game.${definition.specKey} ("${definition.name}") works on ` +
+					`${definition.winTypes.join('/')}, not "${mechanic.winType}". ` +
+					(mechanic.winType === 'scatter'
+						? 'Scatter-pays counts instances anywhere with no positional requirement, so a ' +
+							'substituting wild has no gap to bridge.'
+						: 'It would generate and run and do nothing.'),
+			);
+		}
+		if (definition.id === 'mystery_symbol') {
+			const cover = (raw === true ? {} : raw).symbol ?? 'M';
+			if (!symbols.some((sym) => sym.name === cover)) {
+				errors.push(
+					`game.mysterySymbols needs a symbol named "${cover}" declared in symbols: — the ` +
+						`reel strips can only carry symbols the game registers, so an undeclared cover ` +
+						`never lands and the mechanic silently never fires.`,
+				);
+			}
+		}
+		if (!symbols.some((sym) => sym.special.includes('wild')) &&
+			['random_wild', 'guaranteed_wild_per_cascade', 'wild_spawner'].includes(definition.id)) {
+			errors.push(`game.${definition.specKey} needs a symbol with special: [wild].`);
 		}
 	}
 

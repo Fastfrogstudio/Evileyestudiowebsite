@@ -286,6 +286,76 @@ export function retriggerSafety(spec, { alpha, spins = 4000 } = {}) {
 }
 
 /**
+ * How many mechanics are piling into the FREE GAME, which this model cannot see.
+ *
+ * ── The blind spot this covers ──────────────────────────────────────────────
+ * balanceSpec evaluates the base board with no multipliers, no cascades and no
+ * feature. That is a deliberate scope and usually the right one — but it means a
+ * spec can come back "in band" and still be unshippable, because everything that
+ * makes the FEATURE rich is invisible to it.
+ *
+ * Measured: a cluster game stacking expanding wilds, guaranteed cascade wilds,
+ * random wilds, a wild spawner, doubling grid multipliers and a doubling global
+ * multiplier modelled at 0.90x of target on the base board — and its CHEAPEST
+ * free-spin round paid 12,656x against an optimiser target of 185x. The median
+ * feature hit the 25,000x cap. Every one of the six mechanics worked correctly;
+ * together they left no distribution to optimise.
+ *
+ * The model cannot price them, so it counts them and says so. Weaker than a
+ * number, and much better than silence.
+ */
+export const FEATURE_LOAD_LIMIT = { comfortable: 2, warn: 4 };
+
+export function featureLoad(spec) {
+	const g = spec.game ?? {};
+	const carried = [];
+
+	// Wild injection: each puts more wilds on a feature board, and on a cluster
+	// grid a wild joins every group it touches.
+	if (g.randomWilds) carried.push({ id: 'randomWilds', kind: 'wild injection' });
+	if (g.guaranteedCascadeWild) carried.push({ id: 'guaranteedCascadeWild', kind: 'wild injection' });
+	if (g.wildSpawner) carried.push({ id: 'wildSpawner', kind: 'wild injection' });
+	for (const symbol of spec.symbols ?? []) {
+		for (const tag of symbol.behaviors ?? []) {
+			if (tag === 'expanding') carried.push({ id: `${symbol.name}:expanding`, kind: 'wild injection' });
+			if (tag === 'sticky') carried.push({ id: `${symbol.name}:sticky`, kind: 'accumulation' });
+		}
+	}
+
+	// Multiplier growth: each is a separate multiplicative axis on the same win.
+	if (g.gridMultipliers) {
+		carried.push({
+			id: 'gridMultipliers',
+			kind: 'multiplier',
+			doubling: (g.gridMultipliers.growth ?? 'increment') === 'double',
+		});
+	}
+	if (g.globalMultiplierPerSpin) {
+		carried.push({
+			id: 'globalMultiplier',
+			kind: 'multiplier',
+			doubling: (g.globalMultiplier?.growth ?? 'increment') === 'double',
+		});
+	}
+
+	// Round extension: more spins is more chances for everything above.
+	if (spec.freeSpins?.resetOnSymbol) carried.push({ id: 'freeSpinReset', kind: 'round extension' });
+	if (spec.freeSpins?.retrigger) carried.push({ id: 'retrigger', kind: 'round extension' });
+
+	const doubling = carried.filter((c) => c.doubling).length;
+	return {
+		mechanics: carried,
+		count: carried.length,
+		doubling,
+		// Two doubling multipliers on one win is multiplicative in the ceiling AND
+		// in how often it is reached — the specific shape that made every feature a
+		// max win.
+		severe: carried.length > FEATURE_LOAD_LIMIT.warn || doubling >= 2,
+		ok: carried.length <= FEATURE_LOAD_LIMIT.comfortable,
+	};
+}
+
+/**
  * The full pre-flight report.
  *
  * `paytableScale` is the number that matters when calibration cannot get there
@@ -365,8 +435,27 @@ export function balanceSpec(spec, { volatility, spins = 6000 } = {}) {
 	const cascadeRisk = cascade.filter((c) => !c.ok);
 
 	const retrigger = retriggerSafety(spec, { alpha: calibrated.alpha });
+	const load = featureLoad(spec);
 
 	const findings = [];
+	if (!load.ok) {
+		const detail = load.mechanics.map((m) => m.id).join(', ');
+		findings.push(
+			`${load.count} mechanics enrich the FREE GAME (${detail})` +
+				(load.doubling >= 2 ? `, ${load.doubling} of them DOUBLING multipliers` : '') +
+				`. Everything above models the base board only — no multipliers, no cascades, no ` +
+				`feature — so none of that is priced here. A spec measured in band on the base game ` +
+				`can still have a feature with no distribution to optimise.`,
+		);
+		if (load.severe) {
+			findings.push(
+				`Measured on a game with six of these: the CHEAPEST free-spin round paid 12,656x ` +
+					`against an optimiser target of 185x, and the median feature hit the cap. Every ` +
+					`mechanic worked; together they left nothing to reweight. Simulate a few hundred ` +
+					`rounds and read the freegame distribution before going further.`,
+			);
+		}
+	}
 	if (retrigger && !retrigger.ok) {
 		findings.push(
 			`A free-spin round expands ${fmt(retrigger.roundMultiplier)}x through retriggers: the ` +
@@ -456,6 +545,7 @@ export function balanceSpec(spec, { volatility, spins = 6000 } = {}) {
 		cascadeSafe: cascadeRisk.length === 0,
 		retrigger,
 		retriggerSafe: !retrigger || retrigger.ok,
+		featureLoad: load,
 		findings,
 	};
 }

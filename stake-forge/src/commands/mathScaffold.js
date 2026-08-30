@@ -6,6 +6,7 @@ import { loadGameSpec } from '../lib/loadSpec.js';
 import { renderDesignedReelCsv, multiplierLadder, renderLadder } from '../lib/reelDesign.js';
 import { balanceSpec } from '../lib/mathBalance.js';
 import { LIFETIMES_SURVIVING_CASCADE } from '../lib/behaviorRecipes.js';
+import { BOARD_MECHANICS } from '../lib/boardMechanics.js';
 import { GRID_CAP_DEFAULT, GRID_GROWTH_DEFAULT, GLOBAL_MULT_GROWTH_DEFAULT } from '../lib/mechanics.js';
 import { getMechanic } from '../lib/mechanics.js';
 import { DEFAULT_20_LINES } from '../lib/generators.js';
@@ -548,6 +549,161 @@ function applyMultiplierStrategy(gameDir, spec) {
 }
 
 /**
+ * Apply every board mechanic the spec switches on.
+ *
+ * One piece of plumbing for all of them: emit the method onto GameStateOverride,
+ * add whatever imports it needs, and splice its call in at the right point of
+ * the round. Adding a mechanic is then a data entry in boardMechanics.js rather
+ * than another bespoke function that gets the splicing subtly differently.
+ *
+ * Call sites, and why each is where it is:
+ *
+ *   after-draw     right after draw_board(), so the rewrite is on the board that
+ *                  is about to be evaluated
+ *   after-cascade  right after tumble_game_board(), so it applies to the symbols
+ *                  the refill dropped in — the only place a cascade-scoped
+ *                  mechanic can see them
+ *
+ * Both are spliced into run_spin AND run_freespin where they exist, because a
+ * mechanic restricted to the feature says so in its own generated code rather
+ * than by being spliced into only one loop. That keeps the two decisions
+ * separate: where the hook goes is structural, when it fires is the mechanic's.
+ */
+function applyBoardMechanics(gameDir, spec, mechanic) {
+	const enabled = [];
+	for (const definition of Object.values(BOARD_MECHANICS)) {
+		const raw = spec.game[definition.specKey];
+		if (!raw) continue;
+		enabled.push({ definition, config: resolveBoardMechanicConfig(definition, raw, spec) });
+	}
+	if (!enabled.length) return [];
+
+	const overrideFile = path.join(gameDir, 'game_override.py');
+	const gamestateFile = path.join(gameDir, 'gamestate.py');
+	let override = fs.readFileSync(overrideFile, 'utf8');
+	let gamestate = fs.readFileSync(gamestateFile, 'utf8');
+	const applied = [];
+
+	for (const { definition, config } of enabled) {
+		const probe = definition.call.replace(/^self\./, '').replace(/\(\)$/, '');
+		const appended = appendMethodsToClass(
+			override,
+			'GameStateOverride',
+			definition.method(config),
+			probe,
+		);
+		if (appended.missingClass) {
+			throw new Error(
+				`game_override.py has no GameStateOverride class to add ${definition.id} to.`,
+			);
+		}
+		override = appended.source;
+		for (const imp of definition.imports ?? []) {
+			override = imp.plain
+				? ensurePlainImport(override, `import ${imp.module}`)
+				: ensureImport(override, imp.module, imp.names).source;
+		}
+
+		// A method that never gets called is the quietest possible failure, so a
+		// splice landing NOWHERE is an error rather than a shrug.
+		const afterRe =
+			definition.site === 'after-cascade'
+				? /^\s*self\.tumble_game_board\(/
+				: /^\s*self\.draw_board\(/;
+		let sites = 0;
+		for (const method of ['run_spin', 'run_freespin']) {
+			const result = insertAfterLineInMethod(
+				gamestate,
+				method,
+				afterRe,
+				[definition.call],
+				`board:${definition.id}:${method}`,
+			);
+			if (result.replaced) {
+				gamestate = result.source;
+				sites += 1;
+			}
+		}
+		if (!sites) {
+			throw new Error(
+				`${definition.id} needs a ${definition.site === 'after-cascade' ? 'tumble_game_board()' : 'draw_board()'} ` +
+					`call in gamestate.py to hook onto, and this game has none. That usually means the ` +
+					`mechanic does not belong on "${mechanic.id}".`,
+			);
+		}
+		applied.push(`${definition.name} (${sites} site${sites === 1 ? '' : 's'})`);
+	}
+
+	fs.writeFileSync(overrideFile, override, 'utf8');
+	fs.writeFileSync(gamestateFile, gamestate, 'utf8');
+	return applied;
+}
+
+/**
+ * Fill in the defaults a board mechanic needs, from the spec.
+ *
+ * Every mechanic here needs to know the game's wild and its payable symbols, and
+ * making each entry re-derive that would be five copies of the same lookup.
+ */
+function resolveBoardMechanicConfig(definition, raw, spec) {
+	const options = raw === true ? {} : raw;
+	const wild = spec.symbols.find((s) => s.special.includes('wild'))?.name ?? 'W';
+	const scatters = spec.symbols.filter((s) => s.special.includes('scatter')).map((s) => s.name);
+	const prizes = spec.symbols.filter((s) => s.special.includes('prize')).map((s) => s.name);
+	const payable = spec.symbols
+		.filter((s) => s.paytable && !s.special.includes('scatter') && !s.special.includes('wild'))
+		.map((s) => s.name);
+	const lows = spec.symbols.filter((s) => s.role === 'low').map((s) => s.name);
+	const highs = spec.symbols.filter((s) => s.role === 'high').map((s) => s.name);
+
+	// Never overwrite a scatter or a prize: a scatter count is what triggers the
+	// feature and force_special_board() places them deliberately, so a mechanic
+	// quietly eating one changes the trigger rate. A prize carries a value.
+	const base = { wild, protected: [...scatters, ...prizes], inBaseGame: options.inBaseGame ?? false };
+
+	switch (definition.id) {
+		case 'random_wild': {
+			const weights = options.weights ?? { 0: 60, 1: 30, 2: 10 };
+			return {
+				...base,
+				weights: Object.keys(weights),
+				weightValues: Object.values(weights),
+				max: Math.max(...Object.keys(weights).map(Number)),
+			};
+		}
+		case 'mystery_symbol': {
+			// The cover has to be a symbol the game declares, or the strips cannot
+			// carry it and it never lands.
+			const pool = options.revealsAs ?? payable;
+			return {
+				...base,
+				cover: options.symbol ?? 'M',
+				pool,
+				// Weighted toward the cheap end by default: a mystery that reveals as
+				// the top symbol as often as the bottom one is a different, far richer
+				// game than the name suggests.
+				poolWeights: options.weights ?? pool.map((_, i) => Math.max(1, pool.length - i)),
+			};
+		}
+		case 'symbol_upgrade': {
+			const map = options.map ?? Object.fromEntries(lows.map((l, i) => [l, highs[i % Math.max(highs.length, 1)] ?? l]));
+			return { ...base, map, chance: options.chance ?? 0.05 };
+		}
+		case 'symbol_transform':
+			return {
+				...base,
+				from: options.from ?? lows,
+				to: options.to ?? highs[highs.length - 1] ?? payable[0],
+				chance: options.chance ?? 0.05,
+			};
+		case 'wild_spawner':
+			return { ...base, count: options.count ?? 3, afterCascades: options.afterCascades ?? 4 };
+		default:
+			return base;
+	}
+}
+
+/**
  * Free spins that RESET when a qualifying symbol lands.
  *
  * ── Where this comes from ───────────────────────────────────────────────────
@@ -932,6 +1088,7 @@ export function mathScaffold({ specPath, mathSdkDir, force }) {
 	const gridEdits = applyGridMultipliers(gameDir, spec, mechanic);
 	const globalMultEdits = applyGlobalMultiplierGrowth(gameDir, spec);
 	const resetEdits = applyFreeSpinReset(gameDir, spec);
+	const boardEdits = applyBoardMechanics(gameDir, spec, mechanic);
 	for (const r of recipeResults) {
 		if (r.action === 'generated') {
 			console.log(
@@ -1017,6 +1174,9 @@ export function mathScaffold({ specPath, mathSdkDir, force }) {
 	}
 	if (resetEdits.length) {
 		console.log(chalk.green('✓'), resetEdits.join(', '));
+	}
+	for (const edit of boardEdits) {
+		console.log(chalk.green('✓'), `board mechanic: ${edit}`);
 	}
 
 	console.log(chalk.bold.cyan('\nNext:'));

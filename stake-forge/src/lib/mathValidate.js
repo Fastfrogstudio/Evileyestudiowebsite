@@ -109,6 +109,11 @@ export function topShareOfRtp(rows, fraction) {
 	return seenPay / totalPay;
 }
 
+/** Total weight of a lookup table, used in more than one check. */
+function totalWeightOf(rows) {
+	return rows.reduce((sum, r) => sum + r.weight, 0);
+}
+
 const pct = (v) => `${(v * 100).toFixed(2)}%`;
 const fmt = (n) =>
 	!Number.isFinite(n) ? 'never' : n >= 1000 ? Math.round(n).toLocaleString('en-US') : Math.round(n * 100) / 100;
@@ -119,7 +124,7 @@ const fmt = (n) =>
  * `rows` are the mode's lookup-table rows ({ weight, payout }), payout in
  * hundredths of the bet, exactly as readLookupTable returns them.
  */
-export function validateMode({ name, mode, rows, summary, spec, baseRtp, optimised }) {
+export function validateMode({ name, mode, rows, rawRows, summary, spec, baseRtp, optimised }) {
 	const checks = [];
 	const target = mode.rtp ?? spec.game.rtp;
 	const maxWin = mode.maxWin ?? 5000;
@@ -194,6 +199,47 @@ export function validateMode({ name, mode, rows, summary, spec, baseRtp, optimis
 			`measured 1 in ${fmt(hr)}` +
 				(hr > 10 ? ' — too dry; players read a 1-in-20 game as broken' : '') +
 				(hr < 2 ? ' — too wet; nearly every spin paying leaves nothing for the feature' : ''),
+		);
+	}
+
+	// ── 4b. a bought mode's COST must be reachable from its rounds ───────────
+	// A buy mode forces the feature every round, so its RTP is entirely the
+	// feature's average payout over the entry cost. Get the cost wrong and no set
+	// of weights fixes it: the optimiser fails with a message about pig counts
+	// rather than about price.
+	//
+	// The condition is NOT "the mean matches", and this took two wrong versions to
+	// get right. Measured on the OPTIMISED table the weighted mean is rtp x cost
+	// by construction, so the check passed on every game. Measured on the RAW
+	// table the mean is far too high, because every simulated round is re-rolled
+	// until it satisfies its criteria — so it flagged four games that had
+	// optimised perfectly well.
+	//
+	// What actually has to be true is that the target sits INSIDE the range of
+	// rounds the simulation produced. The optimiser reweights; it needs rounds
+	// both above and below the target to weight between. That is exactly the
+	// condition, and it is what "pos_pigs=50/50, neg_pigs=0/50" reports failing.
+	if (mode.buyBonus) {
+		const cost = mode.cost ?? 1;
+		const source = (rawRows ?? rows).filter((r) => r.payout > 0);
+		const targetAverage = cost * target;
+		const payouts = source.map((r) => r.payout / 100).sort((a, b) => a - b);
+		const min = payouts[0] ?? 0;
+		const max = payouts[payouts.length - 1] ?? 0;
+		const reachable = payouts.length > 1 && targetAverage > min && targetAverage < max;
+		add(
+			'buy-cost-reachable',
+			reachable,
+			`the ${fmt(cost)}x entry cost is reachable from the rounds simulated`,
+			reachable
+				? `target average ${fmt(targetAverage)}x sits inside the ${fmt(min)}x–${fmt(max)}x the ` +
+					`simulation produced, so the optimiser has rounds on both sides to weight between`
+				: `target average ${fmt(targetAverage)}x is ${targetAverage <= min ? 'BELOW' : 'ABOVE'} ` +
+					`everything the simulation produced (${fmt(min)}x–${fmt(max)}x). The optimiser can ` +
+					`only choose among rounds that exist, so no weighting reaches it. ` +
+					(targetAverage <= min
+						? `Raise the cost to about ${fmt(min / target)}x or more, or make the feature leaner.`
+						: `Lower the cost to about ${fmt(max / target)}x or less, or enrich the feature.`),
 		);
 	}
 
@@ -290,6 +336,7 @@ export const RULE_PROVENANCE = {
 	'hit-rate': 'Stake approval criteria (researched, CONFIRM before submitting)',
 	'no-gaps': 'Stake approval criteria (researched, CONFIRM before submitting)',
 	'modes-agree': 'Stake approval criteria (researched, CONFIRM before submitting)',
+	'buy-cost-reachable': 'arithmetic — the optimiser can only weight between rounds that exist',
 	'tables-match-books': 'arithmetic — weights that index rounds the books do not contain are meaningless',
 	'volatility-shape': 'ours, ADVISORY and uncalibrated — no shipped sample has simulation output to calibrate against',
 };

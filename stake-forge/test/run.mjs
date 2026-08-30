@@ -64,7 +64,8 @@ import { analyseMaxWin, boardCeiling, multiplierCeiling, symbolFrequencies, STRI
 import { estimateStripEv, payoutTable } from '../src/lib/rtpModel.js';
 import { balanceSpec, baseGameTarget, calibrateAlpha, scalePaytable, EV_TOLERANCE } from '../src/lib/mathBalance.js';
 import { validateMode, topShareOfRtp, RULE_PROVENANCE } from '../src/lib/mathValidate.js';
-import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS } from '../src/lib/mathBalance.js';
+import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS, featureLoad, FEATURE_LOAD_LIMIT } from '../src/lib/mathBalance.js';
+import { BOARD_MECHANICS, boardMechanicFor } from '../src/lib/boardMechanics.js';
 import { stripProfileFor, placeScatters } from '../src/lib/reelDesign.js';
 import { MECHANIC_LIBRARY, MECHANIC_IDS, libraryStats, checkCombination, artRequirementsFor, mechanicsForWinType, getMechanicEntry, STATUS_ORDER } from '../src/lib/mechanicsLibrary.js';
 import { REFERENCE_GAMES, gamesUsing, gamesByMaxWin } from '../src/lib/referenceGames.js';
@@ -3782,6 +3783,106 @@ test('the new reference games attribute to the right studios', () => {
 			assert.ok(MECHANIC_LIBRARY[m], `${id} references unknown mechanic "${m}"`);
 		}
 	}
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Board mechanics, and the lesson from stacking six of them
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('every board mechanic declares a lifetime, win types and a call site', () => {
+	// The registry exists so adding a mechanic is data. That only holds if every
+	// entry answers the same questions — a missing winTypes would let a
+	// wild-substitution mechanic onto scatter-pays, where it generates, runs, and
+	// does nothing.
+	for (const [key, m] of Object.entries(BOARD_MECHANICS)) {
+		assert.ok(m.id && m.name, `${key} needs an id and name`);
+		assert.ok(m.specKey, `${key} needs the spec key that switches it on`);
+		assert.ok(m.winTypes.length, `${key} must say which evaluators it is meaningful on`);
+		assert.ok(m.boardLifetime, `${key} must declare a boardLifetime`);
+		assert.ok(['after-draw', 'after-cascade', 'both'].includes(m.site), `${key} has site "${m.site}"`);
+		assert.match(m.call, /^self\.\w+\(\)$/, `${key} call should be a method call`);
+		assert.equal(typeof m.method, 'function', `${key} must emit python`);
+		assert.ok(m.art, `${key} must say what art it needs`);
+	}
+});
+
+test('a cascade-scoped mechanic hooks the refill, not the draw', () => {
+	// after-cascade is the only place a mechanic can see the symbols a refill
+	// dropped in. Hooking the draw instead would apply it to the pre-cascade
+	// board and silently do nothing on every tumble after the first.
+	assert.equal(BOARD_MECHANICS.guaranteedCascadeWild.site, 'after-cascade');
+	assert.equal(BOARD_MECHANICS.wildSpawner.site, 'after-cascade');
+	assert.equal(BOARD_MECHANICS.mysterySymbols.site, 'after-draw');
+});
+
+test('board mechanics are refused on evaluators where they do nothing', () => {
+	// Every wild-injection mechanic excludes scatter: scatter-pays counts
+	// instances anywhere with no positional requirement, so there is no gap for a
+	// substituting wild to bridge.
+	for (const key of ['randomWilds', 'wildSpawner']) {
+		assert.equal(
+			BOARD_MECHANICS[key].winTypes.includes('scatter'),
+			false,
+			`${key} should not claim scatter — a wild there bridges nothing`,
+		);
+	}
+	assert.ok(boardMechanicFor('mysterySymbols'));
+	assert.equal(boardMechanicFor('notAMechanic'), null);
+});
+
+test('the emitted python is bounded wherever it searches for a cell', () => {
+	// A while-loop looking for a cell that is not already a wild never terminates
+	// on a full board of wilds.
+	const source = BOARD_MECHANICS.randomWilds.method({
+		wild: 'W', protected: ['S'], inBaseGame: true,
+		weights: ['0', '1'], weightValues: [60, 40], max: 1,
+	});
+	assert.match(source, /attempts < \d+/, 'the placement search must be bounded');
+});
+
+test('stacking feature mechanics is counted, because the model cannot price it', () => {
+	// balanceSpec evaluates the base board only. A spec can measure in band and
+	// still be unshippable. Measured on exactly this: six feature mechanics on a
+	// cluster game modelled at 0.90x of target, and its CHEAPEST free-spin round
+	// paid 12,656x against an optimiser target of 185x.
+	const spec = {
+		game: {
+			randomWilds: true,
+			guaranteedCascadeWild: true,
+			wildSpawner: true,
+			gridMultipliers: { growth: 'double' },
+			globalMultiplierPerSpin: true,
+			globalMultiplier: { growth: 'double' },
+		},
+		symbols: [{ name: 'W', behaviors: ['expanding'] }],
+		freeSpins: { retrigger: true },
+	};
+	const load = featureLoad(spec);
+	assert.ok(load.count >= 6, `expected a heavy load, counted ${load.count}`);
+	assert.equal(load.doubling, 2, 'two doubling multipliers on one win');
+	assert.equal(load.severe, true);
+	assert.equal(load.ok, false);
+
+	// ...and a modest game is not flagged.
+	const light = featureLoad({ game: { globalMultiplierPerSpin: true }, symbols: [], freeSpins: {} });
+	assert.equal(light.ok, true);
+	assert.equal(light.severe, false);
+});
+
+test('two doubling multipliers alone is severe, whatever the count', () => {
+	// Multiplicative in the ceiling AND in how often it is reached — the specific
+	// shape that made every feature a max win.
+	const load = featureLoad({
+		game: {
+			gridMultipliers: { growth: 'double' },
+			globalMultiplierPerSpin: true,
+			globalMultiplier: { growth: 'double' },
+		},
+		symbols: [],
+		freeSpins: {},
+	});
+	assert.equal(load.count, 2);
+	assert.equal(load.severe, true, 'two doubling axes is severe even at a low count');
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

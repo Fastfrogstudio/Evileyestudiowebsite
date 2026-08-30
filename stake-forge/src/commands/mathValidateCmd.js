@@ -55,10 +55,15 @@ export function mathValidate({ specPath, mathSdkDir, json = false }) {
 		const optimised = differs && !stale;
 
 		const rows = readLookupTable(optimised ? optimisedFile : raw);
+		// The buy-cost check needs the RAW rounds, always. After optimisation the
+		// weighted mean payout IS rtp x cost by construction, so measuring it there
+		// makes the check pass trivially on every game — which it did, until four
+		// games in a row reported "1x the cost set in the spec".
+		const rawRows = readLookupTable(raw);
 		const summary = summarise(rows, { wincap: mode.maxWin, cost: mode.cost ?? 1 });
 		if (!summary) continue;
 
-		const result = validateMode({ name, mode, rows, summary, spec, baseRtp, optimised });
+		const result = validateMode({ name, mode, rows, rawRows, summary, spec, baseRtp, optimised });
 		if (stale) {
 			// A hard failure, not a note. Every other rule in this gate is about
 			// whether the game is good enough; this one is about whether the

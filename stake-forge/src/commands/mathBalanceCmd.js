@@ -40,6 +40,13 @@ export async function mathBalance({ specPath, volatility, apply = false, json = 
 				`(${(worst.hitProbability * 100).toFixed(0)}% of boards win, limit ${(worst.limit * 100).toFixed(0)}%)`,
 		);
 	}
+	if (report.featureLoad && report.featureLoad.count) {
+		console.log(
+			`  feature load              ${report.featureLoad.count} mechanic(s) enriching the free game` +
+				(report.featureLoad.doubling >= 2 ? `, ${report.featureLoad.doubling} of them doubling` : '') +
+				(report.featureLoad.ok ? '' : '  — NOT priced by this model'),
+		);
+	}
 	if (report.retrigger) {
 		console.log(
 			`  retrigger expansion       ${fmt(report.retrigger.roundMultiplier)}x the ` +
@@ -65,7 +72,11 @@ export async function mathBalance({ specPath, volatility, apply = false, json = 
 	// Non-zero when anything is out of band, so this can gate a pipeline. It is
 	// wired as an ADVISORY step in the app: a spec mid-iteration should be told,
 	// loudly, without being stopped from continuing.
-	const clean = report.inBand && report.cascadeSafe !== false && report.retriggerSafe !== false;
+	const clean =
+		report.inBand &&
+		report.cascadeSafe !== false &&
+		report.retriggerSafe !== false &&
+		!(report.featureLoad && report.featureLoad.severe);
 	if (!clean) process.exitCode = 1;
 
 	let applied = false;
