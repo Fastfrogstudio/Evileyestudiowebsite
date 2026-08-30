@@ -65,6 +65,8 @@ import { balanceSpec, baseGameTarget, calibrateAlpha, scalePaytable, EV_TOLERANC
 import { validateMode, topShareOfRtp, RULE_PROVENANCE } from '../src/lib/mathValidate.js';
 import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS } from '../src/lib/mathBalance.js';
 import { stripProfileFor, placeScatters } from '../src/lib/reelDesign.js';
+import { MECHANIC_LIBRARY, MECHANIC_IDS, libraryStats, checkCombination, artRequirementsFor, mechanicsForWinType, getMechanicEntry, STATUS_ORDER } from '../src/lib/mechanicsLibrary.js';
+import { REFERENCE_GAMES, gamesUsing, gamesByMaxWin } from '../src/lib/referenceGames.js';
 import { addDictEntry, insertAfterLineInMethod, insertAfterImports } from '../src/lib/pyPatch.js';
 import { auditSpriteFrames, readSpriteFrames, readSpriteAssetKeys } from '../src/lib/spriteFrames.js';
 
@@ -2919,6 +2921,146 @@ test('scatter density thins on the free-game and cap strips', () => {
 		const free = stripProfileFor(mechanic, 'FR0').scatterPct;
 		assert.ok(free < base, `${mechanic.id}: free strip (${free}) should be thinner than base (${base})`);
 	}
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The mechanics library
+//
+// The research behind this used to live in docs/mechanics-catalogue.md, where
+// nothing could read it — no command, no test, no screen referenced that file.
+// These tests exist because data nobody validates rots as quietly as prose
+// nobody reads.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('every mechanic declares a status the tool understands', () => {
+	// The failure mode of a library like this is that it reads as a feature list.
+	// Status is what stops that, so it has to be present and valid on every row.
+	for (const [id, m] of Object.entries(MECHANIC_LIBRARY)) {
+		assert.ok(STATUS_ORDER.includes(m.status), `${id} has status "${m.status}"`);
+		assert.ok(m.rule && m.rule.length > 40, `${id} needs a real rule description`);
+		assert.ok(m.family, `${id} needs a family`);
+		assert.ok(m.art, `${id} must state what art it needs — that is the point of the library`);
+		assert.ok(m.math, `${id} must state where the maths comes from`);
+	}
+});
+
+test('every conflict points at a mechanic that exists', () => {
+	// A conflict naming a typo'd id silently never fires, which is worse than no
+	// conflict rule at all — the editor would accept an incoherent combination.
+	for (const [id, m] of Object.entries(MECHANIC_LIBRARY)) {
+		for (const c of m.conflictsWith) {
+			assert.ok(MECHANIC_LIBRARY[c.id], `${id} conflicts with unknown "${c.id}"`);
+			assert.ok(c.why && c.why.length > 20, `${id} + ${c.id} needs a reason, not just a flag`);
+		}
+		for (const other of m.combinesWith) {
+			if (other === '*') continue;
+			assert.ok(MECHANIC_LIBRARY[other], `${id} combines with unknown "${other}"`);
+		}
+	}
+});
+
+test('every reference game names mechanics that exist', () => {
+	for (const [id, g] of Object.entries(REFERENCE_GAMES)) {
+		assert.ok(g.studio, `${id} needs attribution`);
+		assert.ok(g.whyItMatters.length > 40, `${id} needs a reason to be in the library`);
+		for (const m of g.mechanics) {
+			assert.ok(MECHANIC_LIBRARY[m], `${id} references unknown mechanic "${m}"`);
+		}
+	}
+});
+
+test('the conflict we found the expensive way is in the data', () => {
+	// Expanding wilds on a tumbling board: found by running a generated game, not
+	// by reading code. It is the reason the library holds conflicts as data at
+	// all — so the editor can refuse the combination at spec time.
+	const result = checkCombination(['tumble', 'expanding_wild']);
+	assert.equal(result.ok, false);
+	assert.equal(result.conflicts.length, 1);
+	assert.match(result.conflicts[0].why, /cascade|redraw/i);
+});
+
+test('a conflicting pair is reported once, not twice', () => {
+	// Both sides of a pairing may declare it; reporting it from each direction
+	// would make a two-mechanic clash look like two problems.
+	const result = checkCombination(['tumble', 'expanding_wild', 'walking_wild']);
+	const keys = result.conflicts.map((c) => c.key);
+	assert.equal(new Set(keys).size, keys.length, `duplicate conflict rows: ${keys.join(', ')}`);
+});
+
+test('a blocked mechanic is refused, with the reason', () => {
+	const result = checkCombination(['ways_pays', 'megaways']);
+	assert.equal(result.ok, false);
+	assert.deepEqual(result.blocked, ['megaways']);
+	assert.match(MECHANIC_LIBRARY.megaways.math.notes, /patent/i);
+	assert.match(MECHANIC_LIBRARY.megaways.math.notes, /num_rows/);
+});
+
+test('choosing mechanics produces an art list', () => {
+	// The whole reason this studio wants the library: pick mechanics, learn what
+	// to draw. If this join breaks, the library is just trivia.
+	const art = artRequirementsFor(['tumble', 'grid_multipliers', 'freespins']);
+	assert.ok(art.animations.some((a) => /explosion/i.test(a)), 'tumble needs an explosion state');
+	assert.ok(art.animations.some((a) => /badge double/i.test(a)), 'grid multipliers need a doubling beat');
+	assert.ok(art.screens.some((s) => /16 languages/i.test(s)), 'free spins carry the localised banner cost');
+	// Every animation is attributed, so an art director can ask "why am I drawing this".
+	for (const a of art.animations) assert.match(a, /\[.+\]$/, `unattributed animation: ${a}`);
+});
+
+test('the usable-today count is not inflated', () => {
+	// The number that matters when someone asks "what can this tool do". It must
+	// count only what generates code or works from a spec setting.
+	const stats = libraryStats();
+	const usable = Object.values(MECHANIC_LIBRARY).filter(
+		(m) => m.status === 'built' || m.status === 'config',
+	);
+	assert.equal(stats.usableToday, usable.length);
+	assert.ok(stats.total > stats.usableToday, 'a library where everything is built is a library that is lying');
+});
+
+test('a mechanic generated by a recipe points at a real recipe', () => {
+	for (const [id, m] of Object.entries(MECHANIC_LIBRARY)) {
+		if (!m.recipe) continue;
+		assert.ok(BEHAVIOR_RECIPES[m.recipe], `${id} claims recipe "${m.recipe}", which does not exist`);
+	}
+});
+
+test('a built mechanic must have somewhere the code actually comes from', () => {
+	// "built" is the strongest claim in the library. It has to cash out as either
+	// a behavior recipe or a named sample, or it is just optimism.
+	for (const [id, m] of Object.entries(MECHANIC_LIBRARY)) {
+		if (m.status !== 'built') continue;
+		assert.ok(
+			m.recipe || m.math.sample,
+			`${id} is marked built but names neither a recipe nor a sample`,
+		);
+	}
+});
+
+test('trademarked mechanics carry an owner and a warning', () => {
+	const flagged = Object.values(MECHANIC_LIBRARY).filter((m) => m.trademark);
+	assert.ok(flagged.length >= 5, 'the obvious trademarked names should all be flagged');
+	for (const m of flagged) {
+		assert.ok(m.trademark.owner, `${m.id} flags a trademark without naming the owner`);
+		assert.ok(m.trademark.note, `${m.id} flags a trademark without saying what it means`);
+	}
+	// Megaways is the one that is a patent as well, and must say so.
+	assert.match(MECHANIC_LIBRARY.megaways.trademark.note, /patent/i);
+});
+
+test('the library can answer the questions it exists to answer', () => {
+	// "What reaches 50,000x?" and "what works on a cluster board?" — the two
+	// questions a designer actually asks, which a markdown file could not answer.
+	const big = gamesByMaxWin(50000);
+	assert.ok(big.length >= 3, 'should know several games at the top of the range');
+	assert.ok(big[0].maxWin >= big[big.length - 1].maxWin, 'sorted descending');
+
+	const clusterable = mechanicsForWinType('cluster');
+	assert.ok(clusterable.some((m) => m.id === 'grid_multipliers'));
+	assert.equal(clusterable.some((m) => m.id === 'lines_pays'), false);
+
+	// And the reverse join: who has shipped a given mechanic.
+	assert.ok(gamesUsing('hold_and_win').length >= 2);
+	assert.ok(getMechanicEntry('hold_and_win').seenIn.length >= 2);
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

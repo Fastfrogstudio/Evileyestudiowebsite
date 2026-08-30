@@ -11,6 +11,7 @@ import { mathSync } from '../src/commands/mathSync.js';
 import { mathReport } from '../src/commands/mathReport.js';
 import { mathBalance } from '../src/commands/mathBalanceCmd.js';
 import { mathValidate } from '../src/commands/mathValidateCmd.js';
+import { mechanics } from '../src/commands/mechanics.js';
 import { mathOptimise } from '../src/commands/mathOptimise.js';
 import { soundBuild } from '../src/commands/soundBuild.js';
 import { packageGame } from '../src/commands/packageGame.js';
@@ -160,6 +161,34 @@ program
 				mathSdkDir: path.resolve(opts.mathSdk),
 				sdkDir: path.resolve(opts.sdk),
 				dryRun: opts.dryRun,
+			}),
+		),
+	);
+
+program
+	.command('mechanics')
+	.description('Browse the researched mechanics library — what works where, who shipped it, what art it needs')
+	.option('--id <id>', 'show one mechanic in full')
+	.option('--win-type <type>', 'lines | ways | cluster | scatter')
+	.option('--volatility <tier>', 'low | medium | high | extreme')
+	.option('--search <text>', 'free-text search')
+	.option('--games [query]', 'the reference game index, optionally filtered')
+	.option('--max-win <n>', 'with --games: only games reaching at least this multiple')
+	.option('--combine <ids>', 'comma-separated ids — check the combination for conflicts')
+	.option('--art <ids>', 'comma-separated ids — what the art team must produce')
+	.option('--json', 'machine-readable output', false)
+	.action(
+		run((opts) =>
+			mechanics({
+				id: opts.id,
+				winType: opts.winType,
+				volatility: opts.volatility,
+				search: opts.search,
+				games: opts.games,
+				maxWin: opts.maxWin,
+				combine: opts.combine,
+				art: opts.art,
+				json: opts.json,
 			}),
 		),
 	);
