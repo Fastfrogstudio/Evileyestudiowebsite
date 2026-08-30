@@ -507,6 +507,35 @@ The e2e run covers all four mechanics on both sides. It asserts that `expanding`
 combination real, that an expanding wild on a *cascading* board generates, constructs a
 `GameConfig`, runs a spin, and lands its restore call in both cascade loops.
 
+## Merging mechanics from different games
+
+You can. That is what the mechanics library is for, and `examples/merged-mechanics.yaml`
+is a worked one: cluster-pays tumbling, doubling grid multipliers, expanding wilds and a
+climbing global multiplier — four mechanics from four different studios' games — in a single
+spec that reaches 96.50% RTP, hits a 25,000x cap at 1-in-20,000,000, and passes every
+`math:validate` rule.
+
+Check a combination before building it:
+
+```bash
+forge mechanics --combine cluster_pays,tumble,expanding_wild,grid_multipliers
+forge mechanics --art     cluster_pays,tumble,expanding_wild,grid_multipliers
+```
+
+The first reports conflicts with reasons and flags anything the tool cannot generate yet.
+The second lists what the art team must produce for that combination — the point being that
+choosing mechanics and knowing the art cost are the same action.
+
+Three things bound this, and the tool tells you which one you have hit:
+
+- **17 of 54 catalogued mechanics generate code today.** The rest are labelled `roadmap` or
+  `blocked` and `--combine` says so. Picking one means building it.
+- **Some pairs genuinely conflict**, and the reason is almost always that two mechanics claim
+  the same step of the round. `--combine` names the reason rather than just refusing.
+- **A coherent combination can still be a badly balanced game.** Four multiplier mechanics on
+  one board reach the cap on every feature. `math:balance` catches that in about a second,
+  before a simulation proves it slowly.
+
 ## Starting your next game
 
 Nothing here is game-specific. `forge init` into a fresh folder, point `--sdk`/`--math-sdk` at the
