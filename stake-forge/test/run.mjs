@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 
 import {
@@ -73,6 +74,8 @@ import { REFERENCE_GAMES, gamesUsing, gamesByMaxWin } from '../src/lib/reference
 import { buildArtBrief, winLevelBands, LOCALES, LOCALISED_SHEETS, WIN_LEVEL_SCALES } from '../src/lib/artBrief.js';
 import { brief as runBrief, renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
 import { audit } from '../src/commands/audit.js';
+import { coverageGaps, eventsImpliedBy, declaredHandlers } from '../src/lib/eventCoverage.js';
+import { WEB_EVENT_HANDLERS } from '../src/lib/webEventHandlers.js';
 import { brief } from '../src/commands/brief.js';
 import { STEPS, STEP_ORDER } from '../app/lib/runner.js';
 import YAML from 'yaml';
@@ -1707,6 +1710,22 @@ test('the source folder maps filenames to sound names', () => {
 // node:fs, not fs-extra — no writeJsonSync here.
 const writeJson = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
 
+/**
+ * Real zstd-compressed jsonl books, matching `rows(n, w)`'s payouts.
+ *
+ * data_format.md requires id/events/payoutMultiplier on every round, and the RGS
+ * hashes the CSV's third column against payoutMultiplier — so a fixture has to
+ * be genuinely decompressable and genuinely consistent for either check to mean
+ * anything.
+ */
+function writeBooks(file, n, { payoutFor = (i) => i * 10 } = {}) {
+	const lines = Array.from(
+		{ length: n },
+		(_, i) => JSON.stringify({ id: i, payoutMultiplier: payoutFor(i), events: [] }),
+	).join('\n');
+	fs.writeFileSync(file, zlib.zstdCompressSync(Buffer.from(`${lines}\n`)));
+}
+
 function withPublishDir(setup, fn) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-pkg-'));
 	try {
@@ -1720,9 +1739,14 @@ function withPublishDir(setup, fn) {
 
 		// A healthy publish folder: compressed books present, optimised tables
 		// (different weights from raw), same row count, matching index.
+		//
+		// The books are REAL zstd holding real jsonl, not a placeholder string.
+		// They used to be the literal text "compressed", which was fine while
+		// nothing looked inside — but the RGS hashes the CSV's payout column
+		// against these, so the check that matters cannot be tested against a stub.
 		fs.writeFileSync(path.join(tables, 'lookUpTable_base.csv'), rows(100, 1));
 		fs.writeFileSync(path.join(publish, 'lookUpTable_base_0.csv'), rows(100, 7));
-		fs.writeFileSync(path.join(publish, 'books_base.jsonl.zst'), 'compressed');
+		writeBooks(path.join(publish, 'books_base.jsonl.zst'), 100);
 		writeJson(path.join(publish, 'index.json'), {
 			modes: [{ name: 'base', cost: 1, events: 'books_base.jsonl.zst', weights: 'lookUpTable_base_0.csv' }],
 		});
@@ -1732,6 +1756,75 @@ function withPublishDir(setup, fn) {
 		fs.rmSync(root, { recursive: true, force: true });
 	}
 }
+
+test('a CSV that disagrees with the books on a payout is caught', () => {
+	// The single check that decides an upload. data_format.md: "We require the
+	// payoutMuliplier value in the third column to exactly match those provided in
+	// the game-logic file. These values are extracted and hashed to ensure
+	// identical payoutMultiplier values."
+	//
+	// Nothing local would otherwise tell you: every file is present, well-formed
+	// and internally consistent, and the bundle is rejected on upload.
+	withPublishDir(
+		({ publish }) => {
+			// One round pays something the table does not claim.
+			writeBooks(path.join(publish, 'books_base.jsonl.zst'), 100, {
+				payoutFor: (i) => (i === 9 ? 9999 : i * 10),
+			});
+		},
+		({ root }) => {
+			const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+			assert.equal(result.ok, false);
+			assert.ok(
+				result.problems.some((p) => /HASHES the third column/.test(p)),
+				`expected the payout mismatch to be named, got: ${JSON.stringify(result.problems, null, 1)}`,
+			);
+		},
+	);
+});
+
+test('a books round missing a required RGS key is caught', () => {
+	// "The three JSON key fields: id, events, payoutMultipler are required for
+	// every round returned."
+	withPublishDir(
+		({ publish }) => {
+			const lines = Array.from({ length: 100 }, (_, i) =>
+				JSON.stringify(i === 3 ? { id: i, payoutMultiplier: i * 10 } : { id: i, payoutMultiplier: i * 10, events: [] }),
+			).join('\n');
+			fs.writeFileSync(
+				path.join(publish, 'books_base.jsonl.zst'),
+				zlib.zstdCompressSync(Buffer.from(`${lines}\n`)),
+			);
+		},
+		({ root }) => {
+			const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+			assert.ok(
+				result.problems.some((p) => /has no "events"/.test(p)),
+				`expected the missing key to be named, got: ${JSON.stringify(result.problems)}`,
+			);
+		},
+	);
+});
+
+test('a lookup table with a non-integer payout is caught', () => {
+	// "rows of uint64 values" — the RGS reads these as unsigned integers to avoid
+	// misinterpreting values due to rounding or floating-point errors.
+	withPublishDir(
+		({ publish }) => {
+			const rows = Array.from({ length: 100 }, (_, i) =>
+				i === 5 ? `${i},7,1.5` : `${i},7,${i * 10}`,
+			).join('\n');
+			fs.writeFileSync(path.join(publish, 'lookUpTable_base_0.csv'), `${rows}\n`);
+		},
+		({ root }) => {
+			const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+			assert.ok(
+				result.problems.some((p) => /three unsigned integers/.test(p)),
+				`expected the malformed row to be named, got: ${JSON.stringify(result.problems)}`,
+			);
+		},
+	);
+});
 
 test('a complete publish folder passes', () => {
 	withPublishDir(() => {}, ({ root }) => {
@@ -3070,6 +3163,69 @@ test('the README quotes the real library counts', () => {
 		new RegExp(`${stats.referenceGames} reference games`),
 		`README should say "${stats.referenceGames} reference games"`,
 	);
+});
+
+test('a spec implies the events the front end must handle', () => {
+	// Scaffold has to know before anything is simulated, from the spec alone.
+	// wincap is unconditional: every bet mode carries a wincap distribution, and
+	// set_win_event() is suppressed once the cap triggers, making `wincap` the
+	// ONLY win event on a capped round.
+	assert.deepEqual(eventsImpliedBy({ game: {} }), ['wincap']);
+
+	const withMult = eventsImpliedBy({ game: { globalMultiplierPerSpin: true } });
+	assert.ok(withMult.includes('updateGlobalMult'));
+
+	const withCascade = eventsImpliedBy({ game: { cascadeMultiplier: { ladder: [1, 2, 3] } } });
+	assert.ok(withCascade.includes('updateGlobalMult'), 'the cascade ladder emits it too');
+
+	const withRetrigger = eventsImpliedBy({ game: {}, freeSpins: { retrigger: true } });
+	assert.ok(withRetrigger.includes('freeSpinRetrigger'));
+});
+
+test('coverageGaps names the events a front end cannot draw', () => {
+	// The failure mode: createPlayBookUtils logs "Missing bookEventHandler" and
+	// CARRIES ON, so the round completes, the balance is right, every math check
+	// passes, and the feature is never shown.
+	const gaps = coverageGaps({
+		emitted: ['reveal', 'setWin', 'updateGlobalMult', 'wincap', 'reveal'],
+		handlers: new Set(['reveal', 'setWin']),
+	});
+	assert.deepEqual(gaps.missing, ['updateGlobalMult', 'wincap']);
+	assert.equal(gaps.ok, false);
+	assert.deepEqual(gaps.emitted, ['reveal', 'setWin', 'updateGlobalMult', 'wincap'].sort());
+
+	const clean = coverageGaps({ emitted: ['reveal'], handlers: new Set(['reveal', 'setWin']) });
+	assert.equal(clean.ok, true, 'a handler with no event is fine — the reverse is not');
+});
+
+test('every generatable handler broadcasts only emitter events that exist', () => {
+	// A handler that broadcasts a typo'd emitter event compiles, runs, and does
+	// nothing — the same silent failure it was written to fix. Checked against the
+	// components the sample apps actually ship.
+	const KNOWN = new Set([
+		'globalMultiplierShow', 'globalMultiplierUpdate', 'globalMultiplierHide',
+		'winShow', 'winUpdate', 'winHide',
+		'freeSpinCounterUpdate', 'soundOnce', 'soundMusic', 'soundLoop', 'soundStop',
+		'uiShow', 'uiHide', 'transition', 'boardShow',
+	]);
+	for (const handler of Object.values(WEB_EVENT_HANDLERS)) {
+		for (const match of handler.handler.matchAll(/type: '([a-zA-Z]+)'/g)) {
+			assert.ok(
+				KNOWN.has(match[1]),
+				`${handler.type} broadcasts "${match[1]}", which is not a known emitter event`,
+			);
+		}
+		// The type block and the handler must agree on the event name, or the
+		// handler is typed against a different event than it handles.
+		assert.ok(
+			handler.tsType.includes(`type: '${handler.type}'`),
+			`${handler.type}'s TypeScript type does not declare that type`,
+		);
+		assert.ok(
+			handler.handler.startsWith(`\t${handler.type}:`),
+			`${handler.type}'s handler key does not match its type`,
+		);
+	}
 });
 
 test('featureVariety catches a feature the optimiser has collapsed', () => {

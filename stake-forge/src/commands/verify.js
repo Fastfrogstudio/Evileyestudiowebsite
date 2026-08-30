@@ -6,6 +6,7 @@ import { buildSpecialSymbols, sortSymbols } from '../lib/taxonomy.js';
 import { hasSuperspinMode, BLANK_SYMBOL } from '../lib/mathGenerators.js';
 import { effectivePaylines } from '../lib/generators.js';
 import { getRecipe } from '../lib/behaviorRecipes.js';
+import { declaredHandlers, coverageGaps, EVENT_PURPOSE } from '../lib/eventCoverage.js';
 import { mathGameId } from './mathScaffold.js';
 import {
 	resolvePython,
@@ -115,6 +116,37 @@ export function verify({ specPath, mathSdkDir, webSdkDir, python: pythonOverride
 					}),
 				);
 			}
+		}
+	}
+
+	// ── does the front end handle what the maths emits? ─────────────────────
+	// The only check here that spans BOTH halves, and the one the two halves
+	// cannot make for themselves. See src/lib/eventCoverage.js: an unhandled
+	// event is a console.error nobody reads, and the feature silently never
+	// reaches the player.
+	if (webSdkDir && !skipSpin) {
+		const emitted = results.flatMap((r) => Object.keys(r.data?.events ?? {}));
+		const appDir = path.join(webSdkDir, 'apps', spec.game.name);
+		const handlers = declaredHandlers(appDir);
+		if (emitted.length && handlers) {
+			const gaps = coverageGaps({ emitted, handlers });
+			results.push({
+				name: 'front end handles every event',
+				ok: gaps.ok,
+				detail: gaps.ok
+					? `${gaps.emitted.length} event type(s) emitted, all handled`
+					: `${gaps.missing.length} event type(s) reach a front end that cannot draw them:\n` +
+						gaps.missing
+							.map(
+								(type) =>
+									`    ${type} — ${EVENT_PURPOSE[type] ?? 'no handler in bookEventHandlerMap.ts'}`,
+							)
+							.join('\n') +
+						`\n    Nothing fails on this: createPlayBookUtils logs "Missing bookEventHandler" ` +
+						`and carries on, so the round completes and the balance is correct.\n` +
+						`    Fix: forge scaffold --force regenerates the handlers, or add them by hand ` +
+						`following docs/fe_docs/steps.md.`,
+			});
 		}
 	}
 

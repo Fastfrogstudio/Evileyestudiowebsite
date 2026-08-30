@@ -1,6 +1,9 @@
 import fs from 'fs-extra';
 import path from 'node:path';
 import chalk from 'chalk';
+import { declaredHandlers, eventsImpliedBy } from '../lib/eventCoverage.js';
+import { addWebEventHandlers } from '../lib/webEventPatch.js';
+import { WEB_EVENT_HANDLERS } from '../lib/webEventHandlers.js';
 
 import { loadGameSpec } from '../lib/loadSpec.js';
 import { renderConfigTs, buildSymbolInfoMap, buildInitialBoard } from '../lib/generators.js';
@@ -141,6 +144,36 @@ export function scaffoldGame({ specPath, sdkDir, force }) {
 			console.log(
 				chalk.yellow('  !'),
 				`behavior "${r.tag}" on ${r.symbol} is status "${r.recipe.status}" — web side NOT generated.`,
+			);
+		}
+	}
+
+	// ── events the sample app cannot draw ───────────────────────────────────
+	// The sample apps each handle only their own sample's events: lines and ways
+	// know 9, and none of the four handles `wincap`. A generated game adds
+	// mechanics to the MATHS, so it emits events the app has never heard of — and
+	// an unhandled event is a console.error nobody reads while the feature
+	// silently never reaches the player. See src/lib/eventCoverage.js.
+	const implied = eventsImpliedBy(spec);
+	const handled = declaredHandlers(appDir);
+	const missing = handled ? implied.filter((type) => !handled.has(type)) : [];
+	if (missing.length) {
+		const result = addWebEventHandlers(appDir, missing);
+		for (const type of result.added) {
+			console.log(
+				chalk.green('✓'),
+				`bookEvent "${type}": added type + handler${WEB_EVENT_HANDLERS[type]?.component ? ` + mounted ${WEB_EVENT_HANDLERS[type].component}` : ''}`,
+			);
+		}
+		for (const problem of result.problems) {
+			console.log(chalk.yellow('  !'), problem);
+		}
+		const ungeneratable = missing.filter((type) => !WEB_EVENT_HANDLERS[type]);
+		for (const type of ungeneratable) {
+			console.log(
+				chalk.yellow('  !'),
+				`bookEvent "${type}" has no generator — add it by hand (docs/fe_docs/steps.md) or the ` +
+					`feature will not reach the player.`,
 			);
 		}
 	}

@@ -1,5 +1,6 @@
 import fs from 'fs-extra';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import chalk from 'chalk';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -324,6 +325,130 @@ export function inspectMathPublish({ gameDir, gameId }) {
 			}
 		} catch {
 			problems.push('library/configs/config.json could not be parsed');
+		}
+	}
+
+	// ── the RGS contract, from docs/rgs_docs/data_format.md ─────────────────
+	// Everything above asks whether the pipeline finished. This asks whether the
+	// bundle satisfies the format Stake Engine actually validates on upload —
+	// which is a different question, and the one nobody can answer by looking at
+	// the folder.
+	//
+	// The doc calls index.json's form "strictly enforced" and requires the CSV to
+	// hold "rows of uint64 values". The check that matters most is the last one:
+	//
+	//   "We require the payoutMuliplier value in the third column to exactly match
+	//    those provided in the game-logic file. These values are extracted and
+	//    hashed to ensure identical payoutMultiplier values."
+	//
+	// So a bundle where the CSV and the books disagree by one row is rejected on
+	// upload, and nothing local would have told you. The books are zstd-compressed
+	// jsonl, so that comparison needs a decompressor — when one is not available
+	// the check says so rather than passing silently.
+	for (const mode of index.modes ?? []) {
+		if (typeof mode.name !== 'string' || !mode.name) {
+			problems.push('index.json has a mode with no "name" — the form is strictly enforced');
+		}
+		// A JSON integer parses as a JS number either way, so this reads the raw
+		// text: `"cost": 1` is an int on the wire and the doc asks for a float.
+		if (typeof mode.cost !== 'number') {
+			problems.push(`index.json mode "${mode.name}" has no numeric "cost"`);
+		}
+		if (mode.events && !String(mode.events).endsWith('.jsonl.zst')) {
+			problems.push(
+				`index.json mode "${mode.name}" names "${mode.events}" — the RGS requires ` +
+					`zStandard-compressed jsonl (.jsonl.zst)`,
+			);
+		}
+
+		const weightsFile = path.join(publish, mode.weights ?? '');
+		if (!fs.existsSync(weightsFile)) continue;
+		const rows = fs
+			.readFileSync(weightsFile, 'utf8')
+			.split('\n')
+			.map((l) => l.trim())
+			.filter(Boolean);
+		const malformed = rows.findIndex(
+			(line) => !/^\d+,\d+,\d+$/.test(line),
+		);
+		if (malformed !== -1) {
+			problems.push(
+				`${mode.weights} line ${malformed + 1} is not three unsigned integers ` +
+					`("${rows[malformed].slice(0, 60)}"). The RGS reads these as uint64 to avoid ` +
+					`floating-point ambiguity, so a decimal or a negative is rejected.`,
+			);
+			continue;
+		}
+
+		// The hashed comparison. This is the check that decides an upload, and the
+		// only one here that reads inside the compressed books.
+		const booksFile = path.join(publish, mode.events ?? '');
+		if (!fs.existsSync(booksFile)) continue;
+		let books;
+		try {
+			books = zlib.zstdDecompressSync(fs.readFileSync(booksFile)).toString();
+		} catch (err) {
+			problems.push(
+				`${mode.events} could not be decompressed (${err.message}). The RGS reads it as ` +
+					`zStandard, so if this fails here it fails there.`,
+			);
+			continue;
+		}
+
+		const bookPayouts = new Map();
+		let round = 0;
+		for (const line of books.split('\n')) {
+			if (!line.trim()) continue;
+			round += 1;
+			let parsed;
+			try {
+				parsed = JSON.parse(line);
+			} catch {
+				problems.push(`${mode.events} round ${round} is not valid JSON — the RGS reads jsonl`);
+				break;
+			}
+			// "The three JSON key fields: id, events, payoutMultipler are required
+			// for every round returned."
+			for (const key of ['id', 'events', 'payoutMultiplier']) {
+				if (!(key in parsed)) {
+					problems.push(
+						`${mode.events} round ${round} has no "${key}" — the RGS requires id, events ` +
+							`and payoutMultiplier on every round`,
+					);
+					break;
+				}
+			}
+			bookPayouts.set(parsed.id, parsed.payoutMultiplier);
+		}
+
+		let mismatched = 0;
+		let orphaned = 0;
+		let firstMismatch = null;
+		for (const line of rows) {
+			const [id, , payout] = line.split(',').map(Number);
+			if (!bookPayouts.has(id)) {
+				orphaned += 1;
+				continue;
+			}
+			if (bookPayouts.get(id) !== payout) {
+				mismatched += 1;
+				if (!firstMismatch) {
+					firstMismatch = `id ${id}: table says ${payout}, books say ${bookPayouts.get(id)}`;
+				}
+			}
+		}
+		if (orphaned) {
+			problems.push(
+				`${mode.weights} names ${orphaned} simulation id(s) the books do not contain. The RGS ` +
+					`reads a round by id, so those rows point at nothing.`,
+			);
+		}
+		if (mismatched) {
+			problems.push(
+				`${mode.weights} disagrees with ${mode.events} on ${mismatched} payout(s) ` +
+					`(${firstMismatch}). The RGS extracts and HASHES the third column against the ` +
+					`books' payoutMultiplier, so this bundle is rejected on upload.`,
+			);
 		}
 	}
 
