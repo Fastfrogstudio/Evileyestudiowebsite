@@ -20,7 +20,27 @@ import { staleAgainst } from './packageGame.js';
  */
 
 /** Parse `library/lookup_tables/lookUpTable_<mode>.csv`. */
-export function readLookupTable(file) {
+/**
+ * Which simulated rounds reached the free game.
+ *
+ * lookUpTableSegmented_<mode>.csv is `sim, gametype, weight, payout` — the only
+ * place the gametype of a round is recorded outside the books, which are far
+ * larger and slower to read. Absent on an older simulation, in which case the
+ * feature-variety check simply has nothing to say rather than failing.
+ */
+export function readFeatureRounds(file) {
+	const feature = new Set();
+	if (!fs.existsSync(file)) return feature;
+	for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+		const parts = line.trim().split(',');
+		if (parts.length < 4) continue;
+		const sim = Number(parts[0]);
+		if (Number.isFinite(sim) && /freegame/.test(parts[1])) feature.add(sim);
+	}
+	return feature;
+}
+
+export function readLookupTable(file, { featureRounds } = {}) {
 	const rows = [];
 	for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
 		const trimmed = line.trim();
@@ -30,7 +50,8 @@ export function readLookupTable(file) {
 		const weight = Number(parts[1]);
 		const payout = Number(parts[2]);
 		if (!Number.isFinite(weight) || !Number.isFinite(payout)) continue;
-		rows.push({ weight, payout });
+		const sim = Number(parts[0]);
+		rows.push({ sim, weight, payout, feature: featureRounds ? featureRounds.has(sim) : false });
 	}
 	return rows;
 }

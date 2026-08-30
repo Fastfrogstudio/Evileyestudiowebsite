@@ -4,7 +4,7 @@ import chalk from 'chalk';
 
 import { loadGameSpec } from '../lib/loadSpec.js';
 import { mathGameId } from './mathScaffold.js';
-import { readLookupTable, summarise } from './mathReport.js';
+import { readLookupTable, readFeatureRounds, summarise } from './mathReport.js';
 import { validateMode, RULE_PROVENANCE } from '../lib/mathValidate.js';
 import { staleAgainst } from './packageGame.js';
 
@@ -54,7 +54,12 @@ export function mathValidate({ specPath, mathSdkDir, json = false }) {
 		const stale = differs ? staleAgainst(raw, optimisedFile) : null;
 		const optimised = differs && !stale;
 
-		const rows = readLookupTable(optimised ? optimisedFile : raw);
+		// The gametype of each round lives only in the segmented table, and the
+		// feature-variety check needs it to know which rounds are the FEATURE.
+		const featureRounds = readFeatureRounds(
+			path.join(tablesDir, `lookUpTableSegmented_${name}.csv`),
+		);
+		const rows = readLookupTable(optimised ? optimisedFile : raw, { featureRounds });
 		// The buy-cost check needs the RAW rounds, always. After optimisation the
 		// weighted mean payout IS rtp x cost by construction, so measuring it there
 		// makes the check pass trivially on every game — which it did, until four
@@ -122,7 +127,18 @@ export function mathValidate({ specPath, mathSdkDir, json = false }) {
 	}
 
 	if (ok) {
-		console.log(chalk.green.bold('All rules pass.'));
+		// An advisory that fired is not a failure, but "All rules pass" on its own
+		// reads as if nothing was raised — and feature-variety firing is exactly the
+		// kind of thing someone would want to see before shipping.
+		const raised = results.flatMap((r) => r.checks.filter((c) => c.advisory && c.ok === null));
+		console.log(
+			raised.length
+				? chalk.green.bold('All rules pass') +
+						chalk.yellow.bold(
+							`, with ${raised.length} advisory finding(s): ${[...new Set(raised.map((c) => c.id))].join(', ')}.`,
+						)
+				: chalk.green.bold('All rules pass.'),
+		);
 	} else {
 		const failed = results.flatMap((m) => m.checks.filter((c) => c.ok === false).map((c) => c.id));
 		console.log(chalk.red.bold(`${failed.length} rule(s) failed: ${[...new Set(failed)].join(', ')}`));

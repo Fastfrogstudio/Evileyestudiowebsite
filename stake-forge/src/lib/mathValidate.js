@@ -124,6 +124,82 @@ const fmt = (n) =>
  * `rows` are the mode's lookup-table rows ({ weight, payout }), payout in
  * hundredths of the bet, exactly as readLookupTable returns them.
  */
+/**
+ * How much of the designed feature actually ships.
+ *
+ * ── The hole this closes ────────────────────────────────────────────────────
+ * Every other rule here reads the OPTIMISED table, where RTP, hit rate and the
+ * win bands are correct by construction — that is what the optimiser is for. So
+ * a mechanic can inflate the raw feature by any amount and the gate stays green:
+ * measured on a sticky-wilds game against the identical game without it, raw RTP
+ * went 21.8x to 338.4x and BOTH games reported 96.50% RTP, a 1-in-3.4 hit rate
+ * and the same feature frequency. Every rule passed on both.
+ *
+ * What actually changed was the weight INSIDE the feature. The optimiser holds
+ * RTP by leaning on the cheapest feature rounds, and the richer the raw feature,
+ * the harder it has to lean. Taken far enough, the rounds the mechanic exists to
+ * produce are simulated and then almost never served — the designed feature and
+ * the shipped feature stop being the same thing, and nothing says so.
+ *
+ * Measured on a game stacking six enriching mechanics: 96.9% of the base-mode
+ * feature weight sat on ONE round of the fifty simulated. It passed every other
+ * rule.
+ *
+ * ── Why the metric is a FRACTION and not a count ────────────────────────────
+ * Effective sample size, ESS = (sum w)^2 / sum(w^2), is the standard "how many
+ * samples is this weighted set really worth". The obvious rule is a floor on it:
+ * fewer than N distinct feature rounds and the feature is repetitive.
+ *
+ * That rule is wrong, and the arithmetic says so. ESS scales with the
+ * simulation, so a floor on it mostly measures how long you simulated. Verified
+ * by re-running one game at 5x the rounds — ESS went 9.7 to 30.2 while the
+ * FRACTION barely moved, 4.8% to 3.0%. Projected to the 100,000-round run the
+ * README recommends for production, every game measured here clears any floor
+ * worth setting, including the six-mechanic game whose feature is genuinely one
+ * round: ESS 1.1 at 1,000 rounds becomes ~106 at 100,000.
+ *
+ * So the absolute count is reported as context and the FRACTION is the rule. It
+ * is scale-free, and it says the thing that matters: what share of the feature
+ * rounds the simulation produced carry any real weight in the shipped game. At
+ * 2.1% the optimiser is discarding 98% of the feature it was given. At 42% it is
+ * keeping most of it.
+ *
+ * ADVISORY. This is ours, not a Stake criterion, and the 5% line is a judgement
+ * about where "the optimiser discards almost all of it" begins, not a calibrated
+ * figure — so it reports loudly and never fails a build, like volatility-shape.
+ */
+export const FEATURE_VARIETY = { minFraction: 0.05 };
+
+export function featureVariety(rows) {
+	const feature = (rows ?? []).filter((r) => r.feature && r.weight > 0);
+	if (feature.length < 5) return null;
+
+	const total = feature.reduce((sum, r) => sum + r.weight, 0);
+	if (!total) return null;
+	const sumSquares = feature.reduce((sum, r) => sum + r.weight * r.weight, 0);
+	const ess = (total * total) / sumSquares;
+
+	// The most directly interpretable form of the same fact: how few rounds carry
+	// almost all of the weight.
+	const shares = feature.map((r) => r.weight / total).sort((a, b) => b - a);
+	let carried = 0;
+	let roundsFor95 = 0;
+	for (const share of shares) {
+		carried += share;
+		roundsFor95 += 1;
+		if (carried >= 0.95) break;
+	}
+
+	const fraction = ess / feature.length;
+	return {
+		simulated: feature.length,
+		ess,
+		fraction,
+		roundsFor95,
+		ok: fraction >= FEATURE_VARIETY.minFraction,
+	};
+}
+
 export function validateMode({ name, mode, rows, rawRows, summary, spec, baseRtp, optimised }) {
 	const checks = [];
 	const target = mode.rtp ?? spec.game.rtp;
@@ -324,6 +400,36 @@ export function validateMode({ name, mode, rows, rawRows, summary, spec, baseRtp
 		);
 	}
 
+	// ── how much of the feature actually ships ───────────────────────────────
+	// The one rule here that does NOT read a quantity the optimiser makes correct
+	// by construction. See featureVariety.
+	const variety = featureVariety(rows);
+	if (variety) {
+		checks.push({
+			id: 'feature-variety',
+			// Advisory: ours, and the 5% line is a judgement rather than a calibrated
+			// figure. It reports loudly; it never fails a build.
+			ok: variety.ok ? true : null,
+			advisory: true,
+			statement:
+				`${pct(variety.fraction)} of the simulated free-game rounds carry real weight in the ` +
+				`shipped game`,
+			detail:
+				`${variety.ess.toFixed(1)} effectively distinct round(s) of ${variety.simulated} ` +
+				`simulated; ${variety.roundsFor95} carry 95% of the feature weight` +
+				(variety.ok
+					? ''
+					: `. The optimiser is discarding ${pct(1 - variety.fraction)} of the free game it ` +
+						`was given: it holds RTP by leaning on the cheapest feature rounds, so the rounds ` +
+						`the mechanics exist to produce are simulated and then almost never served. ` +
+						`Every other rule passes on this, because RTP, hit rate and the win bands are ` +
+						`exactly what the optimiser makes correct. This share is scale-free — a longer ` +
+						`simulation raises the round COUNT but not this number, so the fix is to thin ` +
+						`whatever is enriching the feature (forge math:balance lists what is stacked), ` +
+						`not to simulate more.`),
+		});
+	}
+
 	const failed = checks.filter((c) => c.ok === false);
 	return { name, checks, ok: failed.length === 0, failed: failed.length };
 }
@@ -339,6 +445,9 @@ export const RULE_PROVENANCE = {
 	'buy-cost-reachable': 'arithmetic — the optimiser can only weight between rounds that exist',
 	'tables-match-books': 'arithmetic — weights that index rounds the books do not contain are meaningless',
 	'volatility-shape': 'ours, ADVISORY and uncalibrated — no shipped sample has simulation output to calibrate against',
+	'feature-variety':
+		'ours, ADVISORY — the one rule that does not read a quantity the optimiser makes correct ' +
+		'by construction. The 5% line is a judgement about where "discards almost all of it" begins',
 };
 
 export { VOLATILITY_BANDS, WIN_BANDS, VOLATILITY_PROFILES };

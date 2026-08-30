@@ -500,12 +500,16 @@ balance model. What follows is the current honest boundary.
 - **Its balance model is a pre-flight, not the truth.** `math:balance` evaluates the base board
   only — no multipliers, no cascades, no free spins. It answers "is the level of this paytable
   within reach of the target", in about a second. The simulation remains the ground truth.
-- **Four of the nine `math:validate` rules are our reading of Stake's approval criteria**,
+- **Four of the ten `math:validate` rules are our reading of Stake's approval criteria**,
   gathered from research rather than handed to us, and the command says so on every run.
   Confirm them before a submission.
 - **Nothing here has been through a real upload or certification.** `forge package` assembles a
   bundle that satisfies every check we know how to write. That is not the same as a bundle Stake
   has accepted, and until one has been, this line stays.
+- **`feature-variety` is our own rule and its threshold is a judgement.** It reports the share
+  of simulated free-game rounds that carry real weight in the shipped game, and flags below 5%
+  — the point at which the optimiser is discarding almost everything it was given. Advisory;
+  it never fails a build.
 - **The volatility bands are a declaration of intent, not a measurement.** No shipped math-sdk
   sample carries simulation output, so there was nothing to calibrate against. `math:validate`
   reports that check as advisory and never fails on it.
@@ -523,6 +527,36 @@ balance model. What follows is the current honest boundary.
 - **Optimises to target and proves it.** Three games, one per volatility tier, each reach their
   cap with every rule passing: a 10,000x cluster game, a 5,000x lines game, and a 100,000x ways
   game, all on 96.50% against 96.50%.
+
+### The gate that reads what the optimiser cannot fix
+
+Nine of the ten `math:validate` rules read the **optimised** table, where RTP, hit rate and the
+win bands are correct by construction — that is what the optimiser is for. Which means a
+mechanic can inflate the raw feature by any amount and every rule stays green.
+
+Measured on a sticky-wilds game against the identical game with the mechanic off: raw RTP went
+**21.8x to 338.4x**, and after optimisation both reported 96.50% RTP, a 1-in-3.4 hit rate and
+the same feature frequency. Every rule passed on both.
+
+What moved was the weight *inside* the feature. The optimiser holds RTP by leaning on the
+cheapest free-game rounds, and the richer the raw feature, the harder it leans. Far enough and
+the rounds the mechanic exists to produce are simulated and then almost never served — the
+designed feature and the shipped feature stop being the same thing.
+
+`feature-variety` measures that directly. On a game stacking six enriching mechanics:
+
+```
+! 2.13% of the simulated free-game rounds carry real weight in the shipped game
+     1.1 effectively distinct round(s) of 50 simulated; 1 carry 95% of the feature weight.
+```
+
+One round out of fifty, served on essentially every trigger. Everything else passed.
+
+The metric is a **share**, not a round count, and that is the point. Effective sample size scales
+with the simulation — re-running one game at 5x the rounds took it from 9.7 to 30.2 while the
+share barely moved (4.8% to 3.0%) — so a floor on the count would mostly measure how long you
+simulated. The share is scale-free, so a longer simulation raises the count and not the number
+the rule reads. The fix is to thin the feature, not to simulate more.
 
 ### Measured, on three generated games
 

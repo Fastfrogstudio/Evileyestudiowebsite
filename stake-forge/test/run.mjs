@@ -63,7 +63,7 @@ import { payingHitRate, wincapRtpAllocation, TARGET_WINCAP_HIT_RATE } from '../s
 import { analyseMaxWin, boardCeiling, multiplierCeiling, symbolFrequencies, STRIP_PROFILES, renderDesignedReelCsv, stripColumns, multiplierLadder, renderLadder } from '../src/lib/reelDesign.js';
 import { estimateStripEv, payoutTable } from '../src/lib/rtpModel.js';
 import { balanceSpec, baseGameTarget, calibrateAlpha, scalePaytable, EV_TOLERANCE } from '../src/lib/mathBalance.js';
-import { validateMode, topShareOfRtp, RULE_PROVENANCE } from '../src/lib/mathValidate.js';
+import { validateMode, topShareOfRtp, RULE_PROVENANCE, featureVariety, FEATURE_VARIETY } from '../src/lib/mathValidate.js';
 import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS, featureLoad, FEATURE_LOAD_LIMIT, stickySaturation, STICKY_SATURATION_LIMIT } from '../src/lib/mathBalance.js';
 import { BOARD_MECHANICS, boardMechanicFor } from '../src/lib/boardMechanics.js';
 import { stripProfileFor, placeScatters } from '../src/lib/reelDesign.js';
@@ -3044,7 +3044,7 @@ test('the README quotes the real math:validate rule counts', () => {
 	const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
 	const ids = Object.keys(RULE_PROVENANCE);
 	const stake = ids.filter((id) => /Stake approval/i.test(RULE_PROVENANCE[id]));
-	const words = ['zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+	const words = ['zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve'];
 	assert.match(
 		readme,
 		new RegExp(`${words[stake.length]} of the ${words[ids.length].toLowerCase()} \`math:validate\` rules`, 'i'),
@@ -3069,6 +3069,76 @@ test('the README quotes the real library counts', () => {
 		readme,
 		new RegExp(`${stats.referenceGames} reference games`),
 		`README should say "${stats.referenceGames} reference games"`,
+	);
+});
+
+test('featureVariety catches a feature the optimiser has collapsed', () => {
+	// The gap this closes: every other rule reads the OPTIMISED table, where RTP,
+	// hit rate and the win bands are correct by construction. Measured on a real
+	// pair — a sticky-wilds game and the identical game without it — raw RTP went
+	// 21.8x to 338.4x and BOTH reported 96.50% RTP, a 1-in-3.4 hit rate and the
+	// same feature frequency, passing every rule. What moved was the weight INSIDE
+	// the feature.
+	const collapsed = [
+		{ sim: 1, weight: 9700, payout: 14594, feature: true },
+		...Array.from({ length: 49 }, (_, i) => ({ sim: i + 2, weight: 6, payout: 50000, feature: true })),
+	];
+	const spread = Array.from({ length: 50 }, (_, i) => ({
+		sim: i + 1,
+		weight: 100,
+		payout: 5000,
+		feature: true,
+	}));
+
+	const bad = featureVariety(collapsed);
+	assert.equal(bad.ok, false, 'one round holding almost all the weight must be flagged');
+	assert.ok(bad.ess < 2, `expected ~1 effective round, got ${bad.ess}`);
+	assert.equal(bad.roundsFor95, 1, '95% of the weight sits on one round');
+
+	const good = featureVariety(spread);
+	assert.equal(good.ok, true, 'evenly weighted rounds must pass');
+	assert.ok(Math.abs(good.fraction - 1) < 1e-9, 'even weights means every round carries weight');
+});
+
+test('featureVariety measures the design, not the simulation size', () => {
+	// This is why the rule is a FRACTION and not a floor on the round count. ESS
+	// scales with the simulation, so a floor on it mostly measures how long you
+	// simulated: re-running one real game at 5x the rounds took ESS from 9.7 to
+	// 30.2 while the fraction barely moved, 4.8% to 3.0%. Projected to a
+	// production run every game clears any floor worth setting — including one
+	// whose feature is genuinely a single round.
+	// A fixed SHARE of rounds carries the weight and the rest are effectively
+	// dropped — which is what the optimiser actually does to a rich feature, and
+	// what the measured numbers show: 5x the rounds moved ESS 9.7 -> 30.2 while
+	// the fraction went 4.8% -> 3.0%.
+	const shape = (n) =>
+		Array.from({ length: n }, (_, i) => ({
+			sim: i + 1,
+			weight: i < n * 0.03 ? 1 : 1e-9,
+			payout: 100,
+			feature: true,
+		}));
+	const small = featureVariety(shape(100));
+	const large = featureVariety(shape(1000));
+
+	assert.ok(large.ess > small.ess * 2, 'the round COUNT must grow with the simulation');
+	assert.ok(
+		large.fraction < small.fraction * 1.5,
+		`the FRACTION must not grow with it — ${small.fraction} vs ${large.fraction}`,
+	);
+	// Both describe the same design, so both land on the same side of the rule.
+	assert.equal(small.ok, large.ok, 'the same design must get the same verdict at either size');
+});
+
+test('featureVariety says nothing when there is nothing to say', () => {
+	// No feature rounds, or too few to mean anything, is silence rather than a
+	// verdict — a base-only game is not a collapsed one.
+	assert.equal(featureVariety([]), null);
+	assert.equal(featureVariety([{ sim: 1, weight: 1, payout: 0, feature: false }]), null);
+	assert.equal(
+		featureVariety(Array.from({ length: 4 }, (_, i) => ({ sim: i, weight: 1, payout: 1, feature: true }))),
+		null,
+		'four rounds is not enough to call a distribution collapsed',
 	);
 });
 
