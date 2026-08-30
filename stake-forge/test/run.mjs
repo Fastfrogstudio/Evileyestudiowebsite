@@ -42,7 +42,7 @@ import {
 import { requiredStatesForSymbol, validateBehaviors, getRecipe, BEHAVIOR_RECIPES, BOARD_LIFETIMES, LIFETIMES_SURVIVING_CASCADE } from '../src/lib/behaviorRecipes.js';
 import { buildConfigObject, buildSymbolInfoMap, buildInitialBoard } from '../src/lib/generators.js';
 import { renderPaytable, renderSpecialSymbols, renderFreespinTriggers, renderReelCsv, renderNumRows, renderBetModes, betModeCriteria, REEL_STRIP_LENGTH, SCATTER_DENSITY } from '../src/lib/mathGenerators.js';
-import { MECHANICS } from '../src/lib/mechanics.js';
+import { MECHANICS, GRID_GROWTH_MODES, GRID_GROWTH_DEFAULT, GRID_CAP_DEFAULT } from '../src/lib/mechanics.js';
 import { assertNoExtractedMaterial, matchLine } from '../src/lib/inspirationRules.js';
 import { loadGameSpec, loadAssetsManifest, SpecValidationError } from '../src/lib/loadSpec.js';
 import { Canvas, encodePng } from '../src/lib/png.js';
@@ -3387,6 +3387,104 @@ test('the lifetimes are ordered from shortest to longest', () => {
 	]);
 	// Everything except the shortest has to survive a cascade.
 	assert.deepEqual(LIFETIMES_SURVIVING_CASCADE, BOARD_LIFETIMES.slice(1));
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Grid multipliers
+//
+// The plan called these "adaptable from games/0_0_gold_rush". Two things were
+// wrong with that. 0_0_gold_rush is a game this TOOL generated, not a shipped
+// sample — the real source is 0_0_cluster, which every generated cluster game
+// already clones, so the mechanic has worked all along. And the sample's own
+// docstring says wins "double the grid value" while the code beneath it does
+// `+= 1`. Measured in a generated game: top cell 110, which is not a power of
+// two.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('the default growth is what the shipped sample actually does', () => {
+	// Not what its docstring says. Changing the default would silently re-shape
+	// the volatility of every existing cluster game.
+	assert.equal(GRID_GROWTH_DEFAULT, 'increment');
+	assert.deepEqual(GRID_GROWTH_MODES, ['increment', 'double']);
+	assert.equal(GRID_CAP_DEFAULT, 512);
+});
+
+test('grid multipliers are refused on every mechanic but cluster', () => {
+	// 0_0_scatter, 0_0_lines and 0_0_ways carry no position_multipliers and no
+	// evaluate_clusters_with_grid — grepped every shipped sample. Accepting the
+	// setting elsewhere would emit config nothing reads.
+	for (const mechanic of ['lines', 'ways', 'scatter']) {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-grid-'));
+		try {
+			const specPath = path.join(dir, 'game-spec.yaml');
+			fs.writeFileSync(
+				specPath,
+				[
+					'game:',
+					'  name: grid-test',
+					'  rtp: 0.965',
+					`  mechanic: ${mechanic}`,
+					'  reels: { count: 5, rows: [3, 3, 3, 3, 3] }',
+					'  gridMultipliers: { growth: double }',
+					'  betModes:',
+					'    base: { cost: 1, rtp: 0.965, maxWin: 5000, feature: true }',
+					'symbols:',
+					'  - { name: H1, role: high, label: High 1, paytable: { "3": 5, "4": 12, "5": 50 } }',
+					'  - { name: L1, role: low, label: Low 1, paytable: { "3": 1, "4": 2, "5": 8 } }',
+					'',
+				].join('\n'),
+				'utf8',
+			);
+			assert.throws(
+				() => loadGameSpec(specPath),
+				/cluster mechanic only/,
+				`${mechanic} should refuse gridMultipliers`,
+			);
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
+	}
+});
+
+test('an unknown growth mode is refused rather than silently ignored', () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-grid-'));
+	try {
+		const specPath = path.join(dir, 'game-spec.yaml');
+		fs.writeFileSync(
+			specPath,
+			[
+				'game:',
+				'  name: grid-test',
+				'  rtp: 0.965',
+				'  mechanic: cluster',
+				'  reels: { count: 7, rows: [7, 7, 7, 7, 7, 7, 7] }',
+				'  gridMultipliers: { growth: triple }',
+				'  betModes:',
+				'    base: { cost: 1, rtp: 0.965, maxWin: 5000, feature: true }',
+				'symbols:',
+				'  - { name: H1, role: high, label: High 1, paytable: { "5": 5, "6-49": 60 } }',
+				'  - { name: L1, role: low, label: Low 1, paytable: { "5": 1, "6-49": 10 } }',
+				'',
+			].join('\n'),
+			'utf8',
+		);
+		assert.throws(() => loadGameSpec(specPath), /must be one of: increment, double/);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('the library no longer claims the mechanic doubles by default', () => {
+	// The entry used to read "then DOUBLE on each subsequent hit, capped (512x in
+	// the sample)", taken from the sample's docstring rather than its code. A
+	// library that repeats a wrong docstring is worse than one that says nothing.
+	const grid = MECHANIC_LIBRARY.grid_multipliers;
+	assert.equal(grid.status, 'built', 'it works today, in every cluster game');
+	assert.deepEqual(grid.winTypes, ['cluster'], 'scatter has no position_multipliers');
+	assert.match(grid.rule, /INCREMENT/);
+	assert.match(grid.rule, /DOUBLE/);
+	assert.equal(grid.math.sample, 'games/0_0_cluster');
+	assert.match(grid.math.notes, /0_0_gold_rush/, 'the wrong citation should be recorded, not erased');
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

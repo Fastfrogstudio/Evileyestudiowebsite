@@ -6,6 +6,7 @@ import { loadGameSpec } from '../lib/loadSpec.js';
 import { renderDesignedReelCsv, multiplierLadder, renderLadder } from '../lib/reelDesign.js';
 import { balanceSpec } from '../lib/mathBalance.js';
 import { LIFETIMES_SURVIVING_CASCADE } from '../lib/behaviorRecipes.js';
+import { GRID_CAP_DEFAULT, GRID_GROWTH_DEFAULT } from '../lib/mechanics.js';
 import { getMechanic } from '../lib/mechanics.js';
 import { DEFAULT_20_LINES } from '../lib/generators.js';
 import { getRecipe, isGenerable } from '../lib/behaviorRecipes.js';
@@ -546,6 +547,70 @@ function applyMultiplierStrategy(gameDir, spec) {
 	return applied;
 }
 
+/**
+ * Grid-position multipliers, from the spec.
+ *
+ * ── What the shipped sample actually does ───────────────────────────────────
+ * games/0_0_cluster already implements these, so every cluster game the tool
+ * generates has had them all along — 1,066 updateGrid events with a live cell in
+ * a 500-round run, top value 110. Two things were never controllable:
+ *
+ *   the cap     hardcoded `self.maximum_board_mult = 512`
+ *   the growth  `+= 1` per hit, despite the sample's own docstring saying
+ *               "double the grid value". The docstring is wrong about the code
+ *               beneath it; 110 is not a power of two.
+ *
+ * Incrementing and doubling are completely different volatility shapes — nine
+ * hits on one cell is 9x one way and 256x the other — and doubling is the
+ * pattern the mechanic is known for. So both are offered, the default stays
+ * what the sample does, and the scaffolder says which it generated.
+ */
+function applyGridMultipliers(gameDir, spec, mechanic) {
+	const grid = spec.game.gridMultipliers;
+	if (!grid || mechanic.winType !== 'cluster') return [];
+
+	const applied = [];
+	const cap = grid.cap ?? GRID_CAP_DEFAULT;
+	const growth = grid.growth ?? GRID_GROWTH_DEFAULT;
+
+	// ── the cap ──────────────────────────────────────────────────────────────
+	const configPath = path.join(gameDir, 'game_config.py');
+	let config = fs.readFileSync(configPath, 'utf8');
+	const capLine = /^(\s*)self\.maximum_board_mult\s*=.*$/m;
+	if (capLine.test(config)) {
+		config = config.replace(capLine, `$1self.maximum_board_mult = ${cap}`);
+		fs.writeFileSync(configPath, config, 'utf8');
+		applied.push(`cap ${cap}`);
+	}
+
+	// ── the growth rule ──────────────────────────────────────────────────────
+	// Only when it differs from what the sample does. Rewriting the line to what
+	// it already says would be a diff for nothing.
+	if (growth === 'double') {
+		const execPath = path.join(gameDir, 'game_executables.py');
+		let source = fs.readFileSync(execPath, 'utf8');
+		const incrementLine =
+			/^(\s*)self\.position_multipliers\[pos\["reel"\]\]\[pos\["row"\]\] \+= 1$/m;
+		if (!incrementLine.test(source)) {
+			throw new Error(
+				'game_executables.py has no `position_multipliers[...] += 1` to convert to doubling — ' +
+					'the cluster sample changed shape. Read update_grid_mults() and re-derive the patch.',
+			);
+		}
+		source = source.replace(
+			incrementLine,
+			'$1# stake-forge:grid:double — the sample increments; this doubles.\n' +
+				'$1self.position_multipliers[pos["reel"]][pos["row"]] *= 2',
+		);
+		fs.writeFileSync(execPath, source, 'utf8');
+		applied.push('growth doubling');
+	} else {
+		applied.push('growth incrementing (as the sample does)');
+	}
+
+	return applied;
+}
+
 /** Apply the math half of every generable behavior recipe. */
 function applyRecipes(gameDir, spec) {
 	const results = [];
@@ -696,6 +761,7 @@ export function mathScaffold({ specPath, mathSdkDir, force }) {
 
 	const recipeResults = applyRecipes(gameDir, spec);
 	const multiplierEdits = applyMultiplierStrategy(gameDir, spec);
+	const gridEdits = applyGridMultipliers(gameDir, spec, mechanic);
 	for (const r of recipeResults) {
 		if (r.action === 'generated') {
 			console.log(
@@ -772,6 +838,9 @@ export function mathScaffold({ specPath, mathSdkDir, force }) {
 	}
 	if (multiplierEdits.length) {
 		console.log(chalk.green('✓'), `multipliers: ${multiplierEdits.join(', ')}`);
+	}
+	if (gridEdits.length) {
+		console.log(chalk.green('✓'), `grid multipliers: ${gridEdits.join(', ')}`);
 	}
 
 	console.log(chalk.bold.cyan('\nNext:'));

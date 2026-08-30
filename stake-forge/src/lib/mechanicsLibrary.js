@@ -617,12 +617,18 @@ export const MECHANIC_LIBRARY = {
 		name: 'Persistent position multipliers',
 		family: 'multiplier',
 		rule:
-			'Grid POSITIONS activate when a win lands on them, then DOUBLE on each subsequent hit, ' +
-			'capped (512x in the sample). Sticky for the round, summed and applied at sequence end. ' +
-			'The player reads the board as a heat map.',
-		status: 'sample',
+			'Grid POSITIONS activate when a win lands on them and grow on each subsequent hit, ' +
+			'capped. Sticky for the round, summed and applied at sequence end. The player reads the ' +
+			'board as a heat map rather than a set of symbols. Two growth modes: INCREMENT (+1 per ' +
+			'hit, what the shipped sample does) and DOUBLE (x2 per hit, the pattern the mechanic is ' +
+			'known for). Nine hits on one cell is 9x one way and 256x the other, so the mode is a ' +
+			'large volatility dial in its own right.',
+		status: 'built',
 		difficulty: 'T2',
-		winTypes: ['cluster', 'scatter'],
+		// Cluster ONLY. 0_0_scatter has no position_multipliers and no
+		// evaluate_clusters_with_grid — grepped every shipped sample to check,
+		// after this entry claimed both.
+		winTypes: ['cluster'],
 		volatility: ['high', 'extreme'],
 		art: {
 			symbols: 'A multiplier badge per cell, legible over any symbol beneath it.',
@@ -633,8 +639,17 @@ export const MECHANIC_LIBRARY = {
 				'a third the size of a 5x3 symbol.',
 		},
 		frontend: { bookEvents: ['updateGridMult'], components: ['GridMultipliers.svelte'] },
-		math: { sample: 'games/0_0_gold_rush', notes: 'game_executables.py:16-28. Tier A — directly adaptable.' },
-		combinesWith: ['tumble', 'cluster_pays', 'scatter_pays', 'freespins'],
+		math: {
+			sample: 'games/0_0_cluster',
+			notes:
+				'Already in the shipped CLUSTER sample — every cluster game the tool generates has had ' +
+				'these all along (1,066 updateGrid events with a live cell in a 500-round run). ' +
+				'Corrected twice: an earlier note cited games/0_0_gold_rush, which is a game this tool ' +
+				'GENERATED, not a shipped sample; and the sample docstring says "double the grid value" ' +
+				'while the code beneath it does `+= 1`. Measured top cell 110 — not a power of two. ' +
+				'game.gridMultipliers now controls the cap (was a hardcoded 512) and the growth mode.',
+		},
+		combinesWith: ['tumble', 'cluster_pays', 'freespins'],
 		conflictsWith: [{ id: 'lines_pays', why: 'Position multipliers only accumulate through repeat visits to the same cell, which needs cascades that a plain payline round does not have.' }],
 		trademark: null,
 		recipe: null,

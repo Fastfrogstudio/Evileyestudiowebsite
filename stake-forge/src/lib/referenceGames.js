@@ -101,8 +101,9 @@ export const REFERENCE_GAMES = {
 		volatility: 'high',
 		whyItMatters:
 			'Position multipliers that DOUBLE each time a win lands on the same cell. The player ' +
-			'reads the board as a heat map rather than a set of symbols. Directly adaptable — ' +
-			'math-sdk ships 0_0_gold_rush, which implements exactly this, capped at 512x.',
+			'reads the board as a heat map rather than a set of symbols. math-sdk\'s own 0_0_cluster ' +
+			'sample carries position multipliers already, but they INCREMENT rather than double — ' +
+			'despite the sample docstring claiming otherwise. The tool now generates both modes.',
 	},
 	fruit_party: {
 		id: 'fruit_party',

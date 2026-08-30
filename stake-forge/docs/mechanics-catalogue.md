@@ -53,7 +53,7 @@ own art. **This is not legal advice.**
 
 | Mechanic | From | What it does | Difficulty |
 |---|---|---|---|
-| **Persistent position multipliers** | `0_0_gold_rush` | Grid positions activate when a win lands on them, then **double** on each subsequent hit (capped at 512x). Sticky for the round; summed and applied at sequence end. The Sugar Rush pattern. Needs cluster/scatter + cascade — spot multipliers do nothing without repeat visits. | T2 |
+| ~~**Persistent position multipliers**~~ | — | **BUILT — moved out of this table.** It was already in the shipped `0_0_cluster` sample, so every generated cluster game has had it all along. Two corrections: the sample cited here as `0_0_gold_rush` was a game this tool GENERATED, not a shipped sample; and the sample's docstring says "double" while its code does `+= 1`. `game.gridMultipliers` now controls the cap and offers both growth modes. See `forge mechanics --id grid_multipliers`. | — |
 | **Multiplier composition** | `0_0_lines` (adds) / `0_0_ways` (multiplies) | Not a mechanic so much as a *rule*: do multipliers add or multiply? Two 5x wilds are 10x or 25x. **This is the single highest-leverage volatility dial and both patterns already exist in our samples.** | T1 |
 
 ---

@@ -17,6 +17,29 @@
  * for ways, silently drops the `superspingame` game type from the union.
  */
 
+/**
+ * How a grid-position multiplier grows each time a win lands on it.
+ *
+ * ── Corrected against the shipped sample, having believed its docstring ─────
+ * games/0_0_cluster/game_executables.py:16 carries the docstring "all subsequent
+ * wins on that position will double the grid value" — and the code beneath it
+ * does `self.position_multipliers[reel][row] += 1`. It INCREMENTS. Measured in a
+ * generated game: 1,066 updateGrid events with a live cell, top value 110, which
+ * is not a power of two.
+ *
+ * That matters because doubling is the pattern the mechanic is famous for and
+ * incrementing is a completely different volatility shape: nine hits on one cell
+ * is 9x incrementing and 256x doubling. Both are legitimate; the sample only
+ * implements one, and the tool now offers both and says which it generated.
+ */
+export const GRID_GROWTH_MODES = ['increment', 'double'];
+
+/** What the shipped cluster sample does, and therefore the default. */
+export const GRID_GROWTH_DEFAULT = 'increment';
+
+/** The cap games/0_0_cluster hardcodes as maximum_board_mult. */
+export const GRID_CAP_DEFAULT = 512;
+
 export const MECHANICS = {
 	lines: {
 		id: 'lines',

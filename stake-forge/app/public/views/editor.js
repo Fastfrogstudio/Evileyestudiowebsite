@@ -116,6 +116,45 @@ function gameCard(spec, registry, changed) {
 				),
 			),
 		),
+		// ── grid multipliers ──────────────────────────────────────────────────
+		// Cluster only, because only 0_0_cluster carries position_multipliers.
+		// Shown rather than hidden on other mechanics would be a control that
+		// silently does nothing.
+		mech?.winType === 'cluster' &&
+			h('div.grid-3',
+				field(
+					'Grid multipliers',
+					'Cells activate on a win and grow on each later hit.',
+					select(
+						['off', 'increment', 'double'],
+						g.gridMultipliers ? (g.gridMultipliers.growth ?? 'increment') : 'off',
+						(v) => {
+							if (v === 'off') delete g.gridMultipliers;
+							else g.gridMultipliers = { ...(g.gridMultipliers ?? {}), growth: v };
+							changed();
+						},
+					),
+				),
+				g.gridMultipliers
+					? field(
+							'Cap',
+							'The most one cell can reach. The sample uses 512.',
+							input(String(g.gridMultipliers.cap ?? 512), (v) => {
+								const n = Number(v);
+								g.gridMultipliers.cap = Number.isFinite(n) ? n : 512;
+								changed();
+							}),
+						)
+					: null,
+			),
+		mech?.winType === 'cluster' && g.gridMultipliers?.growth === 'double'
+			? h('div.msg.msg-warn.small',
+					h('strong', 'Doubling is not the shipped default. '),
+					`The 0_0_cluster sample increments by 1 per hit, despite its own docstring saying ` +
+					`otherwise. Doubling reaches the cap in ${Math.ceil(Math.log2(g.gridMultipliers.cap ?? 512))} ` +
+					`hits on one cell, so it is a large volatility change — check the Build tab's balance step.`,
+				)
+			: null,
 		mech &&
 			h(
 				'div.msg.msg-info.small',

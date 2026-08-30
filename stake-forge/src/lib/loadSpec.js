@@ -2,7 +2,7 @@ import fs from 'fs-extra';
 import YAML from 'yaml';
 import path from 'node:path';
 
-import { MECHANIC_IDS, getMechanic } from './mechanics.js';
+import { MECHANIC_IDS, getMechanic, GRID_GROWTH_MODES } from './mechanics.js';
 import { normaliseSymbol, assignOrders, sortSymbols, reachableWinSizes } from './taxonomy.js';
 import { validateBehaviors } from './behaviorRecipes.js';
 import { validateScreens } from './screens.js';
@@ -134,6 +134,41 @@ export function loadGameSpec(specPath) {
 				`multiplier for the global one before applying it. Use multiplierStrategy: "global" for ` +
 				`the climbing multiplier to reach the win.`,
 		);
+	}
+
+	// ── grid multipliers ────────────────────────────────────────────────────
+	// Cluster-only, because only the cluster sample carries position_multipliers
+	// and its evaluate_clusters_with_grid — 0_0_lines, 0_0_ways and 0_0_scatter
+	// have no such thing. Verified by grepping every shipped sample.
+	if (spec?.game?.gridMultipliers) {
+		const grid = spec.game.gridMultipliers;
+		if (mechanic && mechanic.winType !== 'cluster') {
+			errors.push(
+				`game.gridMultipliers works on the cluster mechanic only — only games/0_0_cluster ` +
+					`carries position_multipliers and evaluate_clusters_with_grid. "${mechanic.id}" has ` +
+					`no grid to put them on.`,
+			);
+		}
+		if (grid.growth && !GRID_GROWTH_MODES.includes(grid.growth)) {
+			errors.push(
+				`game.gridMultipliers.growth must be one of: ${GRID_GROWTH_MODES.join(', ')} ` +
+					`(got "${grid.growth}").`,
+			);
+		}
+		if (grid.cap !== undefined) {
+			if (!Number.isFinite(grid.cap) || grid.cap < 2) {
+				errors.push('game.gridMultipliers.cap must be a number of at least 2.');
+			} else if (grid.growth === 'double' && grid.cap > 4096) {
+				// A doubling ladder reaches its cap in log2(cap) hits, so a high cap is
+				// not the gentle knob it looks like: 4096 is twelve hits on one cell.
+				warnings.push(
+					`game.gridMultipliers.cap of ${grid.cap} with growth "double" is reached in ` +
+						`${Math.ceil(Math.log2(grid.cap))} hits on a single cell. The shipped sample caps at ` +
+						`512, and doubling makes the top of the ladder far more reachable than incrementing ` +
+						`does — check math:balance before trusting it.`,
+				);
+			}
+		}
 	}
 
 	// Optional, and only read when generating the optimisation setup — but worth
