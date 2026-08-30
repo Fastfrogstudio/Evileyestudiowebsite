@@ -24,6 +24,27 @@
 /** special_symbols keys the engine gives a real default slot value to. */
 export const ENGINE_SPECIAL_KEYS = ['wild', 'scatter', 'multiplier', 'prize'];
 
+/**
+ * Keys the ENGINE does not know, that this tool gives meaning to.
+ *
+ * special_symbols is an open dict — Config takes whatever keys a game declares,
+ * and check_attribute() reads them back — so a game can carry roles the SDK has
+ * no opinion about. That is how the Money Train family works: a taxonomy of
+ * symbol ROLES inside a hold-and-win round, each a small rule, with the interest
+ * coming from the interactions rather than from any one of them.
+ *
+ *   collector  sweeps every visible money value into itself and pays the total
+ *   payer      ADDS its value to every other money value on screen
+ *
+ * Both are meaningless without `prize`, because both act ON prize values — and
+ * the loader says so rather than generating code that reads an attribute
+ * nothing sets.
+ */
+export const STUDIO_SPECIAL_KEYS = ['collector', 'payer'];
+
+/** Every special key a spec may declare. */
+export const ALL_SPECIAL_KEYS = [...ENGINE_SPECIAL_KEYS, ...STUDIO_SPECIAL_KEYS];
+
 /** Valid `role` values. */
 export const ROLES = ['low', 'high', 'wild', 'scatter'];
 
@@ -167,7 +188,7 @@ export function normaliseSymbol(raw, { errors, warnings }) {
 			}
 		}
 		for (const key of special) {
-			if (!ENGINE_SPECIAL_KEYS.includes(key)) {
+			if (!ALL_SPECIAL_KEYS.includes(key)) {
 				warnings.push(
 					`symbol ${name}: special key "${key}" has no engine default. ` +
 						`Symbol.assign_default_attribute() only initialises ${ENGINE_SPECIAL_KEYS.join('/')}; ` +

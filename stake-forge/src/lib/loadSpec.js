@@ -395,6 +395,39 @@ export function loadGameSpec(specPath) {
 		}
 	}
 
+	// ── collector / payer roles ─────────────────────────────────────────────
+	// Both act ON prize values, so both are meaningless without a prize symbol —
+	// the generated code would read an attribute nothing ever sets and quietly
+	// sweep nothing. And both resolve on the final hold-and-win board, so they
+	// need a mode with that loop.
+	const roleSymbols = symbols.filter(
+		(sym) => sym.special.includes('collector') || sym.special.includes('payer'),
+	);
+	if (roleSymbols.length) {
+		if (!symbols.some((sym) => sym.special.includes('prize'))) {
+			errors.push(
+				`${roleSymbols.map((s) => s.name).join(', ')} carry collector/payer, but no symbol has ` +
+					`special: [prize]. Both roles act on PRIZE VALUES — without one they would sweep ` +
+					`nothing and pay nothing.`,
+			);
+		}
+		if (!Object.values(spec?.game?.betModes ?? {}).some((m) => m?.superspin)) {
+			errors.push(
+				`${roleSymbols.map((s) => s.name).join(', ')} carry collector/payer, which resolve on ` +
+					`the FINAL board of a hold-and-win round. Add a bet mode with superspin: true.`,
+			);
+		}
+		for (const sym of roleSymbols) {
+			if (!sym.special.includes('prize')) {
+				warnings.push(
+					`symbol ${sym.name} is a collector/payer but has no "prize" in its special list. ` +
+						`It needs a prize VALUE of its own to collect into or pay out from — ` +
+						`special: [prize, ${sym.special.includes('collector') ? 'collector' : 'payer'}].`,
+				);
+			}
+		}
+	}
+
 	// ── screens ─────────────────────────────────────────────────────────────
 	if (spec.screens) {
 		validateScreens(spec.screens, { mechanic, errors, warnings });

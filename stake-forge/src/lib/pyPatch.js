@@ -444,6 +444,33 @@ export function appendModuleFunctions(existingSource, newSource, probeFunctionNa
 }
 
 /**
+ * Insert lines BEFORE the first line matching `lineRe` inside `methodName`.
+ *
+ * The mirror of insertAfterLineInMethod, and needed for the same reason in the
+ * other direction: some splices have to happen before a statement rather than
+ * after one. Resolving symbol roles against a hold-and-win board must run before
+ * the board is summed and paid, and there is no stable line to anchor it after.
+ */
+export function insertBeforeLineInMethod(source, methodName, lineRe, newLines, markerId) {
+	const marker = `  # stake-forge:${markerId}`;
+	if (source.includes(marker)) return { source, replaced: true, alreadyPresent: true };
+
+	const found = findMethodBody(source, methodName);
+	if (!found) return { source, replaced: false };
+
+	const { start, end, lines } = found;
+	for (let i = start + 1; i <= end; i += 1) {
+		if (!lineRe.test(lines[i])) continue;
+		const indent = lines[i].match(/^[ \t]*/)[0];
+		const injected = newLines.map((l) => (l === '' ? '' : `${indent}${l}`));
+		injected[0] += marker;
+		lines.splice(i, 0, ...injected);
+		return { source: lines.join('\n'), replaced: true, alreadyPresent: false };
+	}
+	return { source, replaced: false };
+}
+
+/**
  * Insert lines immediately AFTER the first line in a method matching `lineRe`,
  * keeping that line. Idempotent via a marker comment.
  *

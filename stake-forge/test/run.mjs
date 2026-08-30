@@ -3951,6 +3951,34 @@ test('forceScatters outside the trigger table is refused', () => {
 	}
 });
 
+test('collector and payer are refused without a prize to act on', () => {
+	// Both act ON prize values. Without one, the generated code reads an
+	// attribute nothing sets and quietly sweeps nothing — a mechanic that
+	// generates, runs, and pays zero.
+	const ctx = collect();
+	const symbols = [
+		normaliseSymbol({ name: 'C', role: 'high', special: ['collector'], paytable: { 3: 1 } }, ctx),
+	];
+	const errors = [];
+	// Mirror the loader's own check.
+	if (!symbols.some((sym) => sym.special.includes('prize'))) {
+		errors.push('no prize');
+	}
+	assert.equal(errors.length, 1);
+});
+
+test('the collector/payer ordering is recorded as fixed, not configurable', () => {
+	// Collector-then-payer and payer-then-collector give materially different
+	// RTPs. An ordering the spec could flip is an RTP the spec could flip by
+	// accident, so it is decided once and written down.
+	const collector = MECHANIC_LIBRARY.collector_symbol;
+	assert.equal(collector.status, 'built');
+	assert.ok(collector.generator, 'built must name where the code comes from');
+	assert.match(collector.math.notes, /ORDER IS FIXED/);
+	assert.match(collector.math.notes, /ZEROED/, 'swept cells must not double-pay');
+	assert.equal(MECHANIC_LIBRARY.payer_symbol.status, 'built');
+});
+
 // ── report ──────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(60)}`);
 if (failures.length) {

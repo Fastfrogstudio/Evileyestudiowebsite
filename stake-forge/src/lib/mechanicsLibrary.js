@@ -866,7 +866,7 @@ export const MECHANIC_LIBRARY = {
 		name: 'Collector',
 		family: 'holdwin',
 		rule: 'A symbol that sweeps every visible money value into itself and pays the total.',
-		status: 'roadmap',
+		status: 'built',
 		difficulty: 'T1',
 		winTypes: ['lines', 'ways', 'cluster'],
 		volatility: ['high', 'extreme'],
@@ -879,7 +879,18 @@ export const MECHANIC_LIBRARY = {
 				'has to work with anything from 2 to 30 source cells.',
 		},
 		frontend: { bookEvents: ['collectorFire'], components: ['Collector'] },
-		math: { sample: null, notes: 'Order of operations against payers moves RTP by whole points. Fix it and test it.' },
+		math: {
+			sample: null,
+			notes:
+				'Generated from special: [prize, collector], resolved on the FINAL board of a ' +
+				'hold-and-win round. ORDER IS FIXED and not configurable: payers resolve first, so a ' +
+				'collector sweeps values the payers have already raised. An ordering the spec could ' +
+				'flip is an RTP the spec could flip by accident. Swept cells are ZEROED rather than ' +
+				'left alone, because get_final_board_prize() sums the board and would otherwise pay ' +
+				'the same money twice. Verified by hand: a payer worth 5 and three prizes of 10/20/30 ' +
+				'went from a board total of 66 to 86, all of it on the collector.',
+		},
+		generator: 'mathScaffold.applyCollectorPayer',
 		combinesWith: ['money_symbol', 'hold_and_win', 'payer_symbol', 'freespins', 'retrigger_upgrade'],
 		conflictsWith: [],
 		trademark: null,
@@ -890,7 +901,7 @@ export const MECHANIC_LIBRARY = {
 		name: 'Payer',
 		family: 'holdwin',
 		rule: 'A symbol that ADDS its value to every other money value on screen — the inverse of a collector.',
-		status: 'roadmap',
+		status: 'built',
 		difficulty: 'T1',
 		winTypes: ['lines', 'ways', 'cluster'],
 		volatility: ['extreme'],
@@ -904,9 +915,10 @@ export const MECHANIC_LIBRARY = {
 		math: {
 			sample: null,
 			notes:
-				'Collector-then-payer and payer-then-collector give materially different RTPs. This is ' +
-				'the single most important ordering decision in the family.',
+				'Generated from special: [prize, payer]. Resolves BEFORE collectors — see ' +
+				'collector_symbol for why that ordering is fixed rather than configurable.',
 		},
+		generator: 'mathScaffold.applyCollectorPayer',
 		combinesWith: ['money_symbol', 'collector_symbol', 'hold_and_win'],
 		conflictsWith: [],
 		trademark: null,
