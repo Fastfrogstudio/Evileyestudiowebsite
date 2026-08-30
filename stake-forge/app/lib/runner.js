@@ -84,6 +84,18 @@ export const STEPS = {
 			'--force',
 		],
 	},
+	'deps:link': {
+		id: 'deps:link',
+		title: 'Link the new app',
+		blurb:
+			'pnpm install at the web-sdk root. A scaffolded app is a new workspace package, and until ' +
+			'the workspace is re-linked every import in it fails to resolve.',
+		needs: ['webSdk', 'scaffolded'],
+		// Its own command rather than a hidden part of `scaffold`, because it is a
+		// workspace-level operation that takes a minute and a user re-scaffolding
+		// one game of five should not pay for it every time.
+		args: ({ config }) => ['deps:link', '--sdk', config.webSdk],
+	},
 	'assets:import': {
 		id: 'assets:import',
 		title: 'Import art',
@@ -126,6 +138,18 @@ export const STEPS = {
 				'--spec', path.join(dir, 'game-spec.yaml'),
 				'--math-sdk', config.mathSdk,
 				'--sims', String(config.sims ?? 1000),
+				// ALWAYS compressed in the pipeline, though the CLI keeps it optional.
+				//
+				// index.json names books_<mode>.jsonl.zst, and math:run WIPES
+				// publish_files on every run — so a pipeline that simulated without
+				// compression produced an upload folder whose index named two books
+				// files that were not in it. Found by running the whole pipeline end
+				// to end; every individual step passed.
+				//
+				// The CLI flag stays opt-in because iterating on maths does not need
+				// the compressed output and it is not free. The pipeline's whole
+				// purpose is to end at something uploadable, so it pays.
+				'--compress',
 			];
 			if (config.python) args.push('--python', config.python);
 			return args;
@@ -231,6 +255,11 @@ export const STEP_ORDER = [
 	'math:balance',
 	'math:scaffold',
 	'scaffold',
+	// Immediately after scaffold, because `verify` type-checks the app and every
+	// import in a freshly scaffolded workspace package fails to resolve until the
+	// workspace is re-linked. Without this step the pipeline has a step that
+	// reliably fails the first time for a reason no step fixes.
+	'deps:link',
 	'assets:import',
 	'sound:build',
 	'math:run',

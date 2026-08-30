@@ -13,6 +13,7 @@ import { mathBalance } from '../src/commands/mathBalanceCmd.js';
 import { mathValidate } from '../src/commands/mathValidateCmd.js';
 import { mechanics } from '../src/commands/mechanics.js';
 import { brief } from '../src/commands/brief.js';
+import { depsLink } from '../src/commands/depsLink.js';
 import { mathOptimise } from '../src/commands/mathOptimise.js';
 import { soundBuild } from '../src/commands/soundBuild.js';
 import { packageGame } from '../src/commands/packageGame.js';
@@ -30,10 +31,29 @@ program
 	.description('Scaffold Stake Engine games (math-sdk + web-sdk) from one YAML spec + your own art.')
 	.version('0.2.0');
 
-const run = (fn) => (opts) => {
+/**
+ * Wrap a command so a refusal becomes a non-zero exit.
+ *
+ * ── The bug this shape used to have ─────────────────────────────────────────
+ * It used to be `const result = fn(opts); if (result && result.ok === false)`.
+ * That is correct for a synchronous command and silently wrong for an
+ * asynchronous one: `fn(opts)` returns a PROMISE, `promise.ok` is undefined, and
+ * the exit code stays 0 however loudly the command refused.
+ *
+ * `forge package` is async because it builds the frontend. So it printed
+ * "Not ready to upload. 4 problem(s) above." and exited 0 — which the app
+ * pipeline rendered as a green PASS on the one step whose entire job is to say
+ * whether the bundle can be uploaded. Every check worked; only the exit code
+ * was lost.
+ *
+ * A rejected promise had the same hole: the try/catch here wraps the CALL, not
+ * the awaited result, so an async command's error escaped as an unhandled
+ * rejection and got Node's generic message instead of `fail()`'s.
+ */
+const run = (fn) => async (opts) => {
 	try {
-		const result = fn(opts);
-		if (result && result.ok === false) process.exit(1);
+		const result = await fn(opts);
+		if (result && result.ok === false) process.exitCode = 1;
 	} catch (err) {
 		fail(err);
 	}
@@ -180,6 +200,15 @@ program
 				out: opts.out ? path.resolve(opts.out) : undefined,
 			}),
 		),
+	);
+
+program
+	.command('deps:link')
+	.description('Re-link the web-sdk pnpm workspace, so a freshly scaffolded app can type-check')
+	.requiredOption('--sdk <path>', 'path to a checkout of StakeEngine/web-sdk')
+	.option('--with-scripts', 'run postinstall scripts too (slower; fetches browsers)', false)
+	.action(
+		run((opts) => depsLink({ sdkDir: path.resolve(opts.sdk), ignoreScripts: !opts.withScripts })),
 	);
 
 program

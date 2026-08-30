@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 import {
 	replaceAssignment,
@@ -70,6 +71,7 @@ import { REFERENCE_GAMES, gamesUsing, gamesByMaxWin } from '../src/lib/reference
 import { buildArtBrief, winLevelBands, LOCALES, LOCALISED_SHEETS, WIN_LEVEL_SCALES } from '../src/lib/artBrief.js';
 import { brief as runBrief, renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
 import { audit } from '../src/commands/audit.js';
+import { STEPS, STEP_ORDER } from '../app/lib/runner.js';
 import YAML from 'yaml';
 import { addDictEntry, insertAfterLineInMethod, insertAfterImports } from '../src/lib/pyPatch.js';
 import { auditSpriteFrames, readSpriteFrames, readSpriteAssetKeys } from '../src/lib/spriteFrames.js';
@@ -3558,6 +3560,83 @@ test('a re-ordered simulation id is caught', () => {
 		staleAgainst,
 	);
 	assert.match(result, /row 2 is simulation 7, the books have 1/);
+});
+
+test('the pipeline links the workspace before it type-checks', () => {
+	// Running the full pipeline end to end on a fresh game found a step that
+	// reliably FAILED the first time, for a reason no step fixed: a scaffolded
+	// app is a new pnpm workspace package, and until the workspace is re-linked
+	// every import in it fails to resolve and `verify` reports dozens of type
+	// errors unrelated to the generated code.
+	//
+	// verify's own message said to run pnpm install. Documented is not done —
+	// "read the error and run a different tool" is not a pipeline.
+	const scaffold = STEP_ORDER.indexOf('scaffold');
+	const link = STEP_ORDER.indexOf('deps:link');
+	const verify = STEP_ORDER.indexOf('verify');
+	assert.ok(link > scaffold, 'nothing to link until an app exists');
+	assert.ok(link < verify, 'linking after the type-check is linking too late');
+	assert.ok(STEPS['deps:link'], 'the step must be registered, not just ordered');
+	assert.deepEqual(STEPS['deps:link'].needs, ['webSdk', 'scaffolded']);
+});
+
+test('every ordered pipeline step is a registered step, and vice versa', () => {
+	// A step in STEP_ORDER with no definition throws "Unknown step" at run time,
+	// and a defined step missing from STEP_ORDER simply never runs. Both are
+	// silent until someone runs the pipeline.
+	for (const id of STEP_ORDER) {
+		assert.ok(STEPS[id], `STEP_ORDER lists "${id}", which is not defined in STEPS`);
+	}
+	for (const id of Object.keys(STEPS)) {
+		assert.ok(STEP_ORDER.includes(id), `STEPS defines "${id}", which the pipeline never runs`);
+	}
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLI exit codes
+//
+// The wrapper in bin/forge.js used to read `const result = fn(opts); if (result
+// && result.ok === false)`. Correct for a synchronous command, silently wrong
+// for an asynchronous one: fn(opts) returns a PROMISE, promise.ok is undefined,
+// and the exit code stays 0 however loudly the command refused.
+//
+// `forge package` is async because it builds the frontend. It printed "Not
+// ready to upload. 4 problem(s) above." and exited 0, which the app pipeline
+// rendered as a green PASS on the one step whose whole job is to say whether
+// the bundle can be uploaded.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const forgeBin = path.join(__dirname, '..', 'bin', 'forge.js');
+
+function forgeExit(args) {
+	const r = spawnSync(process.execPath, [forgeBin, ...args], { encoding: 'utf8' });
+	return { code: r.status, out: `${r.stdout}${r.stderr}` };
+}
+
+test('an ASYNC command that throws exits non-zero', () => {
+	// deps:link is async (it spawns pnpm). Before the fix, the try/catch wrapped
+	// the CALL rather than the awaited result, so an async command's error
+	// escaped as an unhandled rejection instead of reaching fail().
+	const { code, out } = forgeExit(['deps:link', '--sdk', '/definitely/not/a/path']);
+	assert.notEqual(code, 0, 'a missing --sdk must fail');
+	assert.match(out, /does not exist/);
+});
+
+test('a SYNC command that refuses exits non-zero', () => {
+	const { code, out } = forgeExit(['mechanics', '--combine', 'tumble,walking_wild']);
+	assert.equal(code, 1);
+	assert.match(out, /One step per spin/);
+});
+
+test('a command that succeeds exits zero', () => {
+	const { code } = forgeExit(['mechanics', '--id', 'tumble']);
+	assert.equal(code, 0);
+});
+
+test('an unknown id is a refusal, not a crash', () => {
+	const { code, out } = forgeExit(['mechanics', '--id', 'no-such-mechanic']);
+	assert.equal(code, 1);
+	assert.match(out, /Unknown mechanic/);
 });
 
 // ── report ──────────────────────────────────────────────────────────────────
