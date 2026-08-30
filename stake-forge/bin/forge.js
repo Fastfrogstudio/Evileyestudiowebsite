@@ -24,6 +24,8 @@ import { verify } from '../src/commands/verify.js';
 import { inspire } from '../src/commands/inspire.js';
 import { behaviors } from '../src/commands/behaviors.js';
 import { preview } from '../src/commands/preview.js';
+import { artGuide, artPrompts } from '../src/commands/artPrompts.js';
+import { artAccept } from '../src/commands/artAccept.js';
 import { SpecValidationError } from '../src/lib/loadSpec.js';
 
 const program = new Command();
@@ -210,6 +212,57 @@ program
 	.option('--with-scripts', 'run postinstall scripts too (slower; fetches browsers)', false)
 	.action(
 		run((opts) => depsLink({ sdkDir: path.resolve(opts.sdk), ignoreScripts: !opts.withScripts })),
+	);
+
+program
+	.command('art:guide')
+	.description('Write art-guide.yaml — the look, once, for every asset in this game')
+	.option('--out <path>', 'where to write it', 'art-guide.yaml')
+	.option('--force', 'overwrite an existing guide', false)
+	.action(run((opts) => artGuide({ out: path.resolve(opts.out), force: opts.force })));
+
+program
+	.command('art:prompts')
+	.description('One prompt per asset part, at the exact size this game needs')
+	.requiredOption('--spec <path>', 'path to game-spec.yaml')
+	.option('--guide <path>', 'path to art-guide.yaml', 'art-guide.yaml')
+	.option('--sdk <path>', 'a web-sdk checkout, to read the reference layer lists from')
+	.option('--out <path>', 'write the manifest as JSON')
+	.option('--only <kinds>', 'comma-separated: symbol, backdrop, layer, or an asset key')
+	.option('--json', 'machine-readable output', false)
+	.action(
+		run((opts) =>
+			artPrompts({
+				specPath: path.resolve(opts.spec),
+				guidePath: path.resolve(opts.guide),
+				sdkDir: opts.sdk ? path.resolve(opts.sdk) : null,
+				out: opts.out ? path.resolve(opts.out) : null,
+				only: opts.only,
+				json: opts.json,
+			}),
+		),
+	);
+
+program
+	.command('art:accept')
+	.description('Promote a generated candidate into the game and make it a style anchor')
+	.requiredOption('--manifest <path>', 'the art-prompts manifest')
+	.requiredOption('--id <id>', 'the job id, e.g. symbol.W')
+	.requiredOption('--file <path>', 'the generated image to accept')
+	.option('--guide <path>', 'art-guide.yaml, to register it as a style reference', 'art-guide.yaml')
+	.option('--game <dir>', 'the game folder assets-source/ lives in', '.')
+	.option('--force', 'accept even if the size does not match the brief', false)
+	.action(
+		run((opts) =>
+			artAccept({
+				manifestPath: path.resolve(opts.manifest),
+				id: opts.id,
+				file: path.resolve(opts.file),
+				guidePath: path.resolve(opts.guide),
+				gameDir: path.resolve(opts.game),
+				force: opts.force,
+			}),
+		),
 	);
 
 program

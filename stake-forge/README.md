@@ -528,6 +528,44 @@ balance model. What follows is the current honest boundary.
   cap with every rule passing: a 10,000x cluster game, a 5,000x lines game, and a 100,000x ways
   game, all on 96.50% against 96.50%.
 
+### Generating art from a style guide
+
+The loop that works is: describe the look once, generate candidates, keep the good
+ones, and let those anchor everything generated after. The tedious middle is knowing
+what to ask for — and that is the part forge already derives.
+
+```bash
+forge art:guide                                    # write art-guide.yaml, describe the look
+forge art:prompts --spec game-spec.yaml --sdk ../web-sdk --out art-prompts.json
+# ...generate candidates with whatever model you use...
+forge art:accept --manifest art-prompts.json --id symbol.W --file candidates/wild-3.png
+```
+
+**A background is not one image.** `mm_bg.atlas` in the lines sample holds named
+layers — `bg_base` 2020x991, `bg_cart_add` 404x220, `bg_shovel_add` 130x282,
+`dust1`, `dust2`, a 17x17 particle. Spine animates those parts independently; a
+single flat painting cannot be animated at all, because there is nothing to move.
+
+That is also what makes generation viable. "An animated mine background" is a bad
+prompt with no usable output. "A mine cart, 404x220, transparent background" is a
+good one, and the parts assemble into something a rig can drive. `art:prompts`
+reads the layer list straight out of the reference app's atlases, so it briefs the
+exact slots the game's Spine skeletons expect — 178 parts for a 5x3 lines game.
+
+Two rules it encodes that decide whether an asset is usable at all:
+
+- **Transparency.** Everything is composited by Spine, so every part is briefed
+  transparent except the full-bleed backdrop. A symbol on an opaque square tiles
+  the reel with rectangles.
+- **Size.** `art:accept` refuses an image that is not the size it briefed, and says
+  whether the aspect ratio also changed — same ratio only needs resampling, a
+  different one means the model composed a different picture. Caught here it is one
+  regeneration; caught in the build it is a day of confusion.
+
+The guide is a **description**, not a collection. It is not a place for another
+studio's screenshots, sprite sheets or extracted files — the same line
+`inspirationRules.js` holds for mechanics.
+
 ### The gate that reads what the optimiser cannot fix
 
 Nine of the ten `math:validate` rules read the **optimised** table, where RTP, hit rate and the
@@ -602,6 +640,9 @@ the 1-in-20,000,000 frequency in every tier because that frequency is *chosen*
 | `forge math:balance --spec <yaml> [--volatility <p>] [--apply] [--json]` | Pre-flight: is this paytable payable at this RTP, on this board? |
 | `forge math:validate --spec <yaml> --math-sdk <path> [--json]` | Is it shippable? Every rule measured, with the number it was judged on |
 | `forge brief --spec <yaml> [--format md\|csv\|json\|manifest] [--out <path>]` | What to draw — the complete asset spec, before any art exists |
+| `forge art:guide [--out <path>]` | Write art-guide.yaml — the look, once, for every asset in this game |
+| `forge art:prompts --spec <yaml> [--guide <yaml>] [--sdk <path>] [--out <json>] [--only <kinds>]` | One prompt per asset part, at the exact size this game needs |
+| `forge art:accept --manifest <json> --id <id> --file <png> [--guide <yaml>] [--game <dir>]` | Promote a generated candidate and make it a style anchor |
 | `forge mechanics [--id <id>] [--win-type <t>] [--volatility <v>] [--games] [--combine <ids>] [--art <ids>]` | Browse the researched mechanics library |
 | `forge package --spec <yaml> --sdk <path> --math-sdk <path> [--out <dir>] [--skip-build]` | Build and assemble both upload halves |
 | `forge preview --sdk <path> [--spec <yaml>\|--name <app>] [--port <n>]` | Look at the game — real books through the real renderer, in your browser |

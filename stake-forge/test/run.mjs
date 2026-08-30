@@ -74,6 +74,9 @@ import { REFERENCE_GAMES, gamesUsing, gamesByMaxWin } from '../src/lib/reference
 import { buildArtBrief, winLevelBands, LOCALES, LOCALISED_SHEETS, WIN_LEVEL_SCALES } from '../src/lib/artBrief.js';
 import { brief as runBrief, renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
 import { audit } from '../src/commands/audit.js';
+import { parseAtlas } from '../src/lib/atlasParts.js';
+import { buildGenerationManifest } from '../src/lib/artGuide.js';
+const SDK_LINES_ASSETS = '/home/user/web-sdk/apps/lines/static/assets/spines';
 import { coverageGaps, eventsImpliedBy, declaredHandlers } from '../src/lib/eventCoverage.js';
 import { WEB_EVENT_HANDLERS } from '../src/lib/webEventHandlers.js';
 import { brief } from '../src/commands/brief.js';
@@ -3296,6 +3299,73 @@ test('featureVariety says nothing when there is nothing to say', () => {
 		null,
 		'four rounds is not enough to call a distribution collapsed',
 	);
+});
+
+test('atlas parts are read at the size the artist DREW, not the size they packed to', () => {
+	// The trap that makes this worth a test: a packer rotates regions to save
+	// space and records `rotate:90` on the bounds. But `offsets` already gives the
+	// original in its drawn orientation, so applying the rotation to THAT flips it.
+	//
+	// MM_BigWin packs as 308x86 rotated, with offsets 540x150. Getting it backwards
+	// briefs a 150x540 "BIG WIN" banner — a wide word drawn tall — and the mistake
+	// only shows up once an artist has produced it.
+	const atlas = path.join(
+		SDK_LINES_ASSETS,
+		'bigwin',
+		'big_wins.atlas',
+	);
+	if (!fs.existsSync(atlas)) return; // the web-sdk checkout is optional for unit tests
+	const parts = parseAtlas(atlas);
+	const banner = parts.find((p) => p.name === 'MM_BigWin');
+	assert.ok(banner, 'MM_BigWin should be in the atlas');
+	assert.equal(banner.width, 540, 'a BIG WIN banner is wide');
+	assert.equal(banner.height, 150);
+	assert.equal(banner.trimmed, true, 'it has offsets, so the drawn size is known');
+});
+
+test('a generation manifest carries a real size and a transparency rule per part', () => {
+	// The two things that decide whether a generated asset is usable at all. A
+	// symbol on an opaque square tiles the reel with rectangles; a backdrop with
+	// alpha shows the void behind it.
+	const guide = {
+		style: { summary: 'a test look', rendering: 'flat vector', avoid: ['text'] },
+		symbols: { W: 'a described wild' },
+	};
+	const manifest = buildGenerationManifest({
+		spec: specFor('lines'),
+		guide,
+		referenceAppDir: null,
+	});
+
+	const wild = manifest.jobs.find((j) => j.id === 'symbol.W');
+	assert.ok(wild, 'every symbol gets a job');
+	assert.equal(wild.width, 200);
+	assert.equal(wild.height, 200);
+	assert.equal(wild.described, true, 'the guide described this one');
+	assert.match(wild.prompt, /a described wild/, 'the subject leads the prompt');
+	assert.match(wild.prompt, /a test look/, 'and inherits the style');
+	assert.match(wild.prompt, /transparent background/);
+	assert.match(wild.prompt, /exactly 200x200 pixels/);
+	assert.equal(wild.negative, 'text');
+
+	// An undescribed symbol still gets a prompt, and is flagged as generic.
+	const other = manifest.jobs.find((j) => j.id !== 'symbol.W' && j.kind === 'symbol');
+	assert.equal(other.described, false);
+	assert.match(other.prompt, /a test look/, 'it still inherits the style');
+});
+
+test('a backdrop is briefed WITHOUT transparency and a layer with it', () => {
+	// Decided by area rather than by name, so a part covering most of the page is
+	// the backdrop whatever it is called. Getting it the wrong way round produces
+	// an asset that is unusable in a way nobody notices until it is composited.
+	const parts = [
+		{ name: 'bg_base', width: 2020, height: 991 },
+		{ name: 'bg_cart', width: 404, height: 220 },
+	];
+	const backdrop = parts[0].width * parts[0].height;
+	const layer = parts[1].width * parts[1].height;
+	assert.ok(backdrop > 500_000, 'the backdrop clears the area floor');
+	assert.ok(layer < backdrop * 0.9, 'the prop does not');
 });
 
 test('a brief, once fulfilled, makes forge audit pass with zero errors', () => {

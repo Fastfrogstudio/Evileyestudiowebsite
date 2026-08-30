@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 /**
  * Minimal PNG encoder — 8-bit RGBA, no interlacing, single IDAT.
  *
@@ -135,5 +136,33 @@ export class Canvas {
 
 	toPng() {
 		return encodePng(this.width, this.height, this.data);
+	}
+}
+
+/**
+ * Width and height from a PNG header, without decoding the image.
+ *
+ * The IHDR chunk is always first and always at a fixed offset: an 8-byte
+ * signature, a 4-byte length, the 4-byte type "IHDR", then width and height as
+ * big-endian uint32. So this reads 24 bytes and stops, which matters when the
+ * caller is checking a folder of 2000x1400 generated candidates.
+ *
+ * Returns null for anything that is not a PNG rather than guessing, because the
+ * caller uses this to REFUSE a wrongly-sized asset and a wrong answer here would
+ * wave one through.
+ */
+export function readPngSize(file) {
+	let fd;
+	try {
+		fd = fs.openSync(file, 'r');
+		const header = Buffer.alloc(24);
+		if (fs.readSync(fd, header, 0, 24, 0) < 24) return null;
+		if (header.toString('binary', 1, 4) !== 'PNG') return null;
+		if (header.toString('ascii', 12, 16) !== 'IHDR') return null;
+		return { width: header.readUInt32BE(16), height: header.readUInt32BE(20) };
+	} catch {
+		return null;
+	} finally {
+		if (fd !== undefined) fs.closeSync(fd);
 	}
 }
