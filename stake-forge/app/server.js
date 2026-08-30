@@ -45,6 +45,9 @@ import { VOLATILITY_PROFILES } from '../src/lib/optimisation.js';
 import { requiredStatesForSymbol } from '../src/lib/behaviorRecipes.js';
 import { INSPIRATION_RULES } from '../src/lib/inspirationRules.js';
 import { readSoundsUsed, readSoundVocabulary, readSoundSprite } from '../src/lib/sound.js';
+import { loadGameSpec } from '../src/lib/loadSpec.js';
+import { buildArtBrief } from '../src/lib/artBrief.js';
+import { renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -279,6 +282,31 @@ app.get('/api/games/:id/audit', async (req, res) => {
 	try {
 		const config = loadConfig();
 		res.json(await auditJson({ dir: gameDir(config.workspace, req.params.id) }));
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+/**
+ * The art brief for a game.
+ *
+ * The one screen an art studio actually opens first: what to draw, before any
+ * art exists. Returns the structured brief plus the rendered Markdown, so the
+ * tab can show it and the download button can hand over a file without a
+ * second round trip.
+ */
+app.get('/api/games/:id/brief', (req, res) => {
+	try {
+		const config = loadConfig();
+		const specPath = path.join(gameDir(config.workspace, req.params.id), 'game-spec.yaml');
+		const spec = loadGameSpec(specPath);
+		const data = buildArtBrief(spec);
+		res.json({
+			data,
+			markdown: renderMarkdown(data),
+			csv: renderCsv(data),
+			manifest: renderManifest(data),
+		});
 	} catch (err) {
 		fail(res, err);
 	}

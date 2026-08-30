@@ -12,6 +12,7 @@ import { mathReport } from '../src/commands/mathReport.js';
 import { mathBalance } from '../src/commands/mathBalanceCmd.js';
 import { mathValidate } from '../src/commands/mathValidateCmd.js';
 import { mechanics } from '../src/commands/mechanics.js';
+import { brief } from '../src/commands/brief.js';
 import { mathOptimise } from '../src/commands/mathOptimise.js';
 import { soundBuild } from '../src/commands/soundBuild.js';
 import { packageGame } from '../src/commands/packageGame.js';
@@ -161,6 +162,22 @@ program
 				mathSdkDir: path.resolve(opts.mathSdk),
 				sdkDir: path.resolve(opts.sdk),
 				dryRun: opts.dryRun,
+			}),
+		),
+	);
+
+program
+	.command('brief')
+	.description('What to draw — the complete asset specification for a spec, before any art exists')
+	.requiredOption('--spec <path>', 'path to game-spec.yaml')
+	.option('--format <fmt>', 'md | csv | json | manifest', 'md')
+	.option('--out <path>', 'write to a file instead of stdout')
+	.action(
+		run((opts) =>
+			brief({
+				specPath: path.resolve(opts.spec),
+				format: opts.format,
+				out: opts.out ? path.resolve(opts.out) : undefined,
 			}),
 		),
 	);

@@ -67,6 +67,10 @@ import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS } from '../src/lib/mat
 import { stripProfileFor, placeScatters } from '../src/lib/reelDesign.js';
 import { MECHANIC_LIBRARY, MECHANIC_IDS, libraryStats, checkCombination, artRequirementsFor, mechanicsForWinType, getMechanicEntry, STATUS_ORDER } from '../src/lib/mechanicsLibrary.js';
 import { REFERENCE_GAMES, gamesUsing, gamesByMaxWin } from '../src/lib/referenceGames.js';
+import { buildArtBrief, winLevelBands, LOCALES, LOCALISED_SHEETS, WIN_LEVEL_SCALES } from '../src/lib/artBrief.js';
+import { brief as runBrief, renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
+import { audit } from '../src/commands/audit.js';
+import YAML from 'yaml';
 import { addDictEntry, insertAfterLineInMethod, insertAfterImports } from '../src/lib/pyPatch.js';
 import { auditSpriteFrames, readSpriteFrames, readSpriteAssetKeys } from '../src/lib/spriteFrames.js';
 
@@ -3061,6 +3065,248 @@ test('the library can answer the questions it exists to answer', () => {
 	// And the reverse join: who has shipped a given mechanic.
 	assert.ok(gamesUsing('hold_and_win').length >= 2);
 	assert.ok(getMechanicEntry('hold_and_win').seenIn.length >= 2);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The art brief
+//
+// `forge audit` reports gaps in supplied art. This answers the earlier question
+// — given a spec and nothing else, what do we draw? The two must stay exact
+// mirror images, which is what the end-to-end test below is for.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const briefSpec = () => ({
+	game: {
+		name: 'brief-test',
+		mechanic: 'cluster',
+		rtp: 0.965,
+		volatility: 'low',
+		reels: { count: 7, rows: Array(7).fill(7) },
+		betModes: { base: { cost: 1, rtp: 0.965, maxWin: 10000, feature: true } },
+		globalMultiplierPerSpin: true,
+	},
+	_mechanic: MECHANICS.cluster,
+	symbols: [
+		{ name: 'H1', label: 'High 1', role: 'high', special: [], behaviors: [], paytable: { 5: 5 } },
+		{ name: 'W', label: 'Wild', role: 'wild', special: ['wild'], behaviors: [], paytable: { 5: 5 } },
+		{ name: 'S', label: 'Scatter', role: 'scatter', special: ['scatter'], behaviors: [] },
+	],
+	freeSpins: { triggerSymbol: 'S', triggerCount: 3, awardedSpins: 12, retrigger: true },
+});
+
+test('a tumbling game asks every symbol for an explosion state', () => {
+	// The state set is mechanic-dependent: asking a lines game for an explosion
+	// would be noise, since nothing ever triggers one.
+	const d = buildArtBrief(briefSpec());
+	for (const s of d.symbols) {
+		assert.ok(
+			s.states.some((st) => st.state === 'explosion'),
+			`${s.name} needs an explosion state on a cluster game`,
+		);
+	}
+});
+
+test('every required state names the animation and says who asked for it', () => {
+	// "You are missing a state" is half a finding. An artist needs the animation
+	// name to export against and a reason it exists.
+	const d = buildArtBrief(briefSpec());
+	for (const s of d.symbols) {
+		for (const st of s.states) {
+			assert.ok(st.animationName, `${s.name}.${st.state} has no animation name`);
+			assert.ok(st.requiredBy.length, `${s.name}.${st.state} does not say what requires it`);
+		}
+	}
+});
+
+test('the win banners are the engine\'s fixed bands, not fractions of the cap', () => {
+	// Corrected after inventing them. Config.get_win_level() bands on FIXED
+	// multiples of the bet; only level 9's ceiling and level 10's floor track
+	// wincap. A "big win" fires at 15x on a 500x game and on a 100,000x game
+	// alike, which is exactly the sort of thing an art brief must not get wrong.
+	const small = winLevelBands(500);
+	const huge = winLevelBands(100000);
+	assert.equal(small[0].standard.from, 15);
+	assert.equal(huge[0].standard.from, 15, 'level 6 must not move with the cap');
+	assert.equal(small[0].standard.to, 30);
+
+	// ...and the two that DO move.
+	assert.equal(huge.find((b) => b.level === 9).standard.to, 100000);
+	assert.equal(huge.find((b) => b.level === 10).standard.from, 100000);
+	assert.equal(small.find((b) => b.level === 9).standard.to, 500);
+});
+
+test('the two win-level scales are both reported, because they differ', () => {
+	// The same banner art plays for level 7 on both scales, but level 7 means
+	// 30x-50x during a spin and 100x-500x at feature end. An artist told only
+	// "super win" cannot know that.
+	const bands = winLevelBands(10000);
+	const seven = bands.find((b) => b.level === 7);
+	assert.equal(seven.standard.from, 30);
+	assert.equal(seven.endFeature.from, 100);
+	assert.notEqual(seven.standard.to, seven.endFeature.to);
+	assert.equal(WIN_LEVEL_SCALES.standard.bands[6][0], 15);
+	assert.equal(WIN_LEVEL_SCALES.endFeature.bands[6][0], 50);
+});
+
+test('the localisation cost lands on three sheets, not forty', () => {
+	// "Everything needs 16 languages" is both wrong and expensive. Verified by
+	// reading frame names: freeSpins.json, MM_pressanywhere.json and
+	// MM_Localisation_winsmall.json carry locale variants; no other sheet does.
+	assert.equal(LOCALES.length, 16);
+	assert.equal(LOCALISED_SHEETS.length, 3);
+	const d = buildArtBrief(briefSpec());
+	assert.equal(d.totals.localisedFrames, 48);
+	for (const sheet of d.localised) {
+		assert.equal(sheet.frames.length, 16);
+		assert.ok(sheet.content, `${sheet.sheet} must say what words it carries`);
+	}
+});
+
+test('reusable-across-games assets are separated from per-game ones', () => {
+	// A studio planning its second title should not re-budget for the loading
+	// progress bar.
+	const d = buildArtBrief(briefSpec());
+	const reusable = d.screens.filter((s) => s.reusableAcrossGames);
+	assert.ok(reusable.length >= 3, 'some assets are identical in every title we ship');
+	assert.ok(d.screens.some((s) => !s.reusableAcrossGames), 'and most are not');
+});
+
+test('the brief carries what the chosen mechanics add', () => {
+	// The join the mechanics library exists to make: picking a mechanic tells the
+	// art team what it costs them.
+	const d = buildArtBrief(briefSpec());
+	assert.ok(d.fromMechanics.mechanics.includes('tumble'));
+	assert.ok(d.fromMechanics.mechanics.includes('cluster_pays'));
+	assert.ok(d.fromMechanics.mechanics.includes('freespins'));
+	assert.ok(d.fromMechanics.mechanics.includes('progressive_global_multiplier'));
+	assert.ok(
+		d.fromMechanics.screens.some((s) => /16 languages/i.test(s)),
+		'free spins carry the localised banner cost',
+	);
+});
+
+test('a cascading game is warned that its explosion is on a hot path', () => {
+	const d = buildArtBrief(briefSpec());
+	assert.ok(
+		d.fromMechanics.notes.some((n) => /explosion|cascade timing/i.test(n.note)),
+		'the tumble note about round length should reach the brief',
+	);
+});
+
+test('the sound list covers the feature and the cascade ladder', () => {
+	const d = buildArtBrief(briefSpec());
+	const names = d.sounds.map((s) => s.name);
+	assert.ok(names.includes('bgm_freegame'), 'a feature with no music of its own has no lift');
+	assert.ok(names.includes('tumble_win_1'), 'a tumbling game needs the cascade pitch ladder');
+	assert.ok(names.includes('sfx_max_win'), 'every banner level needs a sound');
+	const tumble = d.sounds.find((s) => s.name === 'tumble_win_1');
+	assert.match(tumble.note, /ladder/i, 'must say it is a ladder, not one clip');
+});
+
+test('all three render formats produce something usable', () => {
+	const d = buildArtBrief(briefSpec());
+	const md = renderMarkdown(d);
+	assert.match(md, /## Symbols/);
+	assert.match(md, /## Localised text art/);
+	assert.match(md, /## Win banners/);
+
+	const csv = renderCsv(d);
+	const lines = csv.trim().split('\n');
+	assert.equal(lines[0], 'category,item,detail,format,required,note');
+	// One row per deliverable, so the count is schedulable.
+	assert.ok(lines.length > d.totals.symbolStates, 'CSV should have a row per deliverable');
+	// Commas inside a field must not break the columns.
+	assert.ok(csv.includes('"'), 'fields containing commas must be quoted');
+
+	const manifest = renderManifest(d);
+	assert.match(manifest, /^assetsSourceDir:/m);
+	assert.match(manifest, /^spineSymbols:/m);
+});
+
+test('the manifest emits the right fields for each asset type', () => {
+	// A spine needs atlas + png + skeleton; a sprite sheet needs one json.
+	// Getting this wrong is a runtime miss, not a build error.
+	const d = buildArtBrief(briefSpec());
+	const manifest = renderManifest(d);
+	const progressBar = d.screens.find((s) => s.assetKey === 'progressBar');
+	assert.notEqual(progressBar.assetType, 'spine', 'progressBar is a sprite sheet in the sample');
+	// Its block must not claim an atlas.
+	const block = manifest.slice(manifest.indexOf('progressBar:'));
+	const nextSlot = block.slice(1).search(/\n  #? ?\w[\w.]*:/);
+	assert.equal(/atlas:/.test(block.slice(0, nextSlot)), false, 'a sprite sheet must not be given a spine atlas');
+});
+
+test('FULFILLING THE BRIEF MAKES THE AUDIT PASS', () => {
+	// The gate Phase 2 is defined by, and the reason the brief can be trusted:
+	// generate the manifest from the brief, create exactly the files it names,
+	// run the REAL audit, and require zero errors. Without this the brief and
+	// the checker drift, and a brief that no longer matches what is checked is
+	// worse than no brief at all.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-brief-'));
+	try {
+		const specPath = path.join(dir, 'game-spec.yaml');
+		fs.writeFileSync(
+			specPath,
+			[
+				'game:',
+				'  name: brief-gate',
+				'  rtp: 0.965',
+				'  volatility: low',
+				'  mechanic: cluster',
+				'  reels: { count: 7, rows: [7, 7, 7, 7, 7, 7, 7] }',
+				'  betModes:',
+				'    base: { cost: 1, rtp: 0.965, maxWin: 10000, feature: true, buyBonus: false }',
+				'symbols:',
+				'  - { name: H1, role: high, label: High 1, paytable: { "5": 5, "6-9": 12.5, "10-49": 60 } }',
+				'  - { name: L1, role: low, label: Low 1, paytable: { "5": 1, "6-9": 2, "10-49": 10 } }',
+				'  - { name: W, role: wild, label: Wild, special: [wild], paytable: { "5": 5, "6-9": 12.5, "10-49": 60 } }',
+				'  - { name: S, role: scatter, label: Scatter, special: [scatter] }',
+				'freeSpins: { triggerSymbol: S, triggerCount: 3, awardedSpins: 12, retrigger: true }',
+				'',
+			].join('\n'),
+			'utf8',
+		);
+
+		const sourceDir = path.join(dir, 'assets-source');
+		fs.mkdirSync(sourceDir, { recursive: true });
+
+		const manifestPath = path.join(dir, 'assets-manifest.yaml');
+		runBrief({ specPath, format: 'manifest', out: manifestPath, quiet: true });
+
+		// Create exactly the files the generated manifest names — nothing more.
+		const manifest = YAML.parse(fs.readFileSync(manifestPath, 'utf8'));
+		const files = new Set();
+		for (const def of Object.values(manifest.spineSymbols ?? {})) {
+			for (const field of ['atlas', 'png', 'skeleton', 'staticSprite']) {
+				if (def?.[field]) files.add(def[field]);
+			}
+		}
+		for (const def of Object.values(manifest.screens ?? {})) {
+			if (typeof def === 'string') files.add(def);
+			else for (const field of ['atlas', 'png', 'skeleton', 'sprite']) if (def?.[field]) files.add(def[field]);
+		}
+		assert.ok(files.size > 10, `the manifest should name real files, named ${files.size}`);
+		for (const file of files) fs.writeFileSync(path.join(sourceDir, file), 'x', 'utf8');
+
+		// audit prints its report; the assertion is on the returned findings, so
+		// the output is captured rather than left to scroll past the test names.
+		const log = console.log;
+		let result;
+		try {
+			console.log = () => {};
+			result = audit({ specPath, manifestPath, json: true });
+		} finally {
+			console.log = log;
+		}
+		const errors = result.findings.filter((f) => f.level === 'error');
+		assert.deepEqual(
+			errors.map((e) => `${e.area}: ${e.message}`),
+			[],
+			'a fulfilled brief must audit clean',
+		);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 // ── report ──────────────────────────────────────────────────────────────────
