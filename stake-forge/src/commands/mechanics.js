@@ -1,4 +1,8 @@
 import chalk from 'chalk';
+import fs from 'fs-extra';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { renderMechanicsDoc } from '../lib/mechanicsDoc.js';
 
 import {
 	MECHANIC_LIBRARY,
@@ -11,6 +15,8 @@ import {
 	artRequirementsFor,
 	STATUS_ORDER,
 } from '../lib/mechanicsLibrary.js';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 import { REFERENCE_GAMES, STAKE_ENGINE_STUDIOS, gamesByMaxWin, searchGames } from '../lib/referenceGames.js';
 
 /**
@@ -42,7 +48,28 @@ export function mechanics({
 	combine,
 	art,
 	json,
+	doc,
+	docPath,
 } = {}) {
+	// Regenerate docs/mechanics-library.md. The doc used to CLAIM it was generated
+	// from this library while actually being hand-written, and it drifted: it
+	// advertised 54 mechanics against a library holding 56. Now the claim is true
+	// and a test fails if the committed file falls behind.
+	if (doc) {
+		const target = docPath ?? path.join(__dirname, '..', '..', 'docs', 'mechanics-library.md');
+		const rendered = renderMechanicsDoc();
+		const before = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
+		fs.writeFileSync(target, rendered, 'utf8');
+		const stats = libraryStats();
+		console.log(
+			before === rendered
+				? chalk.dim(`docs/mechanics-library.md already up to date (${stats.total} mechanics).`)
+				: chalk.green('✓') + ` wrote docs/mechanics-library.md — ${stats.total} mechanics, ` +
+					`${stats.usableToday} usable today, ${stats.referenceGames} reference games`,
+		);
+		return { ok: true };
+	}
+
 	// ── one mechanic in full ─────────────────────────────────────────────────
 	if (id) return showMechanic(id, { json });
 

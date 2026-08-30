@@ -116,7 +116,7 @@ the game still renders, it just plays the sample's maths.
 ## Workflow
 
 ```
-     forge mechanics ──> what to build: 54 mechanics, 27 reference games,
+     forge mechanics ──> what to build: 56 mechanics, 29 reference games,
                          what each costs the art team, what conflicts with what
 
 inspiration.yaml ──forge inspire──> game-spec.yaml ──┬──forge brief──────────> what to DRAW,
@@ -500,7 +500,7 @@ balance model. What follows is the current honest boundary.
 - **Its balance model is a pre-flight, not the truth.** `math:balance` evaluates the base board
   only — no multipliers, no cascades, no free spins. It answers "is the level of this paytable
   within reach of the target", in about a second. The simulation remains the ground truth.
-- **Four of the seven `math:validate` rules are our reading of Stake's approval criteria**,
+- **Four of the nine `math:validate` rules are our reading of Stake's approval criteria**,
   gathered from research rather than handed to us, and the command says so on every run.
   Confirm them before a submission.
 - **Nothing here has been through a real upload or certification.** `forge package` assembles a
@@ -537,6 +537,7 @@ balance model. What follows is the current honest boundary.
 | `forge audit --spec <yaml> --manifest <yaml> [--json]` | Check the manifest against required states + screen slots |
 | `forge math:scaffold --spec <yaml> --math-sdk <path> [--force]` | Create `games/<game_id>` |
 | `forge scaffold --spec <yaml> --sdk <path> [--force]` | Create `apps/<name>` |
+| `forge deps:link --sdk <path> [--with-scripts]` | Re-link the pnpm workspace so a freshly scaffolded app can resolve its imports |
 | `forge assets:import --manifest <yaml> --sdk <path> --game <name> [--spec <yaml>]` | Copy + wire your art |
 | `forge verify --spec <yaml> [--math-sdk <path>] [--sdk <path>] [--skip-spin]` | Run the generated output for real |
 | `forge sound:build --sdk <path> --source <dir> [--spec <yaml>\|--game <name>] [--dry-run]` | Mix your sound files into the audio sprite, in all four formats |

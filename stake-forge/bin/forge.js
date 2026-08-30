@@ -255,6 +255,7 @@ program
 	.option('--max-win <n>', 'with --games: only games reaching at least this multiple')
 	.option('--combine <ids>', 'comma-separated ids — check the combination for conflicts')
 	.option('--art <ids>', 'comma-separated ids — what the art team must produce')
+	.option('--doc', 'regenerate docs/mechanics-library.md from the library', false)
 	.option('--json', 'machine-readable output', false)
 	.action(
 		run((opts) =>
@@ -268,6 +269,7 @@ program
 				combine: opts.combine,
 				art: opts.art,
 				json: opts.json,
+				doc: opts.doc,
 			}),
 		),
 	);

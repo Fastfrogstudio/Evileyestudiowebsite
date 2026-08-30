@@ -68,6 +68,7 @@ import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS, featureLoad, FEATURE_
 import { BOARD_MECHANICS, boardMechanicFor } from '../src/lib/boardMechanics.js';
 import { stripProfileFor, placeScatters } from '../src/lib/reelDesign.js';
 import { MECHANIC_LIBRARY, MECHANIC_IDS, libraryStats, checkCombination, artRequirementsFor, mechanicsForWinType, getMechanicEntry, STATUS_ORDER } from '../src/lib/mechanicsLibrary.js';
+import { renderMechanicsDoc } from '../src/lib/mechanicsDoc.js';
 import { REFERENCE_GAMES, gamesUsing, gamesByMaxWin } from '../src/lib/referenceGames.js';
 import { buildArtBrief, winLevelBands, LOCALES, LOCALISED_SHEETS, WIN_LEVEL_SCALES } from '../src/lib/artBrief.js';
 import { brief as runBrief, renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
@@ -3010,6 +3011,95 @@ test('every mechanic declares a status the tool understands', () => {
 		assert.ok(m.family, `${id} needs a family`);
 		assert.ok(m.art, `${id} must state what art it needs — that is the point of the library`);
 		assert.ok(m.math, `${id} must state where the maths comes from`);
+	}
+});
+
+test('every CLI command appears in the README command reference', () => {
+	// deps:link was a real pipeline step missing from the table, and it is the one
+	// step whose absence strands a user: without it a freshly scaffolded app has no
+	// node_modules and nothing can resolve its imports, so the next command fails
+	// for a reason the docs never mention.
+	const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+	const bin = path.join(__dirname, '..', 'bin', 'forge.js');
+	const help = spawnSync(process.execPath, [bin, '--help'], { encoding: 'utf8' });
+	const commands = [...help.stdout.matchAll(/^ {2}([a-z]+:?[a-z]*)/gm)]
+		.map((m) => m[1])
+		.filter((c) => c !== 'help');
+	assert.ok(commands.length > 10, `expected the CLI to list its commands, got ${commands.length}`);
+	for (const command of new Set(commands)) {
+		assert.match(
+			readme,
+			new RegExp(`^\\| \`forge ${command.replace(':', ':')}[\` ]`, 'm'),
+			`\`forge ${command}\` is a real command with no row in the README command reference`,
+		);
+	}
+});
+
+test('the README quotes the real math:validate rule counts', () => {
+	// It said "four of the seven rules" while the registry held NINE. The number
+	// matters because the sentence is a disclaimer: it tells a reader how much of
+	// the shippability gate is researched interpretation rather than arithmetic.
+	// Getting the denominator wrong overstates how much of it is settled.
+	const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+	const ids = Object.keys(RULE_PROVENANCE);
+	const stake = ids.filter((id) => /Stake approval/i.test(RULE_PROVENANCE[id]));
+	const words = ['zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+	assert.match(
+		readme,
+		new RegExp(`${words[stake.length]} of the ${words[ids.length].toLowerCase()} \`math:validate\` rules`, 'i'),
+		`README should say "${words[stake.length]} of the ${words[ids.length].toLowerCase()} math:validate rules" ` +
+			`— ${stake.length} of ${ids.length} carry Stake provenance`,
+	);
+});
+
+test('the README quotes the real library counts', () => {
+	// The README's workflow diagram advertises the library size. It said 54
+	// mechanics and 27 reference games while the library held 56 and 29 — the same
+	// drift as the generated doc, in the file people read first. Pinning it here is
+	// cheaper than generating the README.
+	const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+	const stats = libraryStats();
+	assert.match(
+		readme,
+		new RegExp(`${stats.total} mechanics`),
+		`README should say "${stats.total} mechanics" — run \`forge mechanics\` for the real numbers`,
+	);
+	assert.match(
+		readme,
+		new RegExp(`${stats.referenceGames} reference games`),
+		`README should say "${stats.referenceGames} reference games"`,
+	);
+});
+
+test('docs/mechanics-library.md matches the library it claims to be generated from', () => {
+	// The doc's first line said it was "generated from src/lib/mechanicsLibrary.js
+	// by forge mechanics". Nothing generated it — it was hand-written once and then
+	// drifted, ending up advertising 54 mechanics and 27 reference games against a
+	// library holding 56 and 29, and saying 17 worked when 24 did.
+	//
+	// That is a small error with a large consequence here specifically: the art
+	// team reads this to decide what to draw for. Undercounting makes them scope
+	// around mechanics that already work; overcounting makes them draw for ones
+	// that do not exist. Both spend the scarce resource.
+	const committed = fs.readFileSync(
+		path.join(__dirname, '..', 'docs', 'mechanics-library.md'),
+		'utf8',
+	);
+	assert.equal(
+		renderMechanicsDoc(),
+		committed,
+		'docs/mechanics-library.md is stale — run `forge mechanics --doc` and commit the result',
+	);
+});
+
+test('the generated doc lists every mechanic in the library', () => {
+	// A family with no section in SECTIONS would silently vanish from the doc.
+	// The generator has an "Uncategorised" catch-all so nothing can disappear, and
+	// this asserts the catch-all is empty — i.e. every family has a real home.
+	const doc = renderMechanicsDoc();
+	assert.ok(!doc.includes('## Uncategorised'), 'a mechanic family has no section in mechanicsDoc.js');
+	for (const id of Object.keys(MECHANIC_LIBRARY)) {
+		assert.ok(doc.includes(`\`${id}\``), `${id} is in the library but missing from the doc`);
 	}
 });
 
