@@ -3885,6 +3885,72 @@ test('two doubling multipliers alone is severe, whatever the count', () => {
 	assert.equal(load.severe, true, 'two doubling axes is severe even at a low count');
 });
 
+test('buy tiers differ by the scatter count they force', () => {
+	// Several buy modes generated and ran happily before this, and produced
+	// IDENTICAL features at different prices — which makes the cheapest tier
+	// strictly the best deal and the menu pointless.
+	//
+	// forceScatters uses machinery that already exists: scatter_triggers decides
+	// how many scatters the forced trigger lands, freespin_triggers maps that
+	// count to a spin award. Measured on a generated game — 3 scatters (12 spins)
+	// against 5 (16 spins) — the premium tier paid 2.2x the median and 3.3x the
+	// p99, and reached the cap 2.5x more often.
+	const spec = {
+		game: {
+			name: 'tier-test',
+			mechanic: 'cluster',
+			rtp: 0.965,
+			reels: { count: 7, rows: Array(7).fill(7) },
+			betModes: {
+				base: { cost: 1, rtp: 0.965, maxWin: 5000, feature: true },
+				lite: { cost: 40, rtp: 0.965, maxWin: 5000, buyBonus: true, forceScatters: 3 },
+				full: { cost: 100, rtp: 0.965, maxWin: 5000, buyBonus: true, forceScatters: 5 },
+			},
+		},
+		_mechanic: MECHANICS.cluster,
+		symbols: [
+			{ name: 'H1', role: 'high', special: [], behaviors: [], paytable: { 5: 5 } },
+			{ name: 'S', role: 'scatter', special: ['scatter'], behaviors: [] },
+		],
+		freeSpins: { triggerSymbol: 'S', triggerCount: 3, awardedSpins: 12, retrigger: true },
+	};
+	const rendered = renderBetModes(spec, {});
+	assert.match(rendered, /"scatter_triggers": \{3: 1\}/, 'the lite tier must force 3');
+	assert.match(rendered, /"scatter_triggers": \{5: 1\}/, 'the full tier must force 5');
+});
+
+test('forceScatters outside the trigger table is refused', () => {
+	// freespin_triggers is indexed directly by the forced count, so a count the
+	// table does not carry is a KeyError on the first forced round.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-tier-'));
+	try {
+		const specPath = path.join(dir, 'game-spec.yaml');
+		fs.writeFileSync(
+			specPath,
+			[
+				'game:',
+				'  name: tier-test',
+				'  rtp: 0.965',
+				'  mechanic: cluster',
+				'  reels: { count: 7, rows: [7, 7, 7, 7, 7, 7, 7] }',
+				'  betModes:',
+				'    base: { cost: 1, rtp: 0.965, maxWin: 5000, feature: true }',
+				'    full: { cost: 100, rtp: 0.965, maxWin: 5000, buyBonus: true, forceScatters: 99 }',
+				'symbols:',
+				'  - { name: H1, role: high, label: High 1, paytable: { "5": 5, "6-49": 60 } }',
+				'  - { name: L1, role: low, label: Low 1, paytable: { "5": 1, "6-49": 10 } }',
+				'  - { name: S, role: scatter, label: Scatter, special: [scatter] }',
+				'freeSpins: { triggerSymbol: S, triggerCount: 3, awardedSpins: 12, retrigger: true }',
+				'',
+			].join('\n'),
+			'utf8',
+		);
+		assert.throws(() => loadGameSpec(specPath), /forceScatters must be between/);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 // ── report ──────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(60)}`);
 if (failures.length) {

@@ -169,6 +169,25 @@ export function loadGameSpec(specPath) {
 		}
 	}
 
+		// A buy tier's forceScatters must be a count the game can actually award,
+	// or freespin_triggers raises KeyError on the first forced round.
+	for (const [name, mode] of Object.entries(spec?.game?.betModes ?? {})) {
+		if (mode?.forceScatters === undefined) continue;
+		if (!spec?.freeSpins) {
+			errors.push(`bet mode "${name}" sets forceScatters but the game has no freeSpins block.`);
+			continue;
+		}
+		const min = spec.freeSpins.triggerCount ?? 3;
+		const max = spec.game?.reels?.count ?? 5;
+		if (!Number.isInteger(mode.forceScatters) || mode.forceScatters < min || mode.forceScatters > max) {
+			errors.push(
+				`bet mode "${name}" forceScatters must be between the trigger count (${min}) and ` +
+					`the reel count (${max}) — freespin_triggers is indexed directly by that number, ` +
+					`so a count outside the table is a KeyError on the first forced round.`,
+			);
+		}
+	}
+
 	// ── grid multipliers ────────────────────────────────────────────────────
 	// Cluster-only, because only the cluster sample carries position_multipliers
 	// and its evaluate_clusters_with_grid — 0_0_lines, 0_0_ways and 0_0_scatter

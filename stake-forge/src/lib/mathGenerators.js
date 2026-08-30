@@ -364,7 +364,21 @@ export function renderBetModes(spec, { conditionKeys = [], multValuesShape = 'ne
 	const lines = ['['];
 	for (const [name, mode] of Object.entries(spec.game.betModes)) {
 		const allConditions = [...conditionKeys];
-		if (scatterTriggers) allConditions.unshift(`"scatter_triggers": ${scatterTriggers},`);
+		// ── how a buy TIER differs from another buy tier ────────────────────
+		// Several buy modes generate and run happily, and without this they are
+		// the same feature at different prices — which makes the cheapest one
+		// strictly the best deal and the menu pointless.
+		//
+		// forceScatters is the differentiator, and it uses machinery that already
+		// exists: scatter_triggers decides how many scatters the forced trigger
+		// lands, and freespin_triggers maps that count to a spin award. So a
+		// premium tier forcing 5 scatters genuinely buys a longer feature than a
+		// lite tier forcing 3, with no new engine work and no second reel strip.
+		const forced = mode.forceScatters;
+		const modeScatterTriggers = forced ? `{${forced}: 1}` : scatterTriggers;
+		if (modeScatterTriggers) {
+			allConditions.unshift(`"scatter_triggers": ${modeScatterTriggers},`);
+		}
 		const extraConditions = allConditions.length
 			? allConditions.map((k) => `                            ${k}`).join('\n') + '\n'
 			: '';
@@ -407,8 +421,14 @@ export function renderBetModes(spec, { conditionKeys = [], multValuesShape = 'ne
 				const carried = allConditions.filter(
 					(k) => ![...overridden].some((name) => k.startsWith(`"${name}"`)),
 				);
+				// A tier that forces a scatter count keeps forcing it on its max-win
+				// rounds too, or the cap would be reached through a feature the
+				// player cannot actually buy.
+				const capScatterTriggers = forced
+					? `"scatter_triggers": {${forced}: 1},`
+					: '"scatter_triggers": {4: 1, 5: 2},';
 				const capConditions = forceWincap
-					? ['"scatter_triggers": {4: 1, 5: 2},', capMultValues, ...carried]
+					? [capScatterTriggers, capMultValues, ...carried]
 					: null;
 				// A freegame distribution has to weight the free-game reel set too;
 				// a basegame one must not, or the board is drawn from strips the
