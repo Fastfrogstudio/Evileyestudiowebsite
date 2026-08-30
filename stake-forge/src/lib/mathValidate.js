@@ -198,23 +198,44 @@ export function validateMode({ name, mode, rows, summary, spec, baseRtp, optimis
 	}
 
 	// ── 5. no gaps across the win range ──────────────────────────────────────
+	// A HOLE, not a floor. The first version failed a bonus-buy mode for having
+	// nothing between 0x and 10x, which is not a gap — at 80x entry every round
+	// pays at least 39x, so the distribution has a floor and is continuous above
+	// it. A gap is an empty band with populated bands on BOTH sides: pays 5x and
+	// 500x but never 50x. That is the shape the rule exists to catch, and the
+	// only one a player would experience as a hole.
 	const totalWeight = rows.reduce((sum, r) => sum + r.weight, 0);
-	const empty = [];
-	for (const band of WIN_BANDS) {
+	const occupancy = WIN_BANDS.map((band) => {
 		const from = band.from * maxWin * 100;
 		const to = band.to * maxWin * 100;
 		const weight = rows
 			.filter((r) => r.payout > from && r.payout <= to && r.payout > 0)
 			.reduce((sum, r) => sum + r.weight, 0);
-		if (weight / totalWeight < 1e-9) {
-			empty.push(`${band.label} (${fmt(band.from * maxWin)}x–${fmt(band.to * maxWin)}x)`);
-		}
-	}
+		return { band, occupied: weight / totalWeight >= 1e-9 };
+	});
+	const first = occupancy.findIndex((o) => o.occupied);
+	const last = occupancy.map((o) => o.occupied).lastIndexOf(true);
+	const holes =
+		first === -1
+			? []
+			: occupancy
+					.slice(first, last + 1)
+					.filter((o) => !o.occupied)
+					.map((o) => `${o.band.label} (${fmt(o.band.from * maxWin)}x-${fmt(o.band.to * maxWin)}x)`);
+
+	const floorBands = first > 0 ? occupancy.slice(0, first).map((o) => o.band.label) : [];
 	add(
 		'no-gaps',
-		empty.length === 0,
-		'every win band between nothing and the cap is reachable',
-		empty.length ? `nothing pays in: ${empty.join(', ')}` : `all ${WIN_BANDS.length} bands occupied`,
+		holes.length === 0,
+		'no holes in the win range — every band between the smallest and largest win pays',
+		holes.length
+			? `nothing pays in: ${holes.join(', ')}, but bands on both sides do. That is a hole a ` +
+				`player would feel as "it never pays anything in between".`
+			: `bands ${first + 1}-${last + 1} of ${WIN_BANDS.length} occupied, continuously` +
+				(floorBands.length
+					? `. Nothing below ${fmt(WIN_BANDS[first].from * maxWin)}x (${floorBands.join(', ')}), which is a ` +
+						`FLOOR rather than a gap — normal on a bought mode where the entry cost sets a minimum.`
+					: '.'),
 	);
 
 	// ── 6. the shape matches the declared volatility ─────────────────────────

@@ -133,10 +133,71 @@ if (webSdk) {
 	}
 }
 
-// The expanding recipe must be REFUSED on tumbling mechanics, not silently
+// The combination the boardLifetime work unblocked, asserted positively: an
+// expanding wild on a CASCADING board must now generate, construct a
+// GameConfig, and run a spin. Without this the gate test below would pass
+// simply by everything being refused.
+if (mathSdk) {
+	console.log(`\n\x1b[1m── board lifetimes ──\x1b[0m`);
+	const spec = YAML.parse(fs.readFileSync(TEMPLATE, 'utf8'));
+	spec.game.name = 'e2e-lifetime';
+	spec.game.gameId = '0_0_e2e_lifetime';
+	spec.game.mechanic = 'cluster';
+	spec.game.volatility = 'high';
+	spec.game.reels = { count: MECHANICS.cluster.count, rows: MECHANICS.cluster.rows };
+	delete spec.paylines;
+	if (MECHANICS.cluster.requiredSymbols) spec.symbols.push(...MECHANICS.cluster.requiredSymbols);
+	const cells = MECHANICS.cluster.rows.reduce((a, b) => a + b, 0);
+	const ranksL = { H1: 0, H2: 1, H3: 2, H4: 3, L1: 4, L2: 5, L3: 6, W: 0 };
+	for (const symbol of spec.symbols) {
+		if (!symbol.paytable) continue;
+		symbol.paytable = defaultPaytable({
+			mechanic: MECHANIC_PROFILES.cluster,
+			rank: ranksL[symbol.name] ?? 6,
+			boardCells: cells,
+		});
+	}
+	const wild = spec.symbols.find((sym) => (sym.special ?? []).includes('wild'));
+	if (wild) wild.behaviors = ['expanding'];
+	const specPath = path.join(workDir, 'spec-lifetime.yaml');
+	fs.writeFileSync(specPath, YAML.stringify(spec), 'utf8');
+
+	run(
+		['math:scaffold', '--spec', specPath, '--math-sdk', mathSdk, '--force'],
+		'cluster + expanding wild: math:scaffold (boardLifetime restores it after each cascade)',
+	);
+	run(
+		['verify', '--spec', specPath, '--math-sdk', mathSdk],
+		'cluster + expanding wild: math verify (py_compile + GameConfig() + run_spin)',
+	);
+
+	// ...and the restore call must actually be in BOTH cascade loops, not just
+	// generated somewhere. A splice that lands in one loop leaves the base game
+	// silently wiping the wilds.
+	const gamestate = path.join(mathSdk, 'games', '0_0_e2e_lifetime', 'gamestate.py');
+	const sites = fs.existsSync(gamestate)
+		? (fs.readFileSync(gamestate, 'utf8').match(/lifetime:expanding:/g) ?? []).length
+		: 0;
+	results.push({ label: 'lifetime restore in both loops', ok: sites === 2, output: `found ${sites} restore sites` });
+	console.log(
+		`${sites === 2 ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'} cluster + expanding wild: restore spliced into both cascade loops (${sites}/2)`,
+	);
+}
+
+// The expanding recipe must be REFUSED where it is not verified, not silently
 // generated — assert the refusal as loudly as the successes.
+//
+// cluster came OFF this list when the boardLifetime work made the combination
+// real: every board-writing recipe now declares how long its writes survive and
+// the scaffolder restores them after each cascade refill. Proven by running it
+// end to end (96.50% RTP, 10,000x cap at 1-in-20,000,000).
+//
+// scatter stays, for a different reason than it was originally added for.
+// It is not that the cascade wipes the wild — it is that scatter-pays counts
+// instances anywhere with no positional requirement, so a substituting wild has
+// no gap to bridge. It would generate, run, and do nothing.
 console.log(`\n\x1b[1m── recipe gating ──\x1b[0m`);
-for (const mechanic of ['cluster', 'scatter']) {
+for (const mechanic of ['scatter']) {
 	const spec = YAML.parse(fs.readFileSync(TEMPLATE, 'utf8'));
 	spec.game.name = `e2e-gate-${mechanic}`;
 	spec.game.gameId = `0_0_e2e_gate_${mechanic}`;

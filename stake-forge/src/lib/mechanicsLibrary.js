@@ -220,7 +220,10 @@ export const MECHANIC_LIBRARY = {
 		},
 		combinesWith: ['cluster_pays', 'scatter_pays', 'grid_multipliers', 'progressive_cascade_multiplier', 'multiplier_orbs'],
 		conflictsWith: [
-			{ id: 'expanding_wild', why: 'The expansion is written at mutate time and the cascade redraws the board. Needs a declared lifetime; see the boardLifetime work.' },
+			// expanding_wild used to be here. It was resolved rather than removed:
+			// every board-writing recipe now declares a boardLifetime, and the
+			// scaffolder restores anything that outlives one evaluation after each
+			// cascade refill. Proven by running the combination end to end.
 			{ id: 'walking_wild', why: '"One step per spin" is undefined inside a multi-step cascade.' },
 			{ id: 'hold_and_win', why: 'Both own the disposal step and give opposite instructions — lock what landed vs remove what won. Fine as separate PHASES.' },
 		],
@@ -379,9 +382,14 @@ export const MECHANIC_LIBRARY = {
 			notes: 'web-sdk has NO matching sample app — follow "Steps to Add a New BookEvent".',
 		},
 		math: { sample: 'games/0_0_expwilds', notes: 'Generated today by the `expanding` recipe.' },
-		combinesWith: ['lines_pays', 'ways_pays', 'freespins', 'sticky_multiplier'],
+		combinesWith: ['lines_pays', 'ways_pays', 'cluster_pays', 'tumble', 'freespins', 'sticky_multiplier'],
+		combinesNote:
+			'Combined with tumble as of the boardLifetime work, and proven by running it: a generated ' +
+			'7x7 cluster game with expanding wilds reached 96.50% RTP against 96.50%, hit its 10,000x ' +
+			'cap at 1-in-20,000,000, and kept 28 of 49 cells wild on the final board. The wild ladder ' +
+			'is mechanic-aware — a full-column wild is far stronger on cluster, where it joins every ' +
+			'group it touches, than on a payline.',
 		conflictsWith: [
-			{ id: 'tumble', why: 'The cascade redraws the board and wipes the expansion. Our own found bug.' },
 			{ id: 'scatter_pays', why: 'Scatter-pays counts instances anywhere, so there is no gap for a substituting wild to bridge.' },
 		],
 		trademark: null,

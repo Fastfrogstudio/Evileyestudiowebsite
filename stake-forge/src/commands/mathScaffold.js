@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { loadGameSpec } from '../lib/loadSpec.js';
 import { renderDesignedReelCsv, multiplierLadder, renderLadder } from '../lib/reelDesign.js';
 import { balanceSpec } from '../lib/mathBalance.js';
+import { LIFETIMES_SURVIVING_CASCADE } from '../lib/behaviorRecipes.js';
 import { getMechanic } from '../lib/mechanics.js';
 import { DEFAULT_20_LINES } from '../lib/generators.js';
 import { getRecipe, isGenerable } from '../lib/behaviorRecipes.js';
@@ -128,7 +129,27 @@ function patchGameConfig(gameDir, spec, mechanic, { recipes }) {
 	for (const recipe of recipes) {
 		for (const key of recipe.emitted?.requiredConditions ?? []) {
 			if (key === 'landing_wilds') {
-				conditionKeys.push('"landing_wilds": {0: 100, 1: 20, 2: 5},');
+				// ── How many new expanding wilds may land per spin ──────────────
+				// The ladder is mechanic-aware, because a full-reel wild is worth
+				// wildly different amounts per evaluator.
+				//
+				// On lines it adds one wild to each payline crossing that reel —
+				// strong, and bounded by the payline count. On ways it multiplies
+				// that reel's contribution. On CLUSTER a wild joins every group it
+				// touches, so a 7-row column is 7 cells of universal adjacency.
+				//
+				// Measured on a generated 7x7 cluster game: the lines ladder let
+				// four wilds accumulate over a round, covering 28 of 49 cells, and
+				// the MEDIAN free-spin round hit the 10,000x cap. Every feature was
+				// a max win, and the optimiser could not converge because the
+				// cheapest free-spin round paid 282x against a 28.9x target.
+				//
+				// So a tumbling/cluster board gets at most one, rarely.
+				conditionKeys.push(
+					mechanic.winType === 'cluster' || mechanic.winType === 'scatter'
+						? '"landing_wilds": {0: 200, 1: 5},'
+						: '"landing_wilds": {0: 100, 1: 20, 2: 5},',
+				);
 			}
 			if (key === 'prize_values') {
 				// Weighted prize ladder for a hold-and-win round, shaped after
@@ -578,7 +599,76 @@ function applyRecipes(gameDir, spec) {
 		}
 	}
 
+	// ── board lifetimes ─────────────────────────────────────────────────────
+	// Every board-writing recipe declares how long its writes survive. On a
+	// tumbling mechanic the cascade redraws the board from the strips, so any
+	// lifetime that outlives one evaluation has to be restored after each refill
+	// or the mechanic silently vanishes mid-round — which is exactly how the
+	// expanding-wild bug presented, and what BOARD_LIFETIMES exists to stop
+	// recurring for every board-writing mechanic after it.
+	if (mechanic.tumbles) {
+		const restored = applyBoardLifetimes(gameDir, results);
+		for (const r of restored) results.push(r);
+	}
+
 	return results;
+}
+
+/**
+ * Restore persistent board writes after every cascade refill.
+ *
+ * tumble_game_board() draws replacement symbols straight off the reel strips, so
+ * anything a mechanic stamped onto the board is gone the moment a cascade runs.
+ * The fix is mechanical once each recipe states its lifetime: splice its own
+ * restore call in after every tumble, in both the base-game and free-spin
+ * cascade loops.
+ *
+ * Deliberately narrow. This restores what a recipe already knows how to write;
+ * it does NOT invent gravity semantics for a symbol that should be fallen
+ * around rather than overwritten. Sticky symbols on a cascading board need the
+ * refill to stack ABOVE the held cell, and that is a different piece of work in
+ * tumble.py rather than a splice here.
+ */
+function applyBoardLifetimes(gameDir, recipeResults) {
+	const file = path.join(gameDir, 'gamestate.py');
+	if (!fs.existsSync(file)) return [];
+	let source = fs.readFileSync(file, 'utf8');
+	const applied = [];
+
+	for (const result of recipeResults) {
+		const { recipe } = result;
+		if (!recipe?.reapplyCall) continue;
+		if (!LIFETIMES_SURVIVING_CASCADE.includes(recipe.boardLifetime)) continue;
+
+		// Both loops: the base game cascades too, and a mechanic that survives the
+		// round has to survive both.
+		let landed = 0;
+		for (const method of ['run_spin', 'run_freespin']) {
+			const patched = insertAfterLineInMethod(
+				source,
+				method,
+				/^\s*self\.tumble_game_board\(/,
+				[recipe.reapplyCall],
+				`lifetime:${recipe.id}:${method}`,
+			);
+			if (patched.replaced) {
+				source = patched.source;
+				landed += 1;
+			}
+		}
+		if (landed) {
+			applied.push({
+				tag: recipe.id,
+				action: 'lifetime-restored',
+				recipe,
+				lifetime: recipe.boardLifetime,
+				sites: landed,
+			});
+		}
+	}
+
+	if (applied.length) fs.writeFileSync(file, source, 'utf8');
+	return applied;
 }
 
 export function mathScaffold({ specPath, mathSdkDir, force }) {
@@ -614,6 +704,15 @@ export function mathScaffold({ specPath, mathSdkDir, force }) {
 			);
 		} else if (r.action === 'builtin') {
 			console.log(chalk.cyan('·'), `behavior "${r.tag}": built-in (tier 2), config only`);
+		} else if (r.action === 'lifetime-restored') {
+			// Worth saying out loud: without this the mechanic works on the first
+			// board of a round and silently vanishes on the first cascade, which
+			// is a bug that looks like a maths problem.
+			console.log(
+				chalk.green('✓'),
+				`board lifetime "${r.lifetime}" for "${r.tag}": ${r.recipe.reapplyCall} restored after ` +
+					`every cascade refill (${r.sites} loop${r.sites === 1 ? '' : 's'})`,
+			);
 		} else {
 			console.log(
 				chalk.yellow('  !'),

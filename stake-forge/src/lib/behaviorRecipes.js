@@ -43,11 +43,70 @@ import { renderStickyMath } from './recipes/sticky.js';
  * @property {string[]} suggestedSpecialKeys keys it commonly pairs with
  * @property {object}   referenceSample     { math, web } repo-relative paths or null
  * @property {string}   verifiedAgainst     what was read/run to prove it
+ * @property {?string}  boardLifetime       how long its board writes survive, or null
+ *                                          if it does not write to the board
+ * @property {?string}  reapplyCall         the method to call after a cascade
+ *                                          refill to restore its writes
  * @property {object}   mathHooks           what lands in the math-sdk game
  * @property {object}   webHooks            what lands in the web-sdk app
  * @property {Function} [emitMath]          (ctx) => [{ path, contents, mode }]
  * @property {Function} [emitWeb]           (ctx) => [{ path, contents, mode }]
  */
+
+/**
+ * How long a mechanic's writes to the board survive.
+ *
+ * ── Why this exists ─────────────────────────────────────────────────────────
+ * We found the expanding-wild-on-a-tumbling-board bug by running a generated
+ * game: the recipe writes wilds into the board inside run_freespin, and the
+ * cascade loop then calls tumble_game_board(), which redraws the board from the
+ * strips. The wilds vanish mid-round. Nobody had told the cascade that those
+ * cells were furniture rather than win participants.
+ *
+ * That is not one bug, it is a whole CLASS of bug, and it recurs for every
+ * board-writing mechanic: sticky wilds, walking wilds, persistent symbols,
+ * blockers, locked prizes. The general shape of the round is
+ *
+ *     generate board -> mutate board -> evaluate wins -> apply multipliers
+ *         -> dispose of winners -> refill -> repeat or end
+ *
+ * and the conflict is always the same one: a mechanic writes at MUTATE time and
+ * assumes the board persists, while tumbling owns DISPOSE and REFILL and
+ * redraws it.
+ *
+ * So every board-writing recipe declares a lifetime, and the scaffolder
+ * generates the re-application after each refill when the lifetime outlives one
+ * evaluation. That turns "this combination is broken" into "this combination is
+ * generated correctly", once, for every mechanic that follows.
+ *
+ * ── The four lifetimes ──────────────────────────────────────────────────────
+ *   this-evaluation        Written fresh before each evaluation and not expected
+ *                          to survive anything. A random wild injected after the
+ *                          draw. Needs no re-application.
+ *   this-cascade-sequence  Survives every tumble WITHIN one spin's cascade
+ *                          sequence, then goes. Re-applied after each refill.
+ *   this-round             Survives cascades AND spins, for the whole round.
+ *                          Re-applied after each refill and each new draw.
+ *   until-consumed         Persists until the mechanic itself removes it — a
+ *                          collected prize, a destroyed blocker. Re-applied like
+ *                          this-round; removal is the mechanic's own business.
+ *
+ * A recipe with `boardLifetime: null` does not write to the board at all
+ * (freespins, wincap, global_multiplier) and the question does not arise.
+ */
+export const BOARD_LIFETIMES = [
+	'this-evaluation',
+	'this-cascade-sequence',
+	'this-round',
+	'until-consumed',
+];
+
+/** Lifetimes whose writes must be re-applied after a cascade refill. */
+export const LIFETIMES_SURVIVING_CASCADE = [
+	'this-cascade-sequence',
+	'this-round',
+	'until-consumed',
+];
 
 /** @type {Record<string, BehaviorRecipe>} */
 export const BEHAVIOR_RECIPES = {
@@ -70,7 +129,21 @@ export const BEHAVIOR_RECIPES = {
 		 * re-applies update_with_existing_wilds() after each refill, which is real
 		 * design work, not scaffolding.
 		 */
-		verifiedForMechanics: ['lines', 'ways'],
+		// cluster added after the boardLifetime work made it real, and PROVEN by
+		// running it: a generated 7x7 cluster game with expanding wilds reached
+		// 96.50% RTP against 96.50%, hit its 10,000x cap at 1-in-20,000,000, paid
+		// 1 round in 5.41, and every rule in math:validate passed. The wilds
+		// survive the cascade — 28 of 49 cells still wild on the final board.
+		//
+		// scatter is still out, and not for a mechanical reason: scatter-pays
+		// counts instances anywhere with no positional requirement, so a
+		// substituting wild has no gap to bridge. It would generate and run and do
+		// nothing. Pointless, not broken.
+		verifiedForMechanics: ['lines', 'ways', 'cluster'],
+		// Survives every spin of the round, so it must survive every cascade too.
+		// update_with_existing_wilds() is the method that restores it.
+		boardLifetime: 'this-round',
+		reapplyCall: 'self.update_with_existing_wilds()',
 		summary:
 			'A wild lands on a reel, expands to fill every row of that reel, and stays for the ' +
 			'remaining free spins. A fresh random multiplier is rolled onto it on each reveal.',
@@ -139,6 +212,10 @@ export const BEHAVIOR_RECIPES = {
 		 * design work, not scaffolding.
 		 */
 		verifiedForMechanics: ['lines'],
+		// Sticky symbols hold their cell for the round, so a cascade must refill
+		// AROUND them rather than through them.
+		boardLifetime: 'this-round',
+		reapplyCall: 'self.replace_board_with_stickys()',
 		summary:
 			'A separate bet mode: a prize symbol lands, locks to its cell and resets the ' +
 			'respin counter. When the respins run out, every locked prize on the board pays.',
@@ -180,6 +257,11 @@ export const BEHAVIOR_RECIPES = {
 		status: 'documented',
 		tier: 3,
 		appliesToRoles: ['high', 'low', 'wild', 'scatter'],
+		// A locked prize holds its cell until the respin phase ends and pays it
+		// out, which is "until consumed" rather than a fixed span. Its restore is
+		// the same method the respin loop already calls each spin.
+		boardLifetime: 'until-consumed',
+		reapplyCall: 'self.replace_board_with_stickys()',
 		summary:
 			'A symbol carrying a cash value read off the board at the end of a round rather ' +
 			'than paying through the paytable.',
@@ -214,6 +296,10 @@ export const BEHAVIOR_RECIPES = {
 		status: 'documented',
 		tier: 3,
 		appliesToRoles: ['high', 'wild'],
+		// Written fresh onto each newly drawn board; nothing carries it across a
+		// refill, so there is nothing to re-apply.
+		boardLifetime: 'this-evaluation',
+		reapplyCall: null,
 		summary: 'A symbol occupying an NxN block of cells, evaluated as N*N individual symbols.',
 		requiredAnimationStates: ['colossal_in', 'colossal_idle'],
 		requiredSpecialKeys: [],
@@ -241,6 +327,9 @@ export const BEHAVIOR_RECIPES = {
 		status: 'builtin',
 		tier: 2,
 		appliesToRoles: ['scatter'],
+		// Does not write to the board, so the lifetime question does not arise.
+		boardLifetime: null,
+		reapplyCall: null,
 		summary: 'Scatter-triggered free-spin round with an on-screen counter and intro/outro screens.',
 		requiredAnimationStates: [],
 		requiredSpecialKeys: ['scatter'],
@@ -262,6 +351,9 @@ export const BEHAVIOR_RECIPES = {
 		status: 'builtin',
 		tier: 2,
 		appliesToRoles: [],
+		// Does not write to the board, so the lifetime question does not arise.
+		boardLifetime: null,
+		reapplyCall: null,
 		summary: 'A round-level multiplier applied to every win, shown in its own HUD element.',
 		requiredAnimationStates: [],
 		requiredSpecialKeys: [],
@@ -283,6 +375,9 @@ export const BEHAVIOR_RECIPES = {
 		status: 'builtin',
 		tier: 2,
 		appliesToRoles: [],
+		// Does not write to the board, so the lifetime question does not arise.
+		boardLifetime: null,
+		reapplyCall: null,
 		summary: 'Winning symbols explode and are replaced by symbols falling from above, chaining wins.',
 		requiredAnimationStates: ['explosion'],
 		requiredSpecialKeys: [],
@@ -304,6 +399,9 @@ export const BEHAVIOR_RECIPES = {
 		status: 'builtin',
 		tier: 2,
 		appliesToRoles: [],
+		// Does not write to the board, so the lifetime question does not arise.
+		boardLifetime: null,
+		reapplyCall: null,
 		summary: 'Round ends immediately once the configured max win is reached.',
 		requiredAnimationStates: [],
 		requiredSpecialKeys: [],

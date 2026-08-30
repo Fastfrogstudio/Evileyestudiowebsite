@@ -39,7 +39,7 @@ import {
 	defaultAnimationStates,
 	ENGINE_SPECIAL_KEYS,
 } from '../src/lib/taxonomy.js';
-import { requiredStatesForSymbol, validateBehaviors, getRecipe, BEHAVIOR_RECIPES } from '../src/lib/behaviorRecipes.js';
+import { requiredStatesForSymbol, validateBehaviors, getRecipe, BEHAVIOR_RECIPES, BOARD_LIFETIMES, LIFETIMES_SURVIVING_CASCADE } from '../src/lib/behaviorRecipes.js';
 import { buildConfigObject, buildSymbolInfoMap, buildInitialBoard } from '../src/lib/generators.js';
 import { renderPaytable, renderSpecialSymbols, renderFreespinTriggers, renderReelCsv, renderNumRows, renderBetModes, betModeCriteria, REEL_STRIP_LENGTH, SCATTER_DENSITY } from '../src/lib/mathGenerators.js';
 import { MECHANICS } from '../src/lib/mechanics.js';
@@ -550,20 +550,23 @@ test('expanding without multiplier warns rather than failing', () => {
 	assert.match(ctx2.warnings.join(' '), /normally pairs with special: \[multiplier\]/);
 });
 
-test('expanding is refused on tumbling mechanics', () => {
-	// Not merely untested: a cascade re-draws the board mid-spin and would wipe
-	// the expanded wilds, and 0_0_expwilds (a lines game) never exercises that.
-	for (const mechanic of ['cluster', 'scatter']) {
-		const ctx = collect();
-		const s = normaliseSymbol({ name: 'W', role: 'wild', special: ['wild', 'multiplier'], behaviors: ['expanding'], paytable: { 5: 1 } }, ctx);
-		const ctx2 = collect();
-		validateBehaviors(s, { mechanic, ...ctx2 });
-		assert.match(ctx2.errors.join(' '), /only verified on mechanic/, `${mechanic} should be refused`);
-	}
+test('expanding is still refused on scatter, for a different reason', () => {
+	// It used to be refused on cluster AND scatter because a cascade re-draws the
+	// board mid-spin and wiped the expanded wilds. The boardLifetime work fixed
+	// that for cluster, proven by running it.
+	//
+	// scatter stays out, and not for a mechanical reason: scatter-pays counts
+	// instances anywhere with no positional requirement, so a substituting wild
+	// has no gap to bridge. It would generate, run, and do nothing.
+	const ctx = collect();
+	const s = normaliseSymbol({ name: 'W', role: 'wild', special: ['wild', 'multiplier'], behaviors: ['expanding'], paytable: { 5: 1 } }, ctx);
+	const ctx2 = collect();
+	validateBehaviors(s, { mechanic: 'scatter', ...ctx2 });
+	assert.match(ctx2.errors.join(' '), /only verified on mechanic/);
 });
 
-test('expanding is allowed on lines and ways', () => {
-	for (const mechanic of ['lines', 'ways']) {
+test('expanding is allowed on lines, ways and cluster', () => {
+	for (const mechanic of ['lines', 'ways', 'cluster']) {
 		const ctx = collect();
 		const s = normaliseSymbol({ name: 'W', role: 'wild', special: ['wild', 'multiplier'], behaviors: ['expanding'], paytable: { 5: 1 } }, ctx);
 		const ctx2 = collect();
@@ -2973,14 +2976,23 @@ test('every reference game names mechanics that exist', () => {
 	}
 });
 
-test('the conflict we found the expensive way is in the data', () => {
-	// Expanding wilds on a tumbling board: found by running a generated game, not
-	// by reading code. It is the reason the library holds conflicts as data at
-	// all — so the editor can refuse the combination at spec time.
+test('the conflict we found the expensive way has been RESOLVED, not deleted', () => {
+	// Expanding wilds on a tumbling board was the library's founding conflict,
+	// found by running a generated game rather than reading code. The
+	// boardLifetime work fixed it: every board-writing recipe declares how long
+	// its writes survive, and the scaffolder restores them after each cascade
+	// refill. Proven end to end — 96.50% RTP, cap reached at 1-in-20,000,000.
+	//
+	// This test guards the resolution. If the conflict comes back, either the
+	// lifetime machinery regressed or someone re-added the rule by hand.
 	const result = checkCombination(['tumble', 'expanding_wild']);
-	assert.equal(result.ok, false);
-	assert.equal(result.conflicts.length, 1);
-	assert.match(result.conflicts[0].why, /cascade|redraw/i);
+	assert.deepEqual(result.conflicts, [], 'the lifetime work resolved this pairing');
+	assert.equal(BEHAVIOR_RECIPES.expanding.boardLifetime, 'this-round');
+	assert.ok(BEHAVIOR_RECIPES.expanding.reapplyCall);
+
+	// ...and the conflicts that are genuinely unresolved are still there.
+	const walking = checkCombination(['tumble', 'walking_wild']);
+	assert.equal(walking.ok, false, 'a step-per-spin wild is still undefined inside a cascade');
 });
 
 test('a conflicting pair is reported once, not twice', () => {
@@ -3307,6 +3319,74 @@ test('FULFILLING THE BRIEF MAKES THE AUDIT PASS', () => {
 	} finally {
 		fs.rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Board lifetimes
+//
+// The expanding-wild-on-a-cascade bug was found by running a generated game:
+// the recipe writes wilds into the board, the cascade calls tumble_game_board()
+// and redraws it from the strips, and the wilds vanish mid-round. That is not
+// one bug but a class of them — it recurs for sticky wilds, walking wilds,
+// persistent symbols, blockers, locked prizes. Declaring a lifetime is the fix
+// that generalises.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('every recipe declares a board lifetime, or explicitly none', () => {
+	// The point of the abstraction is that no board-writing mechanic can be added
+	// without answering the question. `undefined` would silently mean "does not
+	// survive a cascade" and reintroduce exactly the bug this prevents.
+	for (const [id, recipe] of Object.entries(BEHAVIOR_RECIPES)) {
+		assert.ok(
+			'boardLifetime' in recipe,
+			`recipe "${id}" does not declare a boardLifetime — see BOARD_LIFETIMES`,
+		);
+		if (recipe.boardLifetime !== null) {
+			assert.ok(
+				BOARD_LIFETIMES.includes(recipe.boardLifetime),
+				`recipe "${id}" has lifetime "${recipe.boardLifetime}", which is not one of ${BOARD_LIFETIMES.join(', ')}`,
+			);
+		}
+	}
+});
+
+test('a lifetime that outlives an evaluation names how to restore itself', () => {
+	// Declaring "this survives a cascade" without saying HOW to put it back makes
+	// the declaration decorative.
+	for (const [id, recipe] of Object.entries(BEHAVIOR_RECIPES)) {
+		if (!LIFETIMES_SURVIVING_CASCADE.includes(recipe.boardLifetime)) continue;
+		assert.ok(
+			recipe.reapplyCall,
+			`recipe "${id}" survives a cascade but names no reapplyCall`,
+		);
+		assert.match(recipe.reapplyCall, /^self\.\w+\(\)$/, `${id}: reapplyCall should be a method call`);
+	}
+});
+
+test('a recipe that does not touch the board has nothing to restore', () => {
+	for (const [id, recipe] of Object.entries(BEHAVIOR_RECIPES)) {
+		if (recipe.boardLifetime !== null) continue;
+		assert.equal(recipe.reapplyCall, null, `${id} writes nothing but names a reapplyCall`);
+	}
+});
+
+test('this-evaluation writes are not re-applied, because nothing carries them', () => {
+	// colossal stamps its block onto each newly drawn board. Re-applying it after
+	// a refill would be re-stamping something the next draw writes anyway.
+	assert.equal(BEHAVIOR_RECIPES.colossal.boardLifetime, 'this-evaluation');
+	assert.equal(LIFETIMES_SURVIVING_CASCADE.includes('this-evaluation'), false);
+});
+
+test('the lifetimes are ordered from shortest to longest', () => {
+	// Read as a scale in the docs and in the editor, so the order is load-bearing.
+	assert.deepEqual(BOARD_LIFETIMES, [
+		'this-evaluation',
+		'this-cascade-sequence',
+		'this-round',
+		'until-consumed',
+	]);
+	// Everything except the shortest has to survive a cascade.
+	assert.deepEqual(LIFETIMES_SURVIVING_CASCADE, BOARD_LIFETIMES.slice(1));
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

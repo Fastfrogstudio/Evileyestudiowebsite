@@ -396,8 +396,19 @@ export function renderBetModes(spec, { conditionKeys = [], multValuesShape = 'ne
 					multValuesShape === 'flat'
 						? '"mult_values": {1: 5, 2: 10, 3: 20, 5: 60, 10: 100, 20: 90, 50: 50},'
 						: '"mult_values": {self.basegame_type: {1: 1}, self.freegame_type: {2: 10, 3: 20, 5: 60, 10: 100, 20: 90, 50: 50}},';
+				// ...and any condition a RECIPE reads must be carried into the wincap
+				// set too, or the forced round dies on its first spin. Found by
+				// running an expanding-wild game: the recipe reads landing_wilds on
+				// every reveal, the wincap distribution replaced the shared
+				// conditions wholesale, and the round raised KeyError:
+				// 'landing_wilds'. The shared set is the source of truth for WHICH
+				// keys exist; wincap only overrides the two it has an opinion about.
+				const overridden = new Set(['scatter_triggers', 'mult_values']);
+				const carried = allConditions.filter(
+					(k) => ![...overridden].some((name) => k.startsWith(`"${name}"`)),
+				);
 				const capConditions = forceWincap
-					? ['"scatter_triggers": {4: 1, 5: 2},', capMultValues]
+					? ['"scatter_triggers": {4: 1, 5: 2},', capMultValues, ...carried]
 					: null;
 				// A freegame distribution has to weight the free-game reel set too;
 				// a basegame one must not, or the board is drawn from strips the
