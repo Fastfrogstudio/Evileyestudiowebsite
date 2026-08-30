@@ -25,6 +25,46 @@ export const DEFAULT_20_LINES = {
 	'20': [1, 0, 0, 0, 1],
 };
 
+/**
+ * The payline table the ENGINE will actually evaluate, as a plain object.
+ *
+ * One source of truth for three consumers that must never disagree: the
+ * generated game_config.py, the Monte Carlo EV model, and the max-win ceiling
+ * estimate. When they disagreed the model was blind to both-ways and reported an
+ * EV 10% under what the engine paid — the sort of gap that only shows up as a
+ * failed optimisation run an hour later.
+ *
+ * With `game.paysBothWays`, each mirrored pattern is appended UNLESS the table
+ * already contains it. Two ways it can already be there, and both would
+ * double-pay the same win if let through:
+ *
+ *   self-symmetric   [1,1,1,1,1] reversed is itself
+ *   mirror pairs     [0,0,1,2,2] and [2,2,1,0,0] are both in the default 20
+ *
+ * Measured on DEFAULT_20_LINES, that leaves only 2 genuinely new lines — 22, not
+ * the 30 a naive append produces, because the default set is drawn as a symmetric
+ * fan. A line set that leans one direction gains far more.
+ */
+export function effectivePaylines(spec, defaultLines = DEFAULT_20_LINES) {
+	const source = spec?.paylines === 'default_20' ? defaultLines : (spec?.paylines ?? defaultLines);
+	const out = {};
+	for (const [key, rows] of Object.entries(source)) out[String(Number(key))] = rows;
+	if (!spec?.game?.paysBothWays) return out;
+
+	let next = Math.max(...Object.keys(source).map(Number)) + 1;
+	const seen = new Set(Object.values(source).map((rows) => rows.join(',')));
+	for (const rows of Object.values(source)) {
+		const mirrored = [...rows].reverse();
+		const key = mirrored.join(',');
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out[String(next)] = mirrored;
+		next += 1;
+	}
+	return out;
+}
+
+
 function weightedReelStrip(weights, length, rng) {
 	const pool = [];
 	for (const [name, weight] of Object.entries(weights)) {

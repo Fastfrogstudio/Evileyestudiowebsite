@@ -22,6 +22,7 @@
 
 import { pyLiteral, PyRaw } from './pyPatch.js';
 import { sortSymbols, buildSpecialSymbols } from './taxonomy.js';
+import { effectivePaylines } from './generators.js';
 
 /**
  * `self.paytable` — a dict with tuple keys.
@@ -66,12 +67,20 @@ export function renderSpecialSymbols(spec) {
 	return pyLiteral(buildSpecialSymbols(spec.symbols), 2);
 }
 
-/** `self.paylines` — int -> [row index per reel]. Lines mechanic only. */
+/**
+ * `self.paylines` — int -> [row index per reel]. Lines mechanic only.
+ *
+ * The table itself comes from effectivePaylines(), shared with the EV model and
+ * the max-win ceiling estimate so the three cannot drift. That includes the
+ * both-ways mirroring: lines.py evaluates left-to-right only, but a
+ * right-to-left win on a pattern IS a left-to-right win on that pattern
+ * reversed, so both-ways needs no engine change — only the mirrored patterns as
+ * extra lines.
+ */
 export function renderPaylines(spec, defaultLines) {
-	const source = spec.paylines === 'default_20' ? defaultLines : spec.paylines;
 	const out = new Map();
-	for (const [key, rows] of Object.entries(source)) {
-		out.set(new PyRaw(String(Number(key))), rows);
+	for (const [key, rows] of Object.entries(effectivePaylines(spec, defaultLines))) {
+		out.set(new PyRaw(key), rows);
 	}
 	return pyLiteral(out, 2);
 }

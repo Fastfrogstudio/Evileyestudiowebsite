@@ -676,9 +676,11 @@ export const MECHANIC_LIBRARY = {
 		rule:
 			'A meter steps up with each successive cascade in one sequence (1x, 2x, 3x, 5x…) and ' +
 			'applies to subsequent wins. Resets when the sequence ends.',
-		status: 'roadmap',
+		status: 'built',
 		difficulty: 'T1',
-		winTypes: ['cluster', 'scatter', 'lines', 'ways'],
+		// Needs a cascading board — a ladder with no second cascade never leaves
+		// the first rung.
+		winTypes: ['cluster', 'scatter'],
 		volatility: ['medium', 'high'],
 		art: {
 			symbols: [],
@@ -686,8 +688,20 @@ export const MECHANIC_LIBRARY = {
 			animations: ['ladder step, one rung per cascade'],
 			screens: ['a ladder or step meter beside the grid'],
 		},
-		frontend: { bookEvents: ['updateCascadeMult'], components: ['CascadeLadder'] },
-		math: { sample: null, notes: 'A counter incremented in the tumble loop; the global multiplier hook already exists.' },
+		frontend: { bookEvents: ['updateGlobalMult'], components: ['CascadeLadder'] },
+		math: {
+			sample: null,
+			notes:
+				'boardMechanics.cascadeMultiplier, spliced after the cascade. The ladder is an explicit ' +
+				'list of rungs, not a formula, so the spec states the values rather than implying them. ' +
+				'Note the off-by-one that reads wrong until you trace it: the counter is stepped as the ' +
+				'cascade happens, so the FIRST cascade already reads ladder[1] — ladder[0] is the value ' +
+				'in force for the initial (uncascaded) evaluation. Sequence length is bounded by the ' +
+				'cascade drop rate, so the top rung is reached far less often than the ladder suggests: ' +
+				'verified on a generated game, longest observed sequence 5 against a 4-rung ladder, and ' +
+				'the value never exceeded the top rung.',
+		},
+		generator: 'boardMechanics.cascadeMultiplier',
 		combinesWith: ['tumble', 'cluster_pays', 'scatter_pays'],
 		conflictsWith: [],
 		trademark: null,
@@ -1374,16 +1388,50 @@ export const MECHANIC_LIBRARY = {
 		id: 'both_ways',
 		name: 'Pays both ways',
 		family: 'bet',
-		rule: 'Lines pay from the left AND from the right, roughly doubling the hit rate.',
-		status: 'roadmap',
+		rule:
+			'Lines pay from the leftmost reel AND from the rightmost. Costs no engine change: a ' +
+			'right-to-left win on a pattern IS a left-to-right win on that pattern reversed, so the ' +
+			'mirrored patterns are simply appended to the payline table. How much it is worth depends ' +
+			'entirely on how asymmetric the existing line set is — see math.notes before treating it ' +
+			'as a hit-rate lever.',
+		status: 'built',
 		difficulty: 'T1',
-		winTypes: ['lines', 'ways'],
-		volatility: ['low'],
+		// Lines only. ways.py counts matching symbols per reel from reel 0 and has
+		// no payline table to mirror — both-ways ways needs engine work, so the
+		// entry does not claim it.
+		winTypes: ['lines'],
+		// NOT 'low' — see math.notes. On a symmetric line set this adds EV without
+		// adding hit rate, which is a volatility increase once RTP is held.
+		volatility: ['low', 'medium'],
 		art: { symbols: [], states: [], animations: ['a win line drawn in either direction'], screens: [] },
 		frontend: { bookEvents: [], components: [] },
-		math: { sample: null, notes: 'Evaluate the mirrored payline set as well. A clean low-volatility lever.' },
+		math: {
+			sample: null,
+			notes:
+				'Set `game.paysBothWays: true`. effectivePaylines() appends each mirrored pattern that ' +
+				'is not ALREADY in the table — both self-symmetric patterns and mirror PAIRS are ' +
+				'skipped, or the line pays its win twice and RTP inflates with nothing in the report ' +
+				'to show it. On DEFAULT_20_LINES only 2 mirrors are new (10 patterns are ' +
+				'self-symmetric, 8 more form 4 pairs already present), so the table goes to 22, not 30. ' +
+				'\n\nDO NOT ASSUME THIS IS A HIT-RATE LEVER. It is usually reputed to be one and on the ' +
+				'default line set it measurably is not: a win needs 3 matching symbols FROM REEL 0, and ' +
+				'both new mirrors share their 3-reel prefix with a line already in the table, so the ' +
+				'original wins on exactly the same boards. Measured over 40,000 seeded spins against ' +
+				'one strip set: ZERO spins won only on a mirror, hit rate x1.000, EV x1.100 — the extra ' +
+				'money is entirely 4- and 5-of-a-kind top-ups on wins that were already paying. Hold ' +
+				'RTP by scaling the paytable down and you have the same hit rate with the extra value ' +
+				'concentrated on longer combinations, which nudges volatility UP, not down. loadSpec ' +
+				'warns when every mirror shares a prefix like this. A line set that genuinely leans one ' +
+				'direction is the case where both-ways does buy hit rate; the symmetric fan is not.',
+		},
+		generator: 'generators.effectivePaylines (spec.game.paysBothWays)',
 		combinesWith: ['lines_pays', 'expanding_wild', 'respin'],
-		conflictsWith: [],
+		conflictsWith: [
+			{
+				id: 'ways_pays',
+				why: 'ways.py counts matching symbols per reel starting from reel 0 and has no payline table to mirror, so there is nothing for this generator to append to.',
+			},
+		],
 		trademark: null,
 		recipe: null,
 	},

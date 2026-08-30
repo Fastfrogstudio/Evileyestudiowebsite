@@ -37,6 +37,7 @@
  */
 
 import { getMechanic } from './mechanics.js';
+import { effectivePaylines } from './generators.js';
 
 /** Every payout in a symbol's paytable, as [kind, value] pairs, kind descending. */
 function paytableEntries(symbol) {
@@ -81,8 +82,9 @@ export function boardCeiling(spec) {
 
 	switch (mechanic.winType) {
 		case 'lines': {
-			const paylines =
-				spec.paylines === 'default_20' ? 20 : Object.keys(spec.paylines ?? {}).length;
+			// The MIRRORED count on a both-ways game — the ceiling is what the engine
+			// can pay, and the engine evaluates the appended lines too.
+			const paylines = Object.keys(effectivePaylines(spec)).length;
 			return {
 				value: paylines * top.value,
 				how: `${paylines} paylines x ${top.value}x (${top.kind}-of-a-kind ${top.symbol})`,

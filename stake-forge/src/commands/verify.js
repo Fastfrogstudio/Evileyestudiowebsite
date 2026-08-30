@@ -4,6 +4,7 @@ import chalk from 'chalk';
 import { loadGameSpec } from '../lib/loadSpec.js';
 import { buildSpecialSymbols, sortSymbols } from '../lib/taxonomy.js';
 import { hasSuperspinMode, BLANK_SYMBOL } from '../lib/mathGenerators.js';
+import { effectivePaylines } from '../lib/generators.js';
 import { getRecipe } from '../lib/behaviorRecipes.js';
 import { mathGameId } from './mathScaffold.js';
 import {
@@ -57,11 +58,10 @@ export function verify({ specPath, mathSdkDir, webSdkDir, python: pythonOverride
 			].sort(),
 			specialSymbols: buildSpecialSymbols(spec.symbols),
 			betModes: Object.keys(spec.game.betModes),
-			numPaylines: mechanic.supportsPaylines
-				? spec.paylines === 'default_20'
-					? 20
-					: Object.keys(spec.paylines).length
-				: 0,
+			// effectivePaylines, not spec.paylines — a both-ways game's engine table
+			// carries the appended mirrors, and checking against the source count
+			// fails a game that is correct.
+			numPaylines: mechanic.supportsPaylines ? Object.keys(effectivePaylines(spec)).length : 0,
 		};
 		results.push(instantiateGameConfig({ mathSdkDir, gameDir, python, expect }));
 

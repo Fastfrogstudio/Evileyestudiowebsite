@@ -759,6 +759,24 @@ function applyBoardMechanics(gameDir, spec, mechanic) {
 					`mechanic does not belong on "${mechanic.id}".`,
 			);
 		}
+
+		// A mechanic carrying per-round state needs it reset at the START of each
+		// spin, or the state leaks from one spin of a free-spin round into the
+		// next. The cascade ladder is the case that made this necessary: without
+		// the reset it climbs all round instead of per sequence, which is a
+		// different mechanic wearing the same name.
+		for (const line of definition.init ?? []) {
+			for (const method of ['run_spin', 'run_freespin']) {
+				const init = insertAfterLineInMethod(
+					gamestate,
+					method,
+					/^\s*self\.(draw_board|update_freespin)\(/,
+					[line],
+					`board:${definition.id}:init:${method}`,
+				);
+				if (init.replaced) gamestate = init.source;
+			}
+		}
 		applied.push(`${definition.name} (${sites} site${sites === 1 ? '' : 's'})`);
 	}
 
@@ -826,6 +844,11 @@ function resolveBoardMechanicConfig(definition, raw, spec) {
 			};
 		case 'wild_spawner':
 			return { ...base, count: options.count ?? 3, afterCascades: options.afterCascades ?? 4 };
+		case 'progressive_cascade_multiplier':
+			// Gonzo's own ladder as the default: 1, 2, 3, 5. Held at the top rung
+			// rather than running off the end, so a long sequence is rewarded
+			// without being unbounded.
+			return { ...base, ladder: options.ladder ?? [1, 2, 3, 5] };
 		default:
 			return base;
 	}

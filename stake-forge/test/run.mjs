@@ -41,8 +41,8 @@ import {
 	ENGINE_SPECIAL_KEYS,
 } from '../src/lib/taxonomy.js';
 import { requiredStatesForSymbol, validateBehaviors, getRecipe, BEHAVIOR_RECIPES, BOARD_LIFETIMES, LIFETIMES_SURVIVING_CASCADE } from '../src/lib/behaviorRecipes.js';
-import { buildConfigObject, buildSymbolInfoMap, buildInitialBoard } from '../src/lib/generators.js';
-import { renderPaytable, renderSpecialSymbols, renderFreespinTriggers, renderReelCsv, renderNumRows, renderBetModes, betModeCriteria, REEL_STRIP_LENGTH, SCATTER_DENSITY } from '../src/lib/mathGenerators.js';
+import { buildConfigObject, buildSymbolInfoMap, buildInitialBoard, DEFAULT_20_LINES } from '../src/lib/generators.js';
+import { renderPaytable, renderSpecialSymbols, renderFreespinTriggers, renderPaylines, renderReelCsv, renderNumRows, renderBetModes, betModeCriteria, REEL_STRIP_LENGTH, SCATTER_DENSITY } from '../src/lib/mathGenerators.js';
 import { MECHANICS, GRID_GROWTH_MODES, GRID_GROWTH_DEFAULT, GRID_CAP_DEFAULT, GLOBAL_MULT_GROWTH_MODES, GLOBAL_MULT_GROWTH_DEFAULT } from '../src/lib/mechanics.js';
 import { assertNoExtractedMaterial, matchLine } from '../src/lib/inspirationRules.js';
 import { loadGameSpec, loadAssetsManifest, SpecValidationError } from '../src/lib/loadSpec.js';
@@ -742,6 +742,34 @@ test('freespin_triggers covers every count that can physically land', () => {
 	// landable count with no entry is a KeyError mid-simulation.
 	const out = renderFreespinTriggers(specFor('lines'));
 	for (const count of [3, 4, 5]) assert.match(out, new RegExp(`\\b${count}: `));
+});
+
+test('paysBothWays appends only the mirrors that are not already paylines', () => {
+	// A right-to-left win is a left-to-right win on the reversed pattern, so
+	// both-ways is purely a payline-table change. The trap is double-paying:
+	// DEFAULT_20_LINES is a symmetric fan, so 10 patterns mirror onto themselves
+	// and 8 more mirror onto EACH OTHER — both halves of those pairs are already
+	// in the table. Only 2 mirrors are genuinely new.
+	const oneWay = renderPaylines({ game: {}, paylines: 'default_20' }, DEFAULT_20_LINES);
+	const bothWays = renderPaylines({ game: { paysBothWays: true }, paylines: 'default_20' }, DEFAULT_20_LINES);
+	const count = (rendered) => (rendered.match(/^\s+\d+:/gm) ?? []).length;
+	assert.equal(count(oneWay), 20);
+	assert.equal(count(bothWays), 22);
+});
+
+test('paysBothWays never emits the same pattern twice', () => {
+	// The regression this guards: keying the mirrors off the rendered table's
+	// PyRaw keys made `next` NaN, and skipping only self-symmetric patterns let
+	// mirror pairs through. Either way a line pays its win twice and RTP is
+	// silently inflated with nothing in the report to show it.
+	const asymmetric = { 1: [0, 0, 1, 2, 2], 2: [1, 1, 1, 1, 1], 3: [0, 1, 2, 2, 2] };
+	const rendered = renderPaylines({ game: { paysBothWays: true }, paylines: asymmetric }, {});
+	const patterns = [...rendered.matchAll(/\d+: \[([^\]]*)\]/gs)].map((m) =>
+		m[1].split(',').map((n) => n.trim()).filter(Boolean).join(','),
+	);
+	assert.equal(patterns.length, new Set(patterns).size, `duplicate payline: ${patterns.join(' | ')}`);
+	// [1,1,1,1,1] is its own mirror; the other two each gain one.
+	assert.equal(patterns.length, 5);
 });
 
 test('freespin_triggers omits the freegame table when retrigger is off', () => {

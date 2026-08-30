@@ -8,6 +8,7 @@ import { validateBehaviors } from './behaviorRecipes.js';
 import { validateScreens } from './screens.js';
 import { BOARD_MECHANICS } from './boardMechanics.js';
 import { VOLATILITY_IDS } from './optimisation.js';
+import { DEFAULT_20_LINES } from './generators.js';
 
 // Allows a single-character name: `^[a-z][a-z0-9-]*[a-z0-9]$` required at least
 // two characters, so a game called "x" was rejected as not kebab-case.
@@ -219,6 +220,69 @@ export function loadGameSpec(specPath) {
 						`512, and doubling makes the top of the ladder far more reachable than incrementing ` +
 						`does — check math:balance before trusting it.`,
 				);
+			}
+		}
+	}
+
+	// ── pays both ways ──────────────────────────────────────────────────────
+	// Lines only. ways.py counts matching symbols per reel from reel 0 and has no
+	// payline table, so there is nothing to mirror; cluster and scatter have no
+	// direction at all. Silently doing nothing on those would be worse than an
+	// error, because the spec would read as if the game paid both ways.
+	if (spec?.game?.paysBothWays) {
+		if (mechanic && mechanic.winType !== 'lines') {
+			errors.push(
+				`game.paysBothWays works on the lines mechanic only — it is implemented by appending ` +
+					`the mirrored PAYLINES, and "${mechanic.id}" has no payline table. A both-ways ways ` +
+					`game needs engine work in ways.py, which the tool does not do.`,
+			);
+		}
+
+		const source =
+			spec.paylines === 'default_20' ? DEFAULT_20_LINES : (spec.paylines ?? DEFAULT_20_LINES);
+		const patterns = Object.values(source).filter(Array.isArray);
+		const present = new Set(patterns.map((rows) => rows.join(',')));
+		const mirrors = [];
+		for (const rows of patterns) {
+			const mirrored = [...rows].reverse();
+			if (!present.has(mirrored.join(','))) mirrors.push(mirrored);
+		}
+
+		if (patterns.length && mirrors.length === 0) {
+			warnings.push(
+				`game.paysBothWays adds no paylines to this set — every pattern is either its own ` +
+					`mirror or is already paired with its mirror, so the game pays both ways already ` +
+					`and the flag changes nothing.`,
+			);
+		} else if (mirrors.length) {
+			// The claim "both ways raises the hit rate" is only true when a mirror can
+			// win on a spin no original line wins. A win needs `minKind` matching
+			// symbols FROM REEL 0, so a mirror whose first `minKind` rows match some
+			// existing line's first `minKind` rows can never win alone — the original
+			// wins on exactly the same boards. Measured on DEFAULT_20_LINES: both
+			// mirrors share their 3-reel prefix, and across 40,000 spins ZERO spins won
+			// only on a mirror. Hit rate moved x1.000; EV moved x1.100, purely from
+			// topping up wins that were already there.
+			const minKind = Math.min(
+				...(spec.symbols ?? [])
+					.filter((sym) => sym?.paytable)
+					.flatMap((sym) => Object.keys(sym.paytable).map(Number)),
+			);
+			if (Number.isFinite(minKind) && minKind > 0) {
+				const prefixes = new Set(patterns.map((rows) => rows.slice(0, minKind).join(',')));
+				const standalone = mirrors.filter(
+					(rows) => !prefixes.has(rows.slice(0, minKind).join(',')),
+				);
+				if (standalone.length === 0) {
+					warnings.push(
+						`game.paysBothWays adds ${mirrors.length} payline(s), but every one of them shares ` +
+							`its first ${minKind} reels with a line already in the table — so a mirror can ` +
+							`only ever top up a win that was already paying, never create a new winning ` +
+							`spin. Expect RTP to rise roughly in proportion to the line count and the HIT ` +
+							`RATE not to move at all. If you turned this on as a low-volatility lever it ` +
+							`will not act as one on this line set; a set that leans one direction will.`,
+					);
+				}
 			}
 		}
 	}

@@ -45,7 +45,7 @@
 
 import { getMechanic } from './mechanics.js';
 import { expandPaytable } from './taxonomy.js';
-import { DEFAULT_20_LINES } from './generators.js';
+import { effectivePaylines } from './generators.js';
 
 /** Same generator as reelDesign's, so a modelled strip is the strip that ships. */
 function seededRng(key) {
@@ -222,7 +222,10 @@ export function estimateStripEv(spec, columns, { spins = 20000, seed = 'ev' } = 
 	const rows = spec.game.reels.rows;
 	const pay = payoutTable(spec);
 	const wild = spec.symbols.find((s) => s.special?.includes('wild'))?.name ?? null;
-	const paylines = spec.paylines === 'default_20' ? DEFAULT_20_LINES : (spec.paylines ?? DEFAULT_20_LINES);
+	// effectivePaylines, not spec.paylines — a both-ways game evaluates the
+	// mirrored table, and modelling the source table instead reports an EV under
+	// what the engine will actually pay.
+	const paylines = effectivePaylines(spec);
 	const rng = seededRng(`${spec.game.name}:${seed}`);
 
 	const evaluate = {
