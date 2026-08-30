@@ -58,7 +58,8 @@ import { planSprite, spriteJson, buildFilterGraph, looksLooping, readSoundSource
 import { inspectMathPublish, collectFrontend } from '../src/commands/packageGame.js';
 import { renderStickyMath } from '../src/lib/recipes/sticky.js';
 import { renderSuperspinReelCsv, hasSuperspinMode, BLANK_SYMBOL, SUPERSPIN_PRIZE_DENSITY } from '../src/lib/mathGenerators.js';
-import { payingHitRate } from '../src/lib/optimisation.js';
+import { payingHitRate, wincapRtpAllocation, TARGET_WINCAP_HIT_RATE } from '../src/lib/optimisation.js';
+import { analyseMaxWin, boardCeiling, multiplierCeiling, symbolFrequencies, STRIP_PROFILES, renderDesignedReelCsv } from '../src/lib/reelDesign.js';
 import { addDictEntry, insertAfterLineInMethod, insertAfterImports } from '../src/lib/pyPatch.js';
 import { auditSpriteFrames, readSpriteFrames, readSpriteAssetKeys } from '../src/lib/spriteFrames.js';
 
@@ -1383,16 +1384,19 @@ test('condition RTPs sum to the bet mode RTP for every volatility profile', () =
 test('a buy-bonus mode is free spins only, and never lands in the base game', () => {
 	// A basegame distribution here meant 90% of bonus rounds were plain base
 	// spins — a 100x purchase that usually bought nothing.
-	assert.deepEqual(
-		betModeCriteria({ buyBonus: true }).map((c) => c.criteria),
-		['freegame'],
-	);
+	const buyCriteria = betModeCriteria({ buyBonus: true }).map((c) => c.criteria);
+	// The invariant is that a bought round never lands in the BASE game. It also
+	// carries a wincap distribution — every mode does — which is not a basegame
+	// round, so it does not violate this.
+	assert.ok(!buyCriteria.includes('basegame'), `buy mode has a basegame criteria: ${buyCriteria}`);
+	assert.ok(buyCriteria.includes('freegame'));
 	const plan = planOptimisation(optSpec());
 	const bonus = plan.modes.find((m) => m.name === 'bonus');
-	assert.equal(bonus.conditions.length, 1);
-	assert.equal(bonus.conditions[0].criteria, 'freegame');
+	const paying = bonus.conditions.find((c) => c.criteria !== 'wincap');
+	assert.equal(paying.criteria, 'freegame');
 	// hr="x": every round triggers, so there is no one-in-N to hit.
-	assert.equal(bonus.conditions[0].hitRate, 'x');
+	assert.equal(paying.hitRate, 'x');
+	assert.ok(!bonus.conditions.some((c) => c.criteria === 'basegame'));
 });
 
 test('a non-buy mode carries a zero-win criteria, or the RTP is unreachable', () => {
@@ -1422,6 +1426,9 @@ test('the zero-win distribution emits win_criteria, and only it does', () => {
 	for (const block of blocks) {
 		const criteria = /criteria="([^"]*)"/.exec(block)?.[1];
 		if (criteria === '0') assert.match(block, /win_criteria=0\.0/, 'zero-win has no win_criteria');
+		// The cap round pins win_criteria to the cap itself; check_repeat then
+		// re-rolls until the round pays exactly that.
+		else if (criteria === 'wincap') assert.match(block, /win_criteria=self\.wincap/);
 		else assert.doesNotMatch(block, /win_criteria=/, `${criteria} should not pin a win_criteria`);
 	}
 });
@@ -1433,7 +1440,11 @@ test('a game with no free spins puts all of the RTP in the base game', () => {
 	const free = base.conditions.find((c) => c.criteria === 'freegame');
 	assert.equal(free.rtp, 0, 'a game with no free spins cannot pay through them');
 	assert.equal(free.searchSymbol, null, 'nothing to search for without a scatter trigger');
-	assert.equal(base.conditions.find((c) => c.criteria === 'basegame').rtp, 0.965);
+	// Everything except the cap's own allocation, which is derived from the max
+	// win: 5000x at a 1-in-20M target hit rate is 0.00025 of RTP.
+	const capRtp = base.conditions.find((c) => c.criteria === 'wincap').rtp;
+	assert.equal(capRtp, 0.00025);
+	assert.equal(base.conditions.find((c) => c.criteria === 'basegame').rtp, 0.965 - capRtp);
 });
 
 test('generated Python quotes hr="x" rather than emitting a bare name', () => {
@@ -2201,6 +2212,104 @@ test('a recipe that replaces the reader decides the mult_values shape', () => {
 
 	// And the mechanic still says flat, so the override is doing real work.
 	assert.equal(MECHANICS.ways.multValuesShape, 'flat');
+});
+
+
+// ── reel design and max win ─────────────────────────────────────────────────
+
+test('the wincap RTP allocation lands on the target hit rate', () => {
+	// hit_rate = max_win / rtp_allocated. Verified against math-sdk docs (1% of
+	// RTP at 5000x = 1-in-500k) and 0_0_lines (rtp=0.001, av_win=5000 = 1-in-5M).
+	for (const maxWin of [5000, 20000, 100000]) {
+		const rtp = wincapRtpAllocation(maxWin);
+		assert.equal(Math.round(maxWin / rtp), TARGET_WINCAP_HIT_RATE, `${maxWin}x`);
+	}
+});
+
+test('the cap never eats a meaningful share of RTP', () => {
+	// An absurd max win must not starve the rest of the paytable.
+	assert.ok(wincapRtpAllocation(100_000_000) <= 0.02);
+});
+
+test('symbol frequency falls as payout rises', () => {
+	// The placeholder gave every symbol the same weight, which is why generated
+	// games had no shape — a 50x top symbol landed as often as a 0.5x low.
+	const spec = {
+		game: { name: 'f', rtp: 0.96, volatility: 'medium', reels: { count: 5, rows: [3, 3, 3, 3, 3] }, betModes: {} },
+		symbols: [
+			{ name: 'H1', special: [], paytable: { 5: 50 } },
+			{ name: 'L1', special: [], paytable: { 5: 1 } },
+		],
+	};
+	const freq = symbolFrequencies(spec);
+	assert.ok(freq.get('L1') > freq.get('H1'), 'the low symbol must be commoner than the high one');
+});
+
+test('volatility changes how steep that curve is', () => {
+	const make = (volatility) => {
+		const spec = {
+			game: { name: 'f', rtp: 0.96, volatility, reels: { count: 5, rows: [3, 3, 3, 3, 3] }, betModes: {} },
+			symbols: [
+				{ name: 'H1', special: [], paytable: { 5: 50 } },
+				{ name: 'L1', special: [], paytable: { 5: 1 } },
+			],
+		};
+		const f = symbolFrequencies(spec);
+		return f.get('L1') / f.get('H1');
+	};
+	// A high-volatility game makes its top symbol rarer relative to its lows.
+	assert.ok(make('high') > make('medium'), 'high should be steeper than medium');
+	assert.ok(make('medium') > make('low'), 'medium should be steeper than low');
+});
+
+test('the cap strip carries wild stacks tall enough to fill a reel', () => {
+	// This is what makes force_wincap terminate. Measured on the samples:
+	// BR0 is 0-0.9% wilds with stacks of 1; FRWCAP is 7-13% with stacks to 10.
+	assert.ok(STRIP_PROFILES.WCAP.wildPct > STRIP_PROFILES.BR0.wildPct * 5);
+	assert.equal(STRIP_PROFILES.WCAP.wildStack, 'full');
+	assert.ok(STRIP_PROFILES.WCAP.rows < STRIP_PROFILES.BR0.rows, 'a shorter cap strip is reached sooner');
+
+	const spec = {
+		game: { name: 'capgame', rtp: 0.96, volatility: 'medium', reels: { count: 5, rows: [3, 3, 3, 3, 3] }, betModes: {} },
+		symbols: [
+			{ name: 'H1', special: [], paytable: { 5: 50 } },
+			{ name: 'L1', special: [], paytable: { 5: 1 } },
+			{ name: 'W', special: ['wild'], paytable: { 5: 50 } },
+		],
+	};
+	const rows = renderDesignedReelCsv(spec, { stripId: 'WCAP', scatterDensity: 0 })
+		.trim().split('\n').map((r) => r.split(','));
+	for (let reel = 0; reel < 5; reel += 1) {
+		let best = 0, run = 0;
+		for (const row of rows) { run = row[reel] === 'W' ? run + 1 : 0; best = Math.max(best, run); }
+		// rows + 2 padding = a fully wild visible reel.
+		assert.ok(best >= 5, `reel ${reel} max wild stack ${best} cannot fill a padded 3-row reel`);
+	}
+});
+
+test('an unreachable max win is caught by arithmetic, not by an overnight run', () => {
+	const spec = {
+		game: { name: 'x', rtp: 0.96, mechanic: 'lines', reels: { count: 5, rows: [3, 3, 3, 3, 3] }, betModes: { base: { maxWin: 100000 } } },
+		_mechanic: MECHANICS.lines,
+		paylines: 'default_20',
+		symbols: [{ name: 'H1', special: [], paytable: { 5: 20 } }],
+	};
+	const analysis = analyseMaxWin(spec);
+	// 20 paylines x 20x = 400x, no multiplier symbol, so 400x total against 100,000x.
+	assert.equal(analysis.board.value, 400);
+	assert.equal(analysis.multiplier.value, 1);
+	assert.equal(analysis.reachable, false);
+	assert.ok(analysis.shortfall > 200);
+});
+
+test('multiplicative composition is the biggest lever on the ceiling', () => {
+	// Both patterns exist in the samples: 0_0_lines adds, 0_0_ways multiplies.
+	const base = { game: { reels: { count: 5, rows: [3, 3, 3, 3, 3] } }, symbols: [{ name: 'W', special: ['multiplier'] }] };
+	const additive = multiplierCeiling({ ...base, multiplierComposition: 'additive' });
+	const multiplicative = multiplierCeiling({ ...base, multiplierComposition: 'multiplicative' });
+	assert.equal(additive.value, 50);          // 5 reels x 10x added
+	assert.equal(multiplicative.value, 100000); // 10^5
+	assert.ok(multiplicative.value > additive.value * 100);
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

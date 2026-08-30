@@ -225,3 +225,168 @@ export function maxWinAdvice(analysis, spec) {
 const fmt = (n) => (n >= 1000 ? Math.round(n).toLocaleString('en-US') : Math.round(n * 100) / 100);
 
 export { fmt as formatMultiplier };
+
+/**
+ * Strip profiles, measured off the shipped samples rather than chosen.
+ *
+ *   strip     wild %        max wild stack     rows
+ *   BR0       0.0 - 0.9     0 - 1              219 - 251
+ *   FR0       2.4 - 6.4     3 - 5              203 - 252
+ *   FRWCAP    7.0 - 13.0    4 - 10              97 - 173
+ *
+ * The progression IS the mechanism. A max-win board needs whole reels of wilds,
+ * so the cap strip is wild-dense with stacks at least as tall as the board — on
+ * 0_0_lines' FRWCAP that is 13% wilds stacked up to 10 on a 3-row board. And it
+ * is deliberately SHORT, because check_repeat() re-rolls until the round pays
+ * exactly the cap and a shorter strip reaches that board sooner.
+ */
+export const STRIP_PROFILES = {
+	BR0: { wildPct: 0.009, wildStack: 1, rows: 220, gametype: 'basegame' },
+	FR0: { wildPct: 0.06, wildStack: 3, rows: 220, gametype: 'freegame' },
+	WCAP: { wildPct: 0.13, wildStack: 'full', rows: 100, gametype: 'basegame', cap: true },
+	FRWCAP: { wildPct: 0.13, wildStack: 'full', rows: 100, gametype: 'freegame', cap: true },
+};
+
+/**
+ * How often each symbol should appear, from what it pays.
+ *
+ * The placeholder generator gave every symbol the same weight, which is why the
+ * generated games had no shape: a top symbol paying 50x appeared exactly as
+ * often as a low paying 0.5x. Frequency has to fall as payout rises or the
+ * paytable means nothing.
+ *
+ * `1 / payout^alpha`, with alpha from the volatility profile. A LOW-volatility
+ * game wants a flatter curve (alpha near 0.4) so high symbols still land often
+ * and wins are frequent and small; an EXTREME one wants a steep curve so the top
+ * symbols are genuinely rare and the tail is long.
+ */
+export function symbolFrequencies(spec, { volatility } = {}) {
+	const profileId = volatility ?? spec.game.volatility ?? 'medium';
+	const alpha = { low: 0.4, medium: 0.7, high: 1.0 }[profileId] ?? 0.7;
+
+	const payable = spec.symbols.filter(
+		(s) => s.paytable && !s.special.includes('scatter') && !s.special.includes('prize'),
+	);
+	if (!payable.length) return new Map();
+
+	const weights = new Map();
+	for (const symbol of payable) {
+		const top = Math.max(...Object.values(symbol.paytable).map(Number).filter(Number.isFinite));
+		// A wild is scarcer than its payout alone implies — it substitutes for
+		// everything, so its real value is far above its own paytable row.
+		const scarcity = symbol.special.includes('wild') ? 3 : 1;
+		weights.set(symbol.name, 1 / (Math.pow(Math.max(top, 0.1), alpha) * scarcity));
+	}
+
+	const total = [...weights.values()].reduce((sum, w) => sum + w, 0);
+	for (const [name, w] of weights) weights.set(name, w / total);
+	return weights;
+}
+
+/**
+ * Build one strip as a per-reel column of symbol names.
+ *
+ * Wilds are PLACED in stacks rather than rolled, for the same reason scatters
+ * are: a max-win board needs a whole reel of wilds, and leaving that to chance
+ * on a 13%-wild strip still almost never produces a clean full column.
+ */
+export function designStrip(spec, { profile, seed, rng }) {
+	const reels = spec.game.reels.count;
+	const rows = spec.game.reels.rows;
+	const length = profile.rows;
+
+	const freq = symbolFrequencies(spec);
+	const wildName = spec.symbols.find((s) => s.special.includes('wild'))?.name ?? null;
+
+	// The non-wild pool, sized to the frequency table.
+	const pool = [];
+	for (const [name, share] of freq) {
+		if (name === wildName) continue;
+		const count = Math.max(1, Math.round(share * 1000));
+		for (let i = 0; i < count; i += 1) pool.push(name);
+	}
+	if (!pool.length) throw new Error('no payable non-wild symbols to build a strip from');
+
+	const columns = Array.from({ length: reels }, () =>
+		Array.from({ length }, () => pool[Math.floor(rng() * pool.length)]),
+	);
+
+	// ── wild stacks ──────────────────────────────────────────────────────────
+	if (wildName && profile.wildPct > 0) {
+		for (let reel = 0; reel < reels; reel += 1) {
+			const stack =
+				profile.wildStack === 'full' ? rows[reel] + 2 : Math.min(profile.wildStack, rows[reel]);
+			const wilds = Math.max(stack, Math.round(length * profile.wildPct));
+			const stacks = Math.max(1, Math.floor(wilds / stack));
+			const slot = Math.floor(length / stacks);
+			for (let n = 0; n < stacks; n += 1) {
+				const at = (n * slot + Math.floor(rng() * Math.max(1, slot - stack))) % length;
+				for (let k = 0; k < stack; k += 1) columns[reel][(at + k) % length] = wildName;
+			}
+		}
+	}
+
+	return columns;
+}
+
+/** Deterministic per (game, strip), so a re-run produces no spurious diff. */
+function seededRng(key) {
+	let h = 2166136261;
+	for (const ch of key) {
+		h ^= ch.charCodeAt(0);
+		h = Math.imul(h, 16777619);
+	}
+	return () => {
+		h ^= h << 13;
+		h ^= h >>> 17;
+		h ^= h << 5;
+		return ((h >>> 0) % 100000) / 100000;
+	};
+}
+
+/**
+ * A designed reel strip as CSV.
+ *
+ * Replaces the uniform-random placeholder. Two behaviours are carried over
+ * verbatim because both were learned the hard way:
+ *
+ *   Scatters are PLACED, never rolled. Board.force_special_board() loops until
+ *   the board holds EXACTLY the requested trigger count, so every reel must
+ *   carry at least one scatter and no two may fall inside one visible window —
+ *   otherwise that loop can never reach its target and hangs with no error.
+ *
+ *   Prize symbols never appear on an ordinary strip. Nothing in a normal spin
+ *   collects a prize, so one landing there looks valuable and pays nothing.
+ */
+export function renderDesignedReelCsv(spec, { stripId = 'BR0', scatterDensity = 0.014 } = {}) {
+	const profile = STRIP_PROFILES[stripId];
+	if (!profile) throw new Error(`unknown strip "${stripId}" — expected one of ${Object.keys(STRIP_PROFILES).join(', ')}`);
+
+	const rng = seededRng(`${spec.game.name}:${stripId}`);
+	const columns = designStrip(spec, { profile, rng });
+	const length = profile.rows;
+	const reels = spec.game.reels.count;
+
+	const scatterNames = spec.symbols.filter((s) => s.special.includes('scatter')).map((s) => s.name);
+	if (scatterNames.length) {
+		const window = Math.max(...spec.game.reels.rows) + 2;
+		const perReel = Math.max(2, Math.round(length * scatterDensity));
+		const slot = Math.floor(length / perReel);
+		if (slot <= window) {
+			throw new Error(
+				`strip "${stripId}" of ${length} rows cannot hold ${perReel} spaced scatters for a ` +
+					`${window - 2}-row board — raise STRIP_PROFILES.${stripId}.rows`,
+			);
+		}
+		for (let reel = 0; reel < reels; reel += 1) {
+			for (let n = 0; n < perReel; n += 1) {
+				const at = (n * slot + Math.floor(rng() * (slot - window))) % length;
+				columns[reel][at] = scatterNames[Math.floor(rng() * scatterNames.length)];
+			}
+		}
+	}
+
+	const rows = [];
+	for (let i = 0; i < length; i += 1) rows.push(columns.map((col) => col[i]).join(','));
+	return `${rows.join('\n')}\n`;
+}

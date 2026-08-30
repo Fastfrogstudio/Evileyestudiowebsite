@@ -18,6 +18,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 
+import { defaultPaytable } from '../src/lib/taxonomy.js';
+import { MECHANICS as MECHANIC_PROFILES } from '../src/lib/mechanics.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FORGE = path.join(__dirname, '..', 'bin', 'forge.js');
 const TEMPLATE = path.join(__dirname, '..', 'templates', 'game-spec.example.yaml');
@@ -79,6 +82,21 @@ for (const [mechanic, cfg] of Object.entries(MECHANICS)) {
 	if (cfg.requiredSymbols) {
 		// apps/scatter's components reference a symbol literally named 'M'.
 		spec.symbols.push(...cfg.requiredSymbols);
+	}
+
+	// Paytables are MECHANIC-SHAPED. The template is lines-shaped (kinds 3/4/5);
+	// cluster pays by cluster SIZE from 5 and scatter from 8, both as ranges. A
+	// lines-shaped table on those is silently broken — their evaluators guard the
+	// lookup, so every group above the table's top entry pays ZERO with no error.
+	const boardCells = cfg.rows.reduce((sum, r) => sum + r, 0);
+	const ranks = { H1: 0, H2: 1, H3: 2, H4: 3, L1: 4, L2: 5, L3: 6, L4: 7, L5: 8, W: 0, M: 6 };
+	for (const symbol of spec.symbols) {
+		if (!symbol.paytable) continue;
+		symbol.paytable = defaultPaytable({
+			mechanic: MECHANIC_PROFILES[mechanic],
+			rank: ranks[symbol.name] ?? 6,
+			boardCells,
+		});
 	}
 	const specPath = path.join(workDir, `spec-${mechanic}.yaml`);
 	fs.writeFileSync(specPath, YAML.stringify(spec), 'utf8');

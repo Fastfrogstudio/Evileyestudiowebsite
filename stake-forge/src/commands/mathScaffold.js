@@ -3,6 +3,7 @@ import path from 'node:path';
 import chalk from 'chalk';
 
 import { loadGameSpec } from '../lib/loadSpec.js';
+import { renderDesignedReelCsv } from '../lib/reelDesign.js';
 import { getMechanic } from '../lib/mechanics.js';
 import { DEFAULT_20_LINES } from '../lib/generators.js';
 import { getRecipe, isGenerable } from '../lib/behaviorRecipes.js';
@@ -209,9 +210,12 @@ function writeReels(gameDir, spec) {
 
 	const written = [];
 	for (const strip of strips) {
+		// Designed strips, not uniform noise: frequency falls as payout rises, and
+		// the cap strips carry wild stacks tall enough to fill a whole reel. That
+		// last part is what makes force_wincap terminate — see reelDesign.js.
 		const contents = strip.startsWith('SS')
 			? renderSuperspinReelCsv(spec, { seed: strip })
-			: renderReelCsv(spec, { seed: strip });
+			: renderDesignedReelCsv(spec, { stripId: strip });
 		fs.writeFileSync(path.join(reelsDir, `${strip}.csv`), contents, 'utf8');
 		written.push(`${strip}.csv`);
 	}

@@ -295,9 +295,34 @@ export function betModeCriteria(mode) {
 			{ criteria: 'basegame', quota: 0.9, forceFreegame: false, reels: 'SSR' },
 		];
 	}
+	// The WINCAP criteria is back.
+	//
+	// It was removed because check_repeat() re-rolls until the round pays EXACTLY
+	// max_win, and uniform-random placeholder strips could never produce that
+	// board — the simulation span forever with only a warning. Designed cap
+	// strips carry wild stacks tall enough to fill a reel, so the board is
+	// reachable and the loop terminates. See reelDesign.js STRIP_PROFILES.
+	//
+	// Its quota is tiny because its RTP allocation is tiny: the optimiser derives
+	// hit_rate = max_win / rtp_allocated, so 0.1% of RTP at 5000x is 1-in-5M.
+	// force_freegame is TRUE, and that is not incidental. assign_mult_property
+	// gates on `gametype != basegame`, so wild multipliers only exist in the free
+	// game — a base-game board tops out at the raw paytable and can never reach a
+	// five-figure cap. 0_0_lines' own wincap_condition forces the free game and
+	// weights the cap strip there (FR0:1, WCAP:5), which is what is copied here.
+	const wincap = {
+		criteria: 'wincap',
+		quota: 0.001,
+		forceWincap: true,
+		forceFreegame: true,
+		winCriteria: 'wincap',
+		capReels: true,
+	};
+
 	return mode.buyBonus
-		? [{ criteria: 'freegame', quota: 1.0, forceFreegame: true }]
+		? [wincap, { criteria: 'freegame', quota: 0.999, forceFreegame: true }]
 		: [
+				wincap,
 				{ criteria: 'freegame', quota: 0.1, forceFreegame: true },
 				{ criteria: '0', quota: 0.4, forceFreegame: false, winCriteria: 0.0 },
 				{ criteria: 'basegame', quota: 0.5, forceFreegame: false },
@@ -327,13 +352,40 @@ export function renderBetModes(spec, { conditionKeys = [] } = {}) {
 			? allConditions.map((k) => `                            ${k}`).join('\n') + '\n'
 			: '';
 		const distributions = betModeCriteria(mode)
-			.map(({ criteria, quota, forceFreegame, winCriteria, reels }) => {
+			.map(({ criteria, quota, forceFreegame, forceWincap, winCriteria, reels, capReels }) => {
+				// The wincap round needs its OWN conditions, not the shared ones.
+				//
+				// evaluate_wincap fires on running_bet_win >= wincap, which
+				// ACCUMULATES across the whole free-spin round — so reaching the cap
+				// is about a rich ROUND, not one maximal board. 0_0_lines does two
+				// things to make that happen, and both are copied here:
+				//
+				//   mult_values are INVERTED. Its normal freegame weights favour
+				//   small multipliers ({2:60, 3:80 ... 50:5}); its wincap weights
+				//   favour large ones ({2:10, 3:20 ... 10:100, 20:90, 50:50}).
+				//
+				//   scatter_triggers favour HIGH counts ({4:1, 5:2}), so the forced
+				//   round is awarded more free spins to accumulate over.
+				//
+				// Without these the re-roll never reaches the cap and the simulation
+				// spins forever with only a warning.
+				const capConditions = forceWincap
+					? [
+							'"scatter_triggers": {4: 1, 5: 2},',
+							'"mult_values": {self.basegame_type: {1: 1}, self.freegame_type: {2: 10, 3: 20, 5: 60, 10: 100, 20: 90, 50: 50}},',
+						]
+					: null;
 				// A freegame distribution has to weight the free-game reel set too;
 				// a basegame one must not, or the board is drawn from strips the
 				// base game never uses. A superspin mode names its own strip: it
 				// draws from the respin reels under the BASE gametype, because that
 				// is the gametype run_superspin() runs in.
-				const reelWeights = reels
+				const reelWeights = capReels
+					? `{
+                                self.basegame_type: {"BR0": 1},
+                                self.freegame_type: {"FR0": 1, "WCAP": 5},
+                            }`
+					: reels
 					? `{self.basegame_type: {"${reels}": 1}}`
 					: forceFreegame
 						? `{
@@ -344,13 +396,18 @@ export function renderBetModes(spec, { conditionKeys = [] } = {}) {
 				// win_criteria pins what the round must pay. Only the zero-win
 				// distribution sets it here; a wincap one would too, and is left out
 				// for the reason spelled out above the distributions.
-				const win = winCriteria === undefined ? '' : `\n                        win_criteria=${winCriteria.toFixed(1)},`;
+				const win =
+					winCriteria === undefined
+						? ''
+						: winCriteria === 'wincap'
+							? `\n                        win_criteria=self.wincap,`
+							: `\n                        win_criteria=${winCriteria.toFixed(1)},`;
 				return `                    Distribution(
                         criteria="${criteria}",
                         quota=${quota},${win}
                         conditions={
                             "reel_weights": ${reelWeights},
-${extraConditions}                            "force_wincap": False,
+${capConditions ? capConditions.map((k) => `                            ${k}`).join('\n') + '\n' : extraConditions}                            "force_wincap": ${forceWincap ? 'True' : 'False'},
                             "force_freegame": ${forceFreegame ? 'True' : 'False'},
                         },
                     ),`;

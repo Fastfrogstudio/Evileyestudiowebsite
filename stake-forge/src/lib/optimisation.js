@@ -79,6 +79,33 @@ export const VOLATILITY_PROFILES = {
 
 export const VOLATILITY_IDS = Object.keys(VOLATILITY_PROFILES);
 
+
+/**
+ * How much RTP to allocate to the max win, derived rather than guessed.
+ *
+ * The optimiser turns an RTP allocation into a frequency:
+ *
+ *     hit_rate = max_win / rtp_allocated
+ *
+ * so choosing the allocation IS choosing how often the cap is hit. Stake's
+ * approval checklist asks for the max win to be obtainable at roughly
+ * 1-in-20,000,000, so the allocation falls straight out of the target:
+ *
+ *     5,000x   -> 0.00025  (0.025% of RTP)
+ *     100,000x -> 0.005    (0.5% of RTP)
+ *
+ * Verified against math-sdk docs (1% of RTP at 5000x = 1-in-500k) and against
+ * 0_0_lines' own setup (rtp=0.001 at av_win=5000 = 1-in-5M).
+ */
+export const TARGET_WINCAP_HIT_RATE = 20_000_000;
+
+export function wincapRtpAllocation(maxWin, { hitRate = TARGET_WINCAP_HIT_RATE } = {}) {
+	const raw = maxWin / hitRate;
+	// Never let the cap eat a meaningful share of the game's RTP: above ~2% the
+	// rest of the paytable has nothing left to pay with.
+	return Math.min(Math.round(raw * 1e5) / 1e5, 0.02);
+}
+
 /**
  * Split a mode's RTP across its criteria so the parts sum EXACTLY to the whole.
  *
@@ -160,15 +187,37 @@ export function planOptimisation(spec, { volatility } = {}) {
 				{ criteria: '0', rtp: 0, avWin: 0, searchPayout: 0, kind: 'zero' },
 				{ criteria: 'basegame', rtp, hitRate: payingHitRate(distributions), kind: 'basegame' },
 			];
-		} else if (criteria.length === 1) {
+		} else if (mode.buyBonus) {
+			// Keyed off the MODE, not the criteria count. That count used to be 1 for
+			// a buy-bonus mode, but adding the wincap distribution made it 2 and this
+			// branch silently stopped matching — the plan-time guard caught it.
 			// hr="x" is how 0_0_lines' bonus mode expresses "no hit-rate target".
 			// A bonus buy triggers every round by definition, so there is nothing
 			// for the optimiser to hit one-in-N of.
-			conditions = [{ criteria: criteria[0], rtp, hitRate: 'x', kind: 'freegame' }];
-		} else {
-			const share = hasFreeSpins ? profile.freegameShare : 0;
-			const [freeRtp, baseRtp] = splitRtp(rtp, [share, 1 - share]);
+			const capRtp = wincapRtpAllocation(mode.maxWin ?? 0);
 			conditions = [
+				{ criteria: 'wincap', rtp: capRtp, avWin: mode.maxWin, searchPayout: mode.maxWin, kind: 'wincap' },
+				{
+					criteria: criteria.find((c) => c !== 'wincap') ?? 'freegame',
+					rtp: Math.round((rtp - capRtp) * 1e5) / 1e5,
+					hitRate: 'x',
+					kind: 'freegame',
+				},
+			];
+		} else {
+			// The cap takes its allocation first; everything else splits what is left.
+			const capRtp = wincapRtpAllocation(mode.maxWin ?? 0);
+			const rest = Math.round((rtp - capRtp) * 1e5) / 1e5;
+			const share = hasFreeSpins ? profile.freegameShare : 0;
+			const [freeRtp, baseRtp] = splitRtp(rest, [share, 1 - share]);
+			conditions = [
+				{
+					criteria: 'wincap',
+					rtp: capRtp,
+					avWin: mode.maxWin,
+					searchPayout: mode.maxWin,
+					kind: 'wincap',
+				},
 				{
 					criteria: 'freegame',
 					rtp: freeRtp,
@@ -241,7 +290,7 @@ function scalingFor(conditions, profile, mode) {
 	for (const condition of conditions) {
 		// Nothing to shape in the zero-win criteria: every round in it pays zero,
 		// so a win_range scaling factor has nothing to apply to.
-		if (condition.kind === 'zero') continue;
+		if (condition.kind === 'zero' || condition.kind === 'wincap') continue;
 		if (condition.kind === 'basegame') {
 			out.push(
 				{ criteria: 'basegame', scale_factor: 1.2, win_range: [1, 2], probability: 1.0 },
