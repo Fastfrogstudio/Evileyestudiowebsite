@@ -3,7 +3,8 @@ import path from 'node:path';
 import chalk from 'chalk';
 
 import { loadGameSpec } from '../lib/loadSpec.js';
-import { renderDesignedReelCsv } from '../lib/reelDesign.js';
+import { renderDesignedReelCsv, multiplierLadder, renderLadder } from '../lib/reelDesign.js';
+import { balanceSpec } from '../lib/mathBalance.js';
 import { getMechanic } from '../lib/mechanics.js';
 import { DEFAULT_20_LINES } from '../lib/generators.js';
 import { getRecipe, isGenerable } from '../lib/behaviorRecipes.js';
@@ -109,15 +110,18 @@ function patchGameConfig(gameDir, spec, mechanic, { recipes }) {
 	//
 	// So: a recipe that declares a shape wins over the mechanic's.
 	const hasMultiplierSymbol = spec.symbols.some((s) => s.special.includes('multiplier'));
+	// Computed unconditionally: the wincap condition emits its own mult_values and
+	// needs the same shape even when no ordinary condition does.
+	const recipeShape = recipes.map((r) => r.emitted?.multValuesShape).find((v) => v !== undefined);
+	const shape = recipeShape ?? mechanic.multValuesShape;
 	if (hasMultiplierSymbol) {
-		const recipeShape = recipes
-			.map((r) => r.emitted?.multValuesShape)
-			.find((shape) => shape !== undefined);
-		const shape = recipeShape ?? mechanic.multValuesShape;
+		// The ladder is chosen from the mechanic and the volatility, not fixed —
+		// a compounding mechanic needs a far shorter one. See multiplierLadder.
+		const ladder = renderLadder(multiplierLadder(spec, mechanic));
 		conditionKeys.push(
 			shape === 'flat'
-				? '"mult_values": {1: 20, 2: 50, 3: 80, 5: 40, 10: 10},'
-				: '"mult_values": {self.basegame_type: {1: 1}, self.freegame_type: {2: 100, 3: 50, 5: 20, 10: 5}},',
+				? `"mult_values": ${ladder},`
+				: `"mult_values": {self.basegame_type: {1: 1}, self.freegame_type: ${ladder}},`,
 		);
 	}
 
@@ -154,7 +158,7 @@ function patchGameConfig(gameDir, spec, mechanic, { recipes }) {
 		['self.num_rows', renderNumRows(spec)],
 		['self.paytable', renderPaytable(spec)],
 		['self.special_symbols', renderSpecialSymbols(spec)],
-		['self.bet_modes', renderBetModes(spec, { conditionKeys: [...new Set(conditionKeys)] })],
+		['self.bet_modes', renderBetModes(spec, { conditionKeys: [...new Set(conditionKeys)], multValuesShape: shape })],
 	];
 
 	if (mechanic.supportsPaylines) {
@@ -193,7 +197,7 @@ function patchGameConfig(gameDir, spec, mechanic, { recipes }) {
  * they carry the SAMPLE's symbol names, and Config.validate_reel_symbols()
  * rejects any symbol not declared in this spec.
  */
-function writeReels(gameDir, spec) {
+function writeReels(gameDir, spec, { alpha } = {}) {
 	const reelsDir = path.join(gameDir, 'reels');
 	fs.ensureDirSync(reelsDir);
 	for (const file of fs.readdirSync(reelsDir)) {
@@ -215,7 +219,7 @@ function writeReels(gameDir, spec) {
 		// last part is what makes force_wincap terminate — see reelDesign.js.
 		const contents = strip.startsWith('SS')
 			? renderSuperspinReelCsv(spec, { seed: strip })
-			: renderDesignedReelCsv(spec, { stripId: strip });
+			: renderDesignedReelCsv(spec, { stripId: strip, alpha });
 		fs.writeFileSync(path.join(reelsDir, `${strip}.csv`), contents, 'utf8');
 		written.push(`${strip}.csv`);
 	}
@@ -428,6 +432,91 @@ function applyConfigPatches(gameDir, patches) {
 	fs.writeFileSync(file, source, 'utf8');
 }
 
+
+/** Register "WCAP" -> FRWCAP.csv in game_config.py's reels dict if it is absent. */
+function ensureCapReelKey(gameDir) {
+	const file = path.join(gameDir, 'game_config.py');
+	const source = fs.readFileSync(file, 'utf8');
+	const result = addDictEntry(source, 'reels', 'WCAP', '"FRWCAP.csv"');
+	if (result.added) fs.writeFileSync(file, result.source, 'utf8');
+	return result.added;
+}
+
+/**
+ * Wire the spec's multiplier strategy into the generated game.
+ *
+ * Two separate things, because they live in different files and only one of
+ * them exists by default:
+ *
+ *   multiplierStrategy   The evaluators take `multiplier_method` and default it
+ *                        to "symbol" (lines.py:33). No sample overrides it, so
+ *                        symbol multipliers always sum. Passing "combined" is
+ *                        what applies the global multiplier on top.
+ *
+ *   globalMultiplierPerSpin  NOTHING calls update_global_mult() by default — of
+ *                        all the samples only 0_0_scatter does, once per tumble.
+ *                        Without generating the call the global multiplier sits
+ *                        at 1 forever and "combined" buys nothing, which is the
+ *                        kind of silently-inert setting worth refusing to ship.
+ */
+function applyMultiplierStrategy(gameDir, spec) {
+	const strategy = spec.game.multiplierStrategy ?? 'symbol';
+	const applied = [];
+
+	const mechanic = spec._mechanic ?? getMechanic(spec.game.mechanic);
+	const param = mechanic.multiplierParam;
+
+	if (strategy !== 'symbol' && param) {
+		const file = path.join(gameDir, 'game_executables.py');
+		if (fs.existsSync(file)) {
+			const source = fs.readFileSync(file, 'utf8');
+			// Argument ORDER differs between evaluators — lines takes
+			// (self.board, self.config, ...) and ways takes (self.config, self.board, ...)
+			// — so match either, and never double-apply.
+			// Argument ORDER differs between evaluators — lines takes
+			// (self.board, self.config, ...) and ways takes (self.config, self.board)
+			// — and the ways call has no trailing comma at all, so match both the
+			// "more args follow" and the "call ends here" shapes. The lookahead
+			// stops a second run double-applying it.
+			const patched = source.replace(
+				new RegExp(
+					`(\\.\\w+\\(\\s*self\\.(?:board|config),\\s*self\\.(?:board|config))(\\s*[,)])(?![^)]*${param})`,
+					'g',
+				),
+				(match, head, tail) =>
+					tail.trim() === ')'
+						? `${head}, ${param}="${strategy}")`
+						: `${head}, ${param}="${strategy}",`,
+			);
+			if (patched !== source) {
+				fs.writeFileSync(file, patched, 'utf8');
+				applied.push(`${param}="${strategy}"`);
+			}
+		}
+	}
+
+	if (spec.game.globalMultiplierPerSpin) {
+		const file = path.join(gameDir, 'gamestate.py');
+		let source = fs.readFileSync(file, 'utf8');
+		const result = prependToMethod(
+			source,
+			'run_freespin',
+			['self.update_global_mult()'],
+			'multiplier:global_per_spin',
+		);
+		if (!result.replaced) {
+			throw new Error(
+				'gamestate.py has no run_freespin() to increment the global multiplier in — ' +
+					'globalMultiplierPerSpin needs a free-spin round.',
+			);
+		}
+		fs.writeFileSync(file, result.source, 'utf8');
+		applied.push('update_global_mult() per free spin');
+	}
+
+	return applied;
+}
+
 /** Apply the math half of every generable behavior recipe. */
 function applyRecipes(gameDir, spec) {
 	const results = [];
@@ -500,7 +589,15 @@ export function mathScaffold({ specPath, mathSdkDir, force }) {
 	const gameDir = copySample(mathSdkDir, mechanic.mathSample, gameId, { force });
 	console.log(chalk.green('✓'), `copied games/${mechanic.mathSample} -> games/${gameId}`);
 
+	// The cap strip's registered KEY differs per sample — 0_0_lines registers
+	// "WCAP": "FRWCAP.csv" while 0_0_ways registers "FRWCAP": "FRWCAP.csv" for the
+	// same file. The wincap distribution has to name one of them, so rather than
+	// depend on which sample this game was cloned from, guarantee the canonical
+	// key exists. Without it the simulation dies with KeyError on the first round.
+	ensureCapReelKey(gameDir);
+
 	const recipeResults = applyRecipes(gameDir, spec);
+	const multiplierEdits = applyMultiplierStrategy(gameDir, spec);
 	for (const r of recipeResults) {
 		if (r.action === 'generated') {
 			console.log(
@@ -535,11 +632,40 @@ export function mathScaffold({ specPath, mathSdkDir, force }) {
 		);
 	}
 
-	const reels = writeReels(gameDir, spec);
+	// Calibrate the strip frequencies against the target RTP before writing them.
+	// The volatility profile's own alpha only sets the SHAPE of the payout curve;
+	// it knows nothing about the board geometry or the size of the symbol set, and
+	// on a 5x4 ways board that gap was a factor of 140. balanceSpec measures what
+	// the strip actually pays and picks the alpha that lands closest.
+	const balance = balanceSpec(spec);
+	const reels = writeReels(gameDir, spec, { alpha: balance.calibrated.alpha });
 	console.log(
 		chalk.green('✓'),
-		`wrote ${reels.length} PLACEHOLDER reel strips (${reels.join(', ')}) — not real math`,
+		`wrote ${reels.length} designed reel strips (${reels.join(', ')})`,
 	);
+	console.log(
+		chalk.cyan('  ·'),
+		`calibrated to alpha ${balance.calibrated.alpha}: base game models ` +
+			`${balance.calibrated.ev.toFixed(3)}x per spin against a ${balance.target.baseEv} target ` +
+			`(${balance.ratio.toFixed(2)}x)`,
+	);
+	if (!balance.inBand) {
+		// Loud, because the alternative is finding out an hour later when the Rust
+		// optimiser fails to converge and says nothing about paytables.
+		console.log(
+			chalk.yellow('  !'),
+			`this paytable is ${balance.ratio.toFixed(1)}x off what the board can pay at ` +
+				`${(spec.game.rtp * 100).toFixed(1)}% RTP — the optimiser will not converge.`,
+		);
+		for (const finding of balance.findings) console.log(chalk.yellow('    ·'), finding);
+		console.log(
+			chalk.yellow('    ·'),
+			`Fix before simulating: forge math:balance --spec ${path.basename(specPath)} --apply`,
+		);
+	}
+	if (multiplierEdits.length) {
+		console.log(chalk.green('✓'), `multipliers: ${multiplierEdits.join(', ')}`);
+	}
 
 	console.log(chalk.bold.cyan('\nNext:'));
 	console.log(`  forge verify --spec ${path.basename(specPath)} --math-sdk ${mathSdkDir}`);

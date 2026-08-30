@@ -111,36 +111,96 @@ export function boardCeiling(spec) {
 /**
  * The most the multipliers can add on top of one board.
  *
- * How multipliers COMPOSE is the single biggest lever on max win, and the SDK
- * samples contain both patterns: 0_0_lines ADDS wild multipliers together, while
- * 0_0_ways MULTIPLIES them. Two 5x wilds are worth 10x under one rule and 25x
- * under the other, and the gap compounds brutally across a free-spin round.
+ * ── Corrected against the engine, having first got this wrong ───────────────
+ * There is no free choice between "additive" and "multiplicative" composition.
+ * src/wins/multiplier_strategy.py offers exactly three strategies, and symbol
+ * multipliers ALWAYS ADD:
+ *
+ *   global    win x global_multiplier
+ *   symbol    win x SUM(symbol multipliers on winning positions), floored at 1
+ *   combined  symbol sum, then x global
+ *
+ * cluster.py and scatter.py do the same summing inline (`cluster_mult += ...`).
+ *
+ * The one genuinely multiplicative case is WAYS under its `symbol` strategy, and
+ * it works by a different route: ways.py adds the multiplier's VALUE to that
+ * reel's symbol count rather than 1, and ways multiply across reels — so a 5x
+ * symbol on each of five reels compounds. Its own comment says so: "multipliers
+ * on subsequent reels multiply (not add, like in lines games)".
+ *
+ * Ways' OTHER two strategies do not compound, and reading the compounding
+ * comment as if it covered all three is a mistake worth naming, because it sends
+ * you looking for a runaway multiplier that is not there. Under `board`
+ * (ways.py:87) each multiplier adds into board_mult_count and the win is scaled
+ * by that SUM; under `global` the symbol multipliers are ignored entirely and
+ * only the round's global multiplier applies. So a ways game set to `board` sums
+ * exactly like a lines game does.
+ *
+ * The uncapped lever on every mechanic is the GLOBAL multiplier.
+ * executables.py:104 is `self.global_multiplier += 1` with no ceiling, called
+ * once per free spin — so a 20-spin feature reaches 20x on its own.
  */
+export const MULTIPLIER_STRATEGIES = ['symbol', 'global', 'combined'];
+
 export function multiplierCeiling(spec) {
-	const values = spec.multiplierValues ?? [];
+	const mechanic = spec._mechanic ?? (spec.game?.mechanic ? getMechanic(spec.game.mechanic) : null);
+	// Both spellings, because the spec carries these under `game:` while callers
+	// exploring alternatives (maxWinAdvice below) spread them at the top level.
+	// Reading only the top-level one silently defaulted every game to "symbol",
+	// which reported a ways game set to "board" as compounding when it sums.
+	const strategy = spec.multiplierStrategy ?? spec.game?.multiplierStrategy ?? 'symbol';
+	const globalPerSpin = spec.globalMultiplierPerSpin ?? spec.game?.globalMultiplierPerSpin;
 	const hasMultiplierSymbol = spec.symbols.some((s) => s.special.includes('multiplier'));
-	if (!hasMultiplierSymbol && !values.length) {
-		return { value: 1, how: 'no multiplier symbol — nothing multiplies the board' };
+	const ladder = spec.multiplierValues?.length ? spec.multiplierValues : [2, 3, 5, 10];
+	const best = Math.max(...ladder);
+	const reels = spec.game.reels.count;
+	const cells = spec.game.reels.rows.reduce((sum, r) => sum + r, 0);
+
+	// The global multiplier climbs by 1, uncapped — but ONLY if something calls
+	// update_global_mult(). Nothing does by default: of all the samples only
+	// 0_0_scatter calls it, once per tumble. So crediting it unconditionally
+	// would be crediting a multiplier this game never increments, which is
+	// exactly the kind of optimistic ceiling that sends you hunting for a max
+	// win the game cannot produce. It counts only when the spec asks for it.
+	const spins = spec.freeSpins?.awardedSpins ?? 0;
+	const globalMax = globalPerSpin && spins > 0 ? spins : 1;
+
+	let symbolPart = 1;
+	let how = 'no multiplier symbol';
+	if (hasMultiplierSymbol) {
+		// Compounding is specific to ways' `symbol` strategy — see the note above.
+		// Every other combination sums.
+		if (mechanic?.winType === 'ways' && strategy === 'symbol') {
+			symbolPart = Math.pow(best, reels);
+			how = `${best}x on each of ${reels} reels, compounding through the ways count (${best}^${reels})`;
+		} else {
+			// Summing, so the ceiling is the ladder top times HOW MANY positions can
+			// contribute — and that count is per-evaluator, not a constant:
+			//
+			//   lines        apply_mult sums over one payline's positions, so one
+			//                per reel is the most a single win can collect
+			//   ways/board   board_mult_count sums over every winning position on
+			//                the board (ways.py:78, :88), so the whole grid counts
+			//   cluster      cluster_mult sums over the cluster, up to the grid
+			//   scatter      the same, position being irrelevant to it
+			const positions = mechanic?.winType === 'lines' ? reels : cells;
+			symbolPart = best * positions;
+			how =
+				`${positions} positions x ${best}x summed (symbol multipliers ADD under the ` +
+				`"${strategy}" strategy on ${mechanic?.winType ?? 'this'} games)`;
+		}
 	}
 
-	// Default ladder matches what the scaffolder emits into mult_values.
-	const ladder = values.length ? values : [2, 3, 5, 10];
-	const best = Math.max(...ladder);
-	const composition = spec.multiplierComposition ?? 'additive';
-
-	// How many can be in play at once: at most one per reel.
-	const slots = spec.game.reels.count;
-
-	if (composition === 'multiplicative') {
+	if (strategy === 'global') {
+		return { value: globalMax, how: `global multiplier reaching ${globalMax}x over ${spins} free spins` };
+	}
+	if (strategy === 'combined') {
 		return {
-			value: Math.pow(best, slots),
-			how: `${slots} x ${best}x multiplied together (${best}^${slots})`,
+			value: symbolPart * globalMax,
+			how: `${how}, then x a global multiplier reaching ${globalMax}x`,
 		};
 	}
-	return {
-		value: best * slots,
-		how: `${slots} x ${best}x added together`,
-	};
+	return { value: symbolPart, how };
 }
 
 /**
@@ -154,6 +214,13 @@ export function multiplierCeiling(spec) {
 export function analyseMaxWin(spec, { maxWin } = {}) {
 	const board = boardCeiling(spec);
 	const multiplier = multiplierCeiling(spec);
+	// One board. A tumbling game accumulates across cascades within a single
+	// round, and evaluate_wincap tests the RUNNING round total, so a cascading
+	// game reaches its cap through a rich sequence rather than one maximal board.
+	// Crediting a fixed number of cascades here would be inventing one; instead
+	// the fact is reported so an unreachable-looking cascading game is read
+	// correctly rather than "fixed" by inflating its paytable.
+	const cascades = Boolean(spec.tumble ?? spec.game?.tumble ?? spec._mechanic?.tumbles);
 	const ceiling = board.value * multiplier.value;
 
 	const target =
@@ -173,6 +240,10 @@ export function analyseMaxWin(spec, { maxWin } = {}) {
 		multiplier,
 		reachable,
 		headroom,
+		/** True when the round can accumulate across cascades, so `ceiling` is a
+		 *  per-board figure and the real round ceiling is higher by an unknown
+		 *  factor. Reported, not guessed at. */
+		cascades,
 		// Below this, the wincap re-roll is likely to be impractically slow even
 		// though it is not strictly impossible.
 		comfortable: headroom >= 2,
@@ -189,34 +260,74 @@ export function analyseMaxWin(spec, { maxWin } = {}) {
 export function maxWinAdvice(analysis, spec) {
 	if (analysis.reachable && analysis.comfortable) return [];
 
-    const advice = [];
-	const need = analysis.shortfall || 2 / analysis.headroom;
+	const advice = [];
+	const mechanic = spec._mechanic ?? (spec.game?.mechanic ? getMechanic(spec.game.mechanic) : null);
+	const strategy = spec.multiplierStrategy ?? spec.game?.multiplierStrategy ?? 'symbol';
 
-	const composition = spec.multiplierComposition ?? 'additive';
-	if (composition === 'additive' && analysis.multiplier.value > 1) {
-		const multiplicative = multiplierCeiling({ ...spec, multiplierComposition: 'multiplicative' });
+	if (!spec.symbols.some((s) => s.special.includes('multiplier'))) {
 		advice.push(
-			`Switch multiplierComposition to "multiplicative" — ${analysis.multiplier.how} becomes ` +
-				`${multiplicative.how}, taking the ceiling from ${fmt(analysis.ceiling)}x to ` +
-				`${fmt(analysis.board.value * multiplicative.value)}x. This is the single biggest lever, ` +
-				`and both patterns exist in the SDK samples (0_0_lines adds, 0_0_ways multiplies).`,
+			'Give a symbol special: [multiplier]. With none, the board payout IS the ceiling and no ' +
+				'paytable alone reaches a five-figure cap.',
 		);
 	}
 
-	if (analysis.multiplier.value === 1) {
+	// The global multiplier is the only uncapped lever, on every mechanic — but
+	// only worth suggesting once the game HAS a multiplier symbol for it to
+	// compose with. Without one this advice used to read "takes the ceiling from
+	// 4,000x to 4,000x", which is not advice.
+	if (strategy !== 'combined' && spec.symbols.some((s) => s.special.includes('multiplier'))) {
+		const combined = multiplierCeiling({ ...spec, multiplierStrategy: 'combined' });
 		advice.push(
-			`Give a symbol special: [multiplier]. With no multiplier at all the board payout IS the ` +
-				`ceiling, and no paytable alone reaches a five-figure cap.`,
+			`Set multiplierStrategy: "combined" — symbol multipliers then a GLOBAL multiplier, which ` +
+				`executables.py increments once per free spin with no ceiling. That takes the ceiling ` +
+				`from ${fmt(analysis.ceiling)}x to ${fmt(analysis.board.value * combined.value)}x.`,
 		);
-	} else {
+	}
+
+	if (!(spec.globalMultiplierPerSpin ?? spec.game?.globalMultiplierPerSpin)) {
 		advice.push(
-			`Raise the top of the multiplier ladder. It needs roughly ${Math.ceil(need)}x more headroom.`,
+			'Set globalMultiplierPerSpin: true. Nothing calls update_global_mult() by default, so the ' +
+				'global multiplier sits at 1 forever — it is the only uncapped lever and it is currently off.',
+		);
+	}
+	if (!spec.freeSpins) {
+		advice.push(
+			'Add a freeSpins block. The global multiplier climbs per free spin, so a game with no ' +
+				'feature has nothing for it to climb during.',
+		);
+	} else if (strategy === 'combined' || strategy === 'global') {
+		advice.push(
+			`Award more free spins (currently ${spec.freeSpins.awardedSpins}). The global multiplier ` +
+				`gains +1 per spin, so the round length IS the ceiling on it.`,
+		);
+	}
+
+	if (mechanic?.winType !== 'ways') {
+		advice.push(
+			'Consider the "ways" mechanic with multiplierStrategy: "symbol". That is the one ' +
+				'combination in the engine where multiplier symbols compound rather than sum — they ' +
+				"inflate each reel's ways count, and ways multiply across reels.",
+		);
+	} else if (strategy !== 'symbol') {
+		advice.push(
+			`Switch multiplierStrategy from "${strategy}" to "symbol". On a ways game that is the ` +
+				`difference between multipliers summing and multipliers compounding across reels: ` +
+				`${fmt(multiplierCeiling({ ...spec, multiplierStrategy: 'symbol' }).value)}x instead of ` +
+				`${fmt(analysis.multiplier.value)}x.`,
+		);
+	}
+
+	if (analysis.cascades) {
+		advice.push(
+			'This game cascades, so the ceiling above is for ONE board. evaluate_wincap tests the ' +
+				'running round total, which accumulates across every tumble — the real round ceiling is ' +
+				'higher by however many cascades a round sustains, which only a simulation measures.',
 		);
 	}
 
 	advice.push(
-		`Or lower maxWin to ${fmt(Math.floor(analysis.ceiling / 2))}x or below, which this paytable ` +
-			`and multiplier set can actually produce.`,
+		`Or lower maxWin to ${fmt(Math.floor(analysis.ceiling / 2))}x or below, which this game can ` +
+			`actually produce${analysis.cascades ? ' from a single board' : ''}.`,
 	);
 
 	return advice;
@@ -225,6 +336,51 @@ export function maxWinAdvice(analysis, spec) {
 const fmt = (n) => (n >= 1000 ? Math.round(n).toLocaleString('en-US') : Math.round(n * 100) / 100);
 
 export { fmt as formatMultiplier };
+
+/**
+ * The weighted multiplier ladder a game hands to `mult_values`.
+ *
+ * ── Why this is not one hardcoded table ─────────────────────────────────────
+ * It used to be `{1: 20, 2: 50, 3: 80, 5: 40, 10: 10}` for every game. That is a
+ * defensible ladder for a mechanic where multipliers SUM — five of them on a
+ * board reaches 50x at the very top. It is not defensible where they COMPOUND:
+ * on a ways game under the `symbol` strategy a 10x on each of five reels is
+ * 100,000x from the multipliers alone, before the paytable pays anything, so the
+ * top of the ladder stops being a rare treat and becomes the whole game.
+ *
+ * So the ladder is chosen from two facts about the game: whether its multipliers
+ * compound (see multiplierCeiling), and how volatile it is meant to be. A
+ * compounding ladder is short and weighted hard toward 1x; an additive one can
+ * afford a long tail.
+ *
+ * Weights, not probabilities: the SDK normalises them.
+ */
+export function multiplierLadder(spec, mechanic) {
+	const strategy = spec.game?.multiplierStrategy ?? spec.multiplierStrategy ?? 'symbol';
+	const winType = mechanic?.winType ?? spec._mechanic?.winType;
+	const compounds = winType === 'ways' && strategy === 'symbol';
+	const volatility = spec.game?.volatility ?? 'medium';
+
+	if (compounds) {
+		return {
+			low: { 1: 400, 2: 40, 3: 5 },
+			medium: { 1: 300, 2: 60, 3: 15 },
+			high: { 1: 200, 2: 80, 3: 30, 5: 5 },
+		}[volatility] ?? { 1: 300, 2: 60, 3: 15 };
+	}
+	return {
+		low: { 1: 60, 2: 40, 3: 15, 5: 4 },
+		medium: { 1: 30, 2: 60, 3: 40, 5: 15, 10: 4 },
+		high: { 1: 20, 2: 50, 3: 80, 5: 40, 10: 10 },
+	}[volatility] ?? { 1: 30, 2: 60, 3: 40, 5: 15, 10: 4 };
+}
+
+/** Render a ladder as the Python dict literal the config expects. */
+export function renderLadder(ladder) {
+	return `{${Object.entries(ladder)
+		.map(([value, weight]) => `${value}: ${weight}`)
+		.join(', ')}}`;
+}
 
 /**
  * Strip profiles, measured off the shipped samples rather than chosen.
@@ -260,9 +416,13 @@ export const STRIP_PROFILES = {
  * and wins are frequent and small; an EXTREME one wants a steep curve so the top
  * symbols are genuinely rare and the tail is long.
  */
-export function symbolFrequencies(spec, { volatility } = {}) {
+export const VOLATILITY_ALPHA = { low: 0.4, medium: 0.7, high: 1.0 };
+
+export function symbolFrequencies(spec, { volatility, alpha: alphaOverride } = {}) {
 	const profileId = volatility ?? spec.game.volatility ?? 'medium';
-	const alpha = { low: 0.4, medium: 0.7, high: 1.0 }[profileId] ?? 0.7;
+	// The volatility profile sets the DEFAULT steepness; calibrateStrips searches
+	// around it to land the modelled EV on target, so an override wins.
+	const alpha = alphaOverride ?? VOLATILITY_ALPHA[profileId] ?? 0.7;
 
 	const payable = spec.symbols.filter(
 		(s) => s.paytable && !s.special.includes('scatter') && !s.special.includes('prize'),
@@ -290,12 +450,12 @@ export function symbolFrequencies(spec, { volatility } = {}) {
  * are: a max-win board needs a whole reel of wilds, and leaving that to chance
  * on a 13%-wild strip still almost never produces a clean full column.
  */
-export function designStrip(spec, { profile, seed, rng }) {
+export function designStrip(spec, { profile, seed, rng, alpha }) {
 	const reels = spec.game.reels.count;
 	const rows = spec.game.reels.rows;
 	const length = profile.rows;
 
-	const freq = symbolFrequencies(spec);
+	const freq = symbolFrequencies(spec, { alpha });
 	const wildName = spec.symbols.find((s) => s.special.includes('wild'))?.name ?? null;
 
 	// The non-wild pool, sized to the frequency table.
@@ -345,6 +505,19 @@ function seededRng(key) {
 }
 
 /**
+ * The designed columns for one strip, before scatters are placed.
+ *
+ * Exported so the RTP model measures the strip that actually ships rather than
+ * a re-derivation of it. Scatters are excluded on purpose: they do not pay as
+ * ordinary symbols, so they contribute nothing to the level being measured.
+ */
+export function stripColumns(spec, stripId, { alpha } = {}) {
+	const profile = STRIP_PROFILES[stripId];
+	if (!profile) throw new Error(`unknown strip "${stripId}"`);
+	return designStrip(spec, { profile, rng: seededRng(`${spec.game.name}:${stripId}`), alpha });
+}
+
+/**
  * A designed reel strip as CSV.
  *
  * Replaces the uniform-random placeholder. Two behaviours are carried over
@@ -358,12 +531,12 @@ function seededRng(key) {
  *   Prize symbols never appear on an ordinary strip. Nothing in a normal spin
  *   collects a prize, so one landing there looks valuable and pays nothing.
  */
-export function renderDesignedReelCsv(spec, { stripId = 'BR0', scatterDensity = 0.014 } = {}) {
+export function renderDesignedReelCsv(spec, { stripId = 'BR0', scatterDensity = 0.014, alpha } = {}) {
 	const profile = STRIP_PROFILES[stripId];
 	if (!profile) throw new Error(`unknown strip "${stripId}" — expected one of ${Object.keys(STRIP_PROFILES).join(', ')}`);
 
 	const rng = seededRng(`${spec.game.name}:${stripId}`);
-	const columns = designStrip(spec, { profile, rng });
+	const columns = designStrip(spec, { profile, rng, alpha });
 	const length = profile.rows;
 	const reels = spec.game.reels.count;
 

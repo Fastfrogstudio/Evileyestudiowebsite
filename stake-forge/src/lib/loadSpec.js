@@ -87,6 +87,55 @@ export function loadGameSpec(specPath) {
 		}
 	}
 
+	// ── multipliers ─────────────────────────────────────────────────────────
+	// src/wins/multiplier_strategy.py offers exactly these three. Symbol
+	// multipliers always ADD; "combined" then applies the global multiplier on
+	// top, and the global one is the only uncapped lever in the engine.
+	const strategy = spec?.game?.multiplierStrategy;
+	if (strategy && mechanic) {
+		const allowed = mechanic.multiplierStrategies ?? [];
+		if (!allowed.length) {
+			errors.push(
+				`game.multiplierStrategy is set, but "${mechanic.id}" has no strategy parameter — its ` +
+					`evaluator sums position multipliers inline and then applies the global multiplier. ` +
+					`Remove it; globalMultiplierPerSpin still works.`,
+			);
+		} else if (!allowed.includes(strategy)) {
+			errors.push(
+				`game.multiplierStrategy "${strategy}" is not valid on "${mechanic.id}" — ` +
+					`${mechanic.multiplierParam} accepts ${allowed.join(', ')}. ` +
+					`("combined" is lines-only; "board" is ways-only, and ways ASSERTS on its list.)`,
+			);
+		}
+	}
+	// Nothing calls update_global_mult() unless we generate the call, so a spec
+	// asking for a global multiplier without a feature to grow it during would
+	// silently get 1x forever.
+	if (spec?.game?.globalMultiplierPerSpin && !spec?.freeSpins) {
+		errors.push(
+			'game.globalMultiplierPerSpin needs a freeSpins block — the multiplier climbs once per free ' +
+				'spin, so with no feature it never leaves 1x.',
+		);
+	}
+	// A ways game set to "board" or "symbol" never reads the round's global
+	// multiplier: ways.py picks win_multiplier from the strategy and passes THAT
+	// to apply_mult, so board_mult_count (or 1) replaces it outright. A spec
+	// asking for both gets a multiplier that climbs every spin and is discarded
+	// on every evaluation — worth a warning, not an error, because the value is
+	// still carried in the book events the frontend renders.
+	if (
+		spec?.game?.globalMultiplierPerSpin &&
+		mechanic?.winType === 'ways' &&
+		(spec.game.multiplierStrategy ?? 'symbol') !== 'global'
+	) {
+		warnings.push(
+			`game.globalMultiplierPerSpin has no effect on a ways game using multiplierStrategy ` +
+				`"${spec.game.multiplierStrategy ?? 'symbol'}" — ways.py substitutes the strategy's own ` +
+				`multiplier for the global one before applying it. Use multiplierStrategy: "global" for ` +
+				`the climbing multiplier to reach the win.`,
+		);
+	}
+
 	// Optional, and only read when generating the optimisation setup — but worth
 	// catching a typo here rather than at optimise time, which is the slowest
 	// step in the whole pipeline to fail in.

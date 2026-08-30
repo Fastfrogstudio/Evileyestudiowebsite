@@ -336,7 +336,7 @@ export function betModeCriteria(mode) {
  * simulation cannot disagree about which criteria exist — the SDK asserts they
  * match, and a mismatch is an AssertionError before a single round is run.
  */
-export function renderBetModes(spec, { conditionKeys = [] } = {}) {
+export function renderBetModes(spec, { conditionKeys = [], multValuesShape = 'nested' } = {}) {
 	// Any Distribution with force_freegame: True MUST also carry scatter_triggers:
 	// Board.draw_board() indexes it directly
 	//   get_random_outcome(self.get_current_distribution_conditions()["scatter_triggers"])
@@ -369,11 +369,18 @@ export function renderBetModes(spec, { conditionKeys = [] } = {}) {
 				//
 				// Without these the re-roll never reaches the cap and the simulation
 				// spins forever with only a warning.
+				//
+				// The mult_values SHAPE must match whoever reads it, exactly as the
+				// shared conditions do. 0_0_ways' game_override.py reads it FLAT;
+				// everything else indexes by gametype. Hardcoding the lines shape
+				// here put a dict where the ways reader expected a number and the
+				// simulation died with `unsupported operand type(s) for +: int and dict`.
+				const capMultValues =
+					multValuesShape === 'flat'
+						? '"mult_values": {1: 5, 2: 10, 3: 20, 5: 60, 10: 100, 20: 90, 50: 50},'
+						: '"mult_values": {self.basegame_type: {1: 1}, self.freegame_type: {2: 10, 3: 20, 5: 60, 10: 100, 20: 90, 50: 50}},';
 				const capConditions = forceWincap
-					? [
-							'"scatter_triggers": {4: 1, 5: 2},',
-							'"mult_values": {self.basegame_type: {1: 1}, self.freegame_type: {2: 10, 3: 20, 5: 60, 10: 100, 20: 90, 50: 50}},',
-						]
+					? ['"scatter_triggers": {4: 1, 5: 2},', capMultValues]
 					: null;
 				// A freegame distribution has to weight the free-game reel set too;
 				// a basegame one must not, or the board is drawn from strips the

@@ -59,7 +59,9 @@ import { inspectMathPublish, collectFrontend } from '../src/commands/packageGame
 import { renderStickyMath } from '../src/lib/recipes/sticky.js';
 import { renderSuperspinReelCsv, hasSuperspinMode, BLANK_SYMBOL, SUPERSPIN_PRIZE_DENSITY } from '../src/lib/mathGenerators.js';
 import { payingHitRate, wincapRtpAllocation, TARGET_WINCAP_HIT_RATE } from '../src/lib/optimisation.js';
-import { analyseMaxWin, boardCeiling, multiplierCeiling, symbolFrequencies, STRIP_PROFILES, renderDesignedReelCsv } from '../src/lib/reelDesign.js';
+import { analyseMaxWin, boardCeiling, multiplierCeiling, symbolFrequencies, STRIP_PROFILES, renderDesignedReelCsv, stripColumns, multiplierLadder, renderLadder } from '../src/lib/reelDesign.js';
+import { estimateStripEv, payoutTable } from '../src/lib/rtpModel.js';
+import { balanceSpec, baseGameTarget, calibrateAlpha, scalePaytable, EV_TOLERANCE } from '../src/lib/mathBalance.js';
 import { addDictEntry, insertAfterLineInMethod, insertAfterImports } from '../src/lib/pyPatch.js';
 import { auditSpriteFrames, readSpriteFrames, readSpriteAssetKeys } from '../src/lib/spriteFrames.js';
 
@@ -2302,14 +2304,275 @@ test('an unreachable max win is caught by arithmetic, not by an overnight run', 
 	assert.ok(analysis.shortfall > 200);
 });
 
-test('multiplicative composition is the biggest lever on the ceiling', () => {
-	// Both patterns exist in the samples: 0_0_lines adds, 0_0_ways multiplies.
-	const base = { game: { reels: { count: 5, rows: [3, 3, 3, 3, 3] } }, symbols: [{ name: 'W', special: ['multiplier'] }] };
-	const additive = multiplierCeiling({ ...base, multiplierComposition: 'additive' });
-	const multiplicative = multiplierCeiling({ ...base, multiplierComposition: 'multiplicative' });
-	assert.equal(additive.value, 50);          // 5 reels x 10x added
-	assert.equal(multiplicative.value, 100000); // 10^5
-	assert.ok(multiplicative.value > additive.value * 100);
+test('symbol multipliers ADD, except on ways under its "symbol" strategy', () => {
+	// Corrected against src/wins/multiplier_strategy.py, having first assumed
+	// composition was a free choice. apply_added_symbol_mult SUMS them, and
+	// cluster.py/scatter.py sum inline. The one compounding case is ways, and it
+	// works by a different route: a multiplier symbol contributes its VALUE to
+	// that reel's ways count, and ways multiply across reels.
+	//
+	// Corrected a second time, against ways.py itself: that compounding is
+	// specific to the "symbol" strategy. Under "board" (ways.py:87) the values
+	// add into board_mult_count and scale the win as a SUM, so a ways game set to
+	// "board" behaves like a lines game. Reading the file's compounding comment
+	// as if it covered all three strategies sends you hunting a runaway
+	// multiplier that is not there.
+	const base = (mechanic, extra = {}) => ({
+		game: { mechanic, reels: { count: 5, rows: [3, 3, 3, 3, 3] }, ...extra },
+		_mechanic: MECHANICS[mechanic],
+		symbols: [{ name: 'W', special: ['multiplier'] }],
+	});
+
+	// How many positions can contribute to a sum is per-evaluator: a payline
+	// collects one per reel, everything else collects across the whole grid.
+	assert.equal(multiplierCeiling(base('lines')).value, 50); // 5 reels x 10x
+	assert.equal(multiplierCeiling(base('cluster')).value, 150); // 15 cells x 10x
+	assert.equal(multiplierCeiling(base('ways')).value, 100000); // 10^5, compounding
+
+	// The same ways game, only the strategy changed: it sums instead.
+	assert.equal(multiplierCeiling(base('ways', { multiplierStrategy: 'board' })).value, 150);
+});
+
+test('the strategy is read from game: as well as the top level', () => {
+	// It lives under `game:` in a real spec and at the top level only where
+	// maxWinAdvice spreads it to model an alternative. Reading just the top-level
+	// one defaulted every real spec to "symbol", which reported a ways game set
+	// to "board" as compounding when it sums — a 667x overstatement of its
+	// ceiling, on the one number the whole max-win analysis rests on.
+	const spec = {
+		game: {
+			mechanic: 'ways',
+			reels: { count: 5, rows: [3, 3, 3, 3, 3] },
+			multiplierStrategy: 'board',
+		},
+		_mechanic: MECHANICS.ways,
+		symbols: [{ name: 'W', special: ['multiplier'] }],
+	};
+	assert.equal(multiplierCeiling(spec).value, 150);
+});
+
+test('the global multiplier counts only when something increments it', () => {
+	// executables.py update_global_mult() is `+= 1` with no ceiling — but nothing
+	// calls it by default. Of all the samples only 0_0_scatter does, per tumble.
+	// Crediting it unconditionally would credit a multiplier the game never moves.
+	const spec = {
+		game: { mechanic: 'lines', reels: { count: 5, rows: [3, 3, 3, 3, 3] }, multiplierStrategy: 'combined' },
+		_mechanic: MECHANICS.lines,
+		multiplierStrategy: 'combined',
+		freeSpins: { awardedSpins: 10 },
+		symbols: [{ name: 'W', special: ['multiplier'] }],
+	};
+	assert.equal(multiplierCeiling(spec).value, 50, 'a global multiplier nothing increments is 1x');
+	assert.equal(
+		multiplierCeiling({ ...spec, globalMultiplierPerSpin: true }).value,
+		500,
+		'once generated, 10 free spins carry it to 10x',
+	);
+});
+
+test('a global multiplier with no feature to grow in is refused', () => {
+	withSpec(MINIMAL.replace('rtp: 0.96\n', 'rtp: 0.96\n  globalMultiplierPerSpin: true\n'), (file) => {
+		assert.throws(() => loadGameSpec(file), /needs a freeSpins block/);
+	});
+});
+
+test('multiplier strategies are validated PER MECHANIC, not globally', () => {
+	// The four evaluators differ: lines takes multiplier_method (symbol/global/
+	// combined), ways takes multiplier_strategy (symbol/board/global) and ASSERTS
+	// on that list, and cluster/scatter have no parameter at all.
+	const withStrategy = (value) =>
+		MINIMAL.replace('rtp: 0.96\n', `rtp: 0.96\n  multiplierStrategy: ${value}\n`);
+
+	withSpec(withStrategy('exponential'), (file) => {
+		assert.throws(() => loadGameSpec(file), /not valid on "lines"/);
+	});
+	// "board" is a real strategy — but a ways-only one, so it must be refused here.
+	withSpec(withStrategy('board'), (file) => {
+		assert.throws(() => loadGameSpec(file), /not valid on "lines"/);
+	});
+	// "combined" is lines-only and MINIMAL is a lines game, so it passes.
+	withSpec(withStrategy('combined'), (file) => {
+		assert.equal(loadGameSpec(file).game.multiplierStrategy, 'combined');
+	});
+});
+
+test('a mechanic with no strategy parameter refuses the setting outright', () => {
+	// cluster sums position multipliers inline; there is nothing to pass.
+	const cluster = MINIMAL
+		.replace('mechanic: lines', 'mechanic: cluster')
+		.replace('paylines: default_20\n', '')
+		.replace('rows: [3, 3, 3, 3, 3]', 'rows: [5, 5, 5, 5, 5]')
+		.replace('paytable: { "5": 20 }', 'paytable: { "5": 5.0, "6-25": 60.0 }')
+		.replace('rtp: 0.96\n', 'rtp: 0.96\n  multiplierStrategy: combined\n');
+	withSpec(cluster, (file) => {
+		assert.throws(() => loadGameSpec(file), /has no strategy parameter/);
+	});
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The RTP model and the balance check
+//
+// These exist because of one concrete failure. A generated 5x4 ways game with a
+// 100,000x cap simulated cleanly, reached its max win, and then died in the Rust
+// optimiser with "pos_pigs=50/50, neg_pigs=0/50. Target avg_win=184.8000" — every
+// candidate distribution above target, none below, so no set of weights existed.
+// The cheapest free-spin round in the whole simulation paid 908.7x.
+//
+// The cause was arithmetic the tool could have done in a second: the base strip
+// paid an expected 60.2x per spin against a target of 0.43x. 5x4 is 1024 ways
+// where 5x3 is 243, and the paytable had been written for a 5x3.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const waysSpec = (rows) => ({
+	game: {
+		name: 'model-test',
+		mechanic: 'ways',
+		rtp: 0.965,
+		volatility: 'high',
+		reels: { count: 5, rows },
+		betModes: { base: { cost: 1, rtp: 0.965, maxWin: 5000, feature: true, buyBonus: false } },
+	},
+	_mechanic: MECHANICS.ways,
+	symbols: [
+		{ name: 'H1', role: 'high', special: [], paytable: { 3: 5, 4: 12.5, 5: 50 } },
+		{ name: 'H2', role: 'high', special: [], paytable: { 3: 2.8, 4: 6.9, 5: 27.5 } },
+		{ name: 'L1', role: 'low', special: [], paytable: { 3: 0.8, 4: 2.1, 5: 8.3 } },
+		{ name: 'L2', role: 'low', special: [], paytable: { 3: 0.5, 4: 1.1, 5: 4.6 } },
+		{ name: 'W', role: 'wild', special: ['wild'], paytable: { 3: 5, 4: 12.5, 5: 50 } },
+		{ name: 'S', role: 'scatter', special: ['scatter'] },
+	],
+	freeSpins: { triggerSymbol: 'S', triggerCount: 3, awardedSpins: 15, retrigger: true },
+});
+
+test('the model prices a taller ways board higher, because ways pay per way', () => {
+	// The whole point. Nothing else about these two specs differs — same paytable,
+	// same symbols, same volatility — and a row of extra height multiplies the
+	// ways count from 243 to 1024. If the model could not see that, it could not
+	// have caught the game that failed to optimise.
+	const short = waysSpec([3, 3, 3, 3, 3]);
+	const tall = waysSpec([4, 4, 4, 4, 4]);
+	const evOf = (spec) => estimateStripEv(spec, stripColumns(spec, 'BR0'), { spins: 4000 }).ev;
+
+	const shortEv = evOf(short);
+	const tallEv = evOf(tall);
+	assert.ok(tallEv > shortEv * 2, `taller board should pay much more (${shortEv} -> ${tallEv})`);
+});
+
+test('the model reproduces the failure it was written for', () => {
+	// The exact geometry and paytable that broke the optimiser. The assertion is
+	// deliberately loose on the number and strict on the conclusion: what matters
+	// is that this is caught as wildly out of band, not that it measures 60.2.
+	const spec = waysSpec([4, 4, 4, 4, 4]);
+	const report = balanceSpec(spec, { spins: 4000 });
+	assert.equal(report.inBand, false);
+	assert.ok(report.ratio > 10, `should be an order of magnitude out, was ${report.ratio}x`);
+	assert.ok(report.paytableScale < 0.2, `should call for a big cut, said x${report.paytableScale}`);
+	assert.ok(
+		report.findings.some((f) => f.includes('1024 ways')),
+		'should name the geometry as the cause',
+	);
+});
+
+test('rescaling the paytable by the reported factor lands it in band', () => {
+	// Expected value is linear in the paytable, so the reported factor is exact
+	// rather than a starting point for iteration. This is the property that makes
+	// `math:balance --apply` a fix and not a guess.
+	const spec = waysSpec([4, 4, 4, 4, 4]);
+	const before = balanceSpec(spec, { spins: 4000 });
+	assert.equal(before.inBand, false);
+
+	const scaled = scalePaytable(spec, before.paytableScale);
+	const after = balanceSpec(scaled, { spins: 4000 });
+	assert.equal(after.inBand, true, `still ${after.ratio}x out after rescaling`);
+	assert.ok(
+		after.ratio > EV_TOLERANCE.low && after.ratio < EV_TOLERANCE.high,
+		`ratio ${after.ratio} outside [${EV_TOLERANCE.low}, ${EV_TOLERANCE.high}]`,
+	);
+});
+
+test('scalePaytable does not mutate the spec it is given', () => {
+	const spec = waysSpec([3, 3, 3, 3, 3]);
+	const before = JSON.stringify(spec.symbols);
+	scalePaytable(spec, 0.5);
+	assert.equal(JSON.stringify(spec.symbols), before);
+});
+
+test('calibration scans alpha rather than bisecting, because EV is U-shaped in it', () => {
+	// The obvious implementation bisects, reasoning that a steeper payout curve
+	// makes top symbols rarer and lowers EV. Measured, that is wrong at the top of
+	// the range: high alpha concentrates the strip onto the CHEAPEST symbol, and a
+	// strip dominated by one symbol lands it on every reel nearly every spin. On
+	// the 5x4 board, alpha 4 paid 1,656x per spin against 58.8x at alpha 1.0 — a
+	// bisection walked to the wrong end of the curve and reported it as correct.
+	const spec = waysSpec([4, 4, 4, 4, 4]);
+	const result = calibrateAlpha(spec, { target: 0.4, spins: 3000 });
+	const evs = result.curve.map((p) => p.ev);
+	const highEnd = evs[evs.length - 1];
+	const middle = evs[Math.floor(evs.length / 2)];
+	assert.ok(
+		highEnd > middle,
+		`EV should rise again at high alpha (mid ${middle}, high ${highEnd}) — if it does not, ` +
+			'the U-shape this test documents has gone and a bisection would be valid again',
+	);
+	// And the scan must not have returned that high end as its answer.
+	assert.ok(result.alpha < 4, `scan settled at the endpoint (alpha ${result.alpha})`);
+});
+
+test('the base-game target matches how planOptimisation splits RTP', () => {
+	// If these two ever disagree, the balance check passes a game the optimiser
+	// then rejects — the exact class of bug this whole file exists to prevent.
+	const spec = waysSpec([3, 3, 3, 3, 3]);
+	const target = baseGameTarget(spec);
+	const plan = planOptimisation(spec);
+	const basegame = plan.modes[0].conditions.find((c) => c.kind === 'basegame');
+	assert.equal(target.baseRtp, basegame.rtp);
+	assert.equal(target.baseHitRate, basegame.hitRate);
+});
+
+test('the multiplier ladder is short where multipliers compound', () => {
+	// A ladder topping out at 10x is fine where multipliers sum: five of them
+	// reach 50x. Where they compound it is not — 10x on each of five reels is
+	// 100,000x from the multipliers alone, so the top of the ladder stops being a
+	// rare treat and becomes the whole game.
+	const compounding = multiplierLadder(
+		{ game: { multiplierStrategy: 'symbol', volatility: 'high' } },
+		MECHANICS.ways,
+	);
+	const summing = multiplierLadder(
+		{ game: { multiplierStrategy: 'board', volatility: 'high' } },
+		MECHANICS.ways,
+	);
+	const top = (l) => Math.max(...Object.keys(l).map(Number));
+	assert.ok(top(compounding) < top(summing), 'compounding ladder should be the shorter one');
+	// And weighted much harder toward 1x.
+	assert.ok(compounding[1] > summing[1] * 5);
+});
+
+test('renderLadder emits a Python dict the config can carry', () => {
+	assert.equal(renderLadder({ 1: 20, 2: 5 }), '{1: 20, 2: 5}');
+});
+
+test('the payout table expands range keys, as the engine does at load', () => {
+	// Config.convert_range_table() expands "6-9": 12.5 into one entry per size. A
+	// model reading the raw keys finds nothing for a cluster of 7 and reports a
+	// game that pays nothing at all.
+	const spec = {
+		symbols: [{ name: 'H1', special: [], paytable: { 5: 5, '6-9': 12.5 } }],
+	};
+	const table = payoutTable(spec);
+	assert.equal(table.get('H1')[7], 12.5);
+	assert.equal(table.get('H1')[5], 5);
+});
+
+test('the scatter symbol never pays as an ordinary symbol in the model', () => {
+	const spec = {
+		symbols: [
+			{ name: 'H1', special: [], paytable: { 3: 5 } },
+			{ name: 'S', special: ['scatter'], paytable: { 3: 100 } },
+		],
+	};
+	assert.equal(payoutTable(spec).has('S'), false);
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ import { mathScaffold } from '../src/commands/mathScaffold.js';
 import { mathRun } from '../src/commands/mathRun.js';
 import { mathSync } from '../src/commands/mathSync.js';
 import { mathReport } from '../src/commands/mathReport.js';
+import { mathBalance } from '../src/commands/mathBalanceCmd.js';
 import { mathOptimise } from '../src/commands/mathOptimise.js';
 import { soundBuild } from '../src/commands/soundBuild.js';
 import { packageGame } from '../src/commands/packageGame.js';
@@ -158,6 +159,24 @@ program
 				mathSdkDir: path.resolve(opts.mathSdk),
 				sdkDir: path.resolve(opts.sdk),
 				dryRun: opts.dryRun,
+			}),
+		),
+	);
+
+program
+	.command('math:balance')
+	.description('Pre-flight: is this paytable payable at this RTP, on this board? Runs in a second, no simulation')
+	.requiredOption('--spec <path>', 'path to game-spec.yaml')
+	.option('--volatility <profile>', 'low | medium | high — overrides game.volatility in the spec')
+	.option('--apply', 'rescale the paytable in the spec so it lands on target', false)
+	.option('--json', 'machine-readable output', false)
+	.action(
+		run((opts) =>
+			mathBalance({
+				specPath: path.resolve(opts.spec),
+				volatility: opts.volatility,
+				apply: opts.apply,
+				json: opts.json,
 			}),
 		),
 	);

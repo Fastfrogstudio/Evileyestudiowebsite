@@ -38,6 +38,23 @@ export const MECHANICS = {
 		 */
 		paytableStyle: 'kind',
 		minWinSize: 3,
+		/**
+		 * How this evaluator is told to combine multipliers, and what it accepts.
+		 *
+		 * The four differ, and not cosmetically:
+		 *   lines    get_lines(multiplier_method=)       symbol | global | combined
+		 *   ways     get_ways_data(multiplier_strategy=) symbol | board | global
+		 *            — it ASSERTS on that list, so "combined" is a crash
+		 *   cluster  evaluate_clusters(...)   no parameter; sums inline, then
+		 *            multiplies by global_multiplier
+		 *   scatter  get_scatterpay_wins(...) same
+		 *
+		 * So "combined" is a lines-only word and "board" is a ways-only word. A
+		 * spec asking for either on the wrong mechanic must be refused, not
+		 * quietly ignored.
+		 */
+		multiplierParam: 'multiplier_method',
+		multiplierStrategies: ['symbol', 'global', 'combined'],
 		webApp: 'lines',
 		mathSample: '0_0_lines',
 		supportsPaylines: true,
@@ -61,6 +78,8 @@ export const MECHANICS = {
 		winType: 'ways',
 		paytableStyle: 'kind',
 		minWinSize: 3,
+		multiplierParam: 'multiplier_strategy',
+		multiplierStrategies: ['symbol', 'board', 'global'],
 		webApp: 'ways',
 		mathSample: '0_0_ways',
 		supportsPaylines: false,
@@ -76,6 +95,10 @@ export const MECHANICS = {
 		winType: 'cluster',
 		paytableStyle: 'range',
 		minWinSize: 5,
+		// No strategy parameter: sums position multipliers inline, then multiplies
+		// by global_multiplier. globalMultiplierPerSpin still applies.
+		multiplierParam: null,
+		multiplierStrategies: [],
 		webApp: 'cluster',
 		mathSample: '0_0_cluster',
 		supportsPaylines: false,
@@ -91,6 +114,8 @@ export const MECHANICS = {
 		winType: 'scatter',
 		paytableStyle: 'range',
 		minWinSize: 8,
+		multiplierParam: null,
+		multiplierStrategies: [],
 		webApp: 'scatter',
 		mathSample: '0_0_scatter',
 		supportsPaylines: false,
