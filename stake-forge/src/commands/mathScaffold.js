@@ -777,6 +777,40 @@ function applyBoardMechanics(gameDir, spec, mechanic) {
 				if (init.replaced) gamestate = init.source;
 			}
 		}
+
+		// `roundInit` is the OTHER reset, and the distinction matters. `init` fires
+		// once per SPIN and is where a per-sequence counter belongs. `roundInit`
+		// fires once per ROUND — after reset_book() opens a base round and after
+		// reset_fs_spin() opens a free-spin sequence — and is where state that must
+		// SURVIVE from one spin to the next belongs, such as which cells hold a
+		// sticky wild and what each is currently worth. Putting sticky state in
+		// `init` wipes it every spin and the mechanic silently does nothing.
+		for (const line of definition.roundInit ?? []) {
+			let placed = 0;
+			for (const [method, anchor] of [
+				['run_spin', /^\s*self\.reset_book\(/],
+				['run_freespin', /^\s*self\.reset_fs_spin\(/],
+			]) {
+				const init = insertAfterLineInMethod(
+					gamestate,
+					method,
+					anchor,
+					[line],
+					`board:${definition.id}:roundInit:${method}`,
+				);
+				if (init.replaced) {
+					gamestate = init.source;
+					placed += 1;
+				}
+			}
+			if (!placed) {
+				throw new Error(
+					`${definition.id} needs a reset_book() or reset_fs_spin() call in gamestate.py to ` +
+						`reset its per-round state, and this game has neither. Without the reset the ` +
+						`state carries from one round into the next, which inflates RTP silently.`,
+				);
+			}
+		}
 		applied.push(`${definition.name} (${sites} site${sites === 1 ? '' : 's'})`);
 	}
 
@@ -844,6 +878,21 @@ function resolveBoardMechanicConfig(definition, raw, spec) {
 			};
 		case 'wild_spawner':
 			return { ...base, count: options.count ?? 3, afterCascades: options.afterCascades ?? 4 };
+		case 'sticky_multiplier_wild':
+			return {
+				...base,
+				// Starts at 2, not 1. apply_added_symbol_mult() ignores any symbol
+				// multiplier that is not GREATER than 1, so a ladder starting at 1
+				// would pay nothing on the spin a wild lands and the mechanic would
+				// look broken for exactly one spin per wild.
+				start: options.start ?? 2,
+				step: options.step ?? 1,
+				cap: options.cap ?? 25,
+				// Free spins only by default. Sticky wilds in the base game are a much
+				// bigger RTP commitment than they look, because the base game is where
+				// almost every spin happens.
+				freeSpinsOnly: options.inBaseGame ? false : true,
+			};
 		case 'progressive_cascade_multiplier':
 			// Gonzo's own ladder as the default: 1, 2, 3, 5. Held at the top rung
 			// rather than running off the end, so a long sequence is rewarded

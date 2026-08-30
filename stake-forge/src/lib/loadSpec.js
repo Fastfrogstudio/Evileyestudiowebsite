@@ -287,6 +287,58 @@ export function loadGameSpec(specPath) {
 		}
 	}
 
+	// ── sticky multiplier wilds ─────────────────────────────────────────────
+	if (spec?.game?.stickyMultiplierWilds) {
+		const cfg = spec.game.stickyMultiplierWilds === true ? {} : spec.game.stickyMultiplierWilds;
+		const wild = (spec.symbols ?? []).find((sym) => sym.special?.includes('wild'));
+		if (!wild) {
+			errors.push(
+				'game.stickyMultiplierWilds needs a symbol marked special: [wild] to stick. Without one ' +
+					'the mechanic generates, runs, and does nothing.',
+			);
+		} else if (!wild.special.includes('multiplier')) {
+			// json_ready_sym() filters a symbol's attributes by special_symbols, so a
+			// wild outside the "multiplier" group carries its value through the MATHS
+			// and drops it on the way to the client. The game pays correctly and the
+			// player is never shown why — the worst kind of divergence, because
+			// nothing fails.
+			errors.push(
+				`game.stickyMultiplierWilds needs "${wild.name}" listed under special: [wild, multiplier]. ` +
+					`json_ready_sym() only serialises the symbol attributes named in special_symbols, so ` +
+					`without the multiplier group the value is applied to the win but never reaches the ` +
+					`client — the round pays more than the board can explain.`,
+			);
+		}
+
+		const start = cfg.start ?? 2;
+		const step = cfg.step ?? 1;
+		const cap = cfg.cap ?? 25;
+		if (start <= 1) {
+			// apply_added_symbol_mult() ignores any multiplier that is not > 1, then
+			// takes max(sum, 1). A ladder starting at 1 pays nothing on the spin a
+			// wild lands, which reads as a bug to a player and to a tester.
+			errors.push(
+				`game.stickyMultiplierWilds.start is ${start}, and apply_added_symbol_mult() in ` +
+					`src/wins/multiplier_strategy.py ignores any symbol multiplier that is not GREATER ` +
+					`than 1. Start at 2 or above, or the badge shows a value that does not pay.`,
+			);
+		}
+		if (step <= 0) {
+			errors.push('game.stickyMultiplierWilds.step must be positive — the wilds grow, or they are just sticky wilds.');
+		}
+		if (cap < start) {
+			errors.push(`game.stickyMultiplierWilds.cap (${cap}) is below start (${start}).`);
+		}
+		if (cfg.inBaseGame) {
+			warnings.push(
+				'game.stickyMultiplierWilds.inBaseGame puts growing wilds on every base spin, which is ' +
+					'where almost all of a game\'s spins happen. The RTP commitment is far larger than the ' +
+					'free-game version and balanceSpec does not price it — check math:balance and the ' +
+					'simulation before trusting it.',
+			);
+		}
+	}
+
 	// Optional, and only read when generating the optimisation setup — but worth
 	// catching a typo here rather than at optimise time, which is the slowest
 	// step in the whole pipeline to fail in.

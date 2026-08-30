@@ -786,21 +786,70 @@ export const MECHANIC_LIBRARY = {
 		id: 'sticky_multiplier',
 		name: 'Sticky multiplier',
 		family: 'multiplier',
-		rule: 'A multiplier value locks to a cell or to a wild and persists for the round, often growing.',
-		status: 'roadmap',
+		rule:
+			'A wild locks to its cell for the rest of the round and its multiplier steps up on every ' +
+			'subsequent spin, to a cap. Wilds accumulate, so a round that starts rich gets richer — ' +
+			'the mechanic is the accumulation, not the individual wild.',
+		status: 'built',
 		difficulty: 'T1',
+		// Wild SUBSTITUTION only. On scatter-pays a wild has nothing to substitute
+		// into, so this would generate, run, and do nothing.
 		winTypes: ['lines', 'ways', 'cluster'],
 		volatility: ['high', 'extreme'],
 		art: {
-			symbols: 'A multiplier badge attachable to any symbol.',
-			states: ['locked'],
-			animations: ['lock-in', 'value increment'],
+			symbols: 'The wild, plus a value badge legible over it at every rung from start to cap.',
+			states: ['land', 'stick', 'upgrade'],
+			animations: [
+				'LAND — a wild arriving and locking, distinct from an ordinary wild landing',
+				'UPGRADE — the badge stepping up, on every stuck wild in the same beat',
+				'CAP — the badge reaching its ceiling and visibly stopping',
+			],
 			screens: [],
+			note:
+				'Three or four stuck wilds upgrading in the same beat is the signature moment, so the ' +
+				'upgrade animation must read when several play at once — not a long solo flourish. ' +
+				'The badge stays legible from the start value to the cap, which can be two digits in ' +
+				'a cell that is also showing the wild art.',
 		},
-		frontend: { bookEvents: ['stickyMultiplierAdd', 'stickyMultiplierUpdate'], components: [] },
-		math: { sample: null, notes: 'Extends the sticky recipe with a value that survives the spin.' },
+		frontend: { bookEvents: ['reveal'], components: [] },
+		math: {
+			sample: null,
+			notes:
+				'boardMechanics.stickyMultiplierWilds, spliced after draw_board(), with the map of ' +
+				'stuck cells reset per ROUND (after reset_book/reset_fs_spin) rather than per spin — ' +
+				'resetting per spin wipes the state and the mechanic silently does nothing. Free ' +
+				'spins only by default.\n\nTHREE ENGINE FACTS THAT DECIDE WHETHER THIS WORKS:\n' +
+				'(1) apply_added_symbol_mult() SUMS the multipliers of the winning positions and ' +
+				'ignores any value not greater than 1. Two stuck wilds worth 3 and 5 on one line pay ' +
+				'8x, not 15x, and a wild off the line pays nothing — so the ladder starts at 2.\n' +
+				'(2) json_ready_sym() serialises only the symbol attributes named in special_symbols, ' +
+				'so the wild must be in the "multiplier" group or the value pays but never reaches ' +
+				'the client. loadSpec makes that an error.\n' +
+				'(3) The board SATURATES, and this is the balance risk. Stuck cells never come back, ' +
+				'so the fraction wild is 1-(1-p)^spins. Measured over 2,000 rounds on a generated 5x3 ' +
+				'game with FR0 at 5.45% wild: 6.95 of 15 cells stuck by spin 10, against 6.91 ' +
+				'predicted — the naive model is accurate to within 1% even though lines strips carry ' +
+				'wild STACKS, because stacking changes which cells stick together, not how many. ' +
+				'mathBalance.stickySaturation reports it and math:balance warns past 35% of the board.\n\n' +
+				'WHAT SATURATION ACTUALLY COSTS, measured rather than assumed: against the identical ' +
+				'game with the mechanic off, raw RTP went 21.8x to 338.4x, and after optimisation BOTH ' +
+				'games report 96.50% RTP, a 1-in-3.4 hit rate, the same 0.5% feature frequency, and ' +
+				'pass every math:validate rule. Nothing downstream fails. What moved is the weight ' +
+				'inside the feature: mean free-game payout went 34x to 73x on the plain game (weighted ' +
+				'UP toward target) and 3,329x to 73x on the sticky one (weighted DOWN 45x), so the ' +
+				'saturated boards the mechanic exists for are simulated and then rarely served. The ' +
+				'upside from the same run: the sticky feature reaches the 5,000x cap unaided against ' +
+				'290x for the plain game, so this is the mechanic to reach for when max win should ' +
+				'come out of the FEATURE rather than a forced wincap round.',
+		},
+		generator: 'boardMechanics.stickyMultiplierWilds',
 		combinesWith: ['sticky_wild', 'walking_wild', 'freespins', 'expanding_wild'],
-		conflictsWith: [],
+		conflictsWith: [
+			{
+				id: 'scatter_pays',
+				why: 'A scatter-pays board counts symbols anywhere and has nothing for a wild to substitute into, so a sticky wild would accumulate on the board and change no win.',
+			},
+		],
 		trademark: null,
 		recipe: null,
 	},

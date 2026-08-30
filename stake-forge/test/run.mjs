@@ -64,7 +64,7 @@ import { analyseMaxWin, boardCeiling, multiplierCeiling, symbolFrequencies, STRI
 import { estimateStripEv, payoutTable } from '../src/lib/rtpModel.js';
 import { balanceSpec, baseGameTarget, calibrateAlpha, scalePaytable, EV_TOLERANCE } from '../src/lib/mathBalance.js';
 import { validateMode, topShareOfRtp, RULE_PROVENANCE } from '../src/lib/mathValidate.js';
-import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS, featureLoad, FEATURE_LOAD_LIMIT } from '../src/lib/mathBalance.js';
+import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS, featureLoad, FEATURE_LOAD_LIMIT, stickySaturation, STICKY_SATURATION_LIMIT } from '../src/lib/mathBalance.js';
 import { BOARD_MECHANICS, boardMechanicFor } from '../src/lib/boardMechanics.js';
 import { stripProfileFor, placeScatters } from '../src/lib/reelDesign.js';
 import { MECHANIC_LIBRARY, MECHANIC_IDS, libraryStats, checkCombination, artRequirementsFor, mechanicsForWinType, getMechanicEntry, STATUS_ORDER } from '../src/lib/mechanicsLibrary.js';
@@ -3895,6 +3895,73 @@ test('stacking feature mechanics is counted, because the model cannot price it',
 	const light = featureLoad({ game: { globalMultiplierPerSpin: true }, symbols: [], freeSpins: {} });
 	assert.equal(light.ok, true);
 	assert.equal(light.severe, false);
+});
+
+test('sticky wilds saturate the board, and the model says by how much', () => {
+	// The failure this catches is invisible per spin: stuck cells never come back,
+	// so the board fills monotonically and the paytable stops describing the game
+	// partway into the round. balanceSpec cannot see it — it models the BASE board.
+	//
+	// The numbers here are pinned to a measurement, not to intuition. Across 2,000
+	// simulated rounds of a generated 5x3 game with FR0 at 5.45% wild, 6.95 of 15
+	// cells were stuck by spin 10 against 6.91 predicted by 1-(1-p)^n. The obvious
+	// objection — lines strips carry wild STACKS, so cells in a column are not
+	// independent — turns out not to matter: stacking changes WHICH cells stick
+	// together, not how many stick.
+	const spec = specFor('lines');
+	const sticky = stickySaturation(
+		{ ...spec, game: { ...spec.game, stickyMultiplierWilds: { start: 2, step: 1, cap: 25 } } },
+		{ alpha: 1.15 },
+	);
+	assert.ok(sticky, 'the mechanic is on, so there is a number to report');
+	assert.ok(sticky.wildDensity > 0, 'a free strip with no wilds would make the mechanic inert');
+	assert.ok(
+		sticky.stuckAtEnd > 0 && sticky.stuckAtEnd < sticky.cells,
+		`stuck cells should be between 0 and the board size, got ${sticky.stuckAtEnd}`,
+	);
+	assert.ok(
+		sticky.multiplierLoad > sticky.stuckAtEnd,
+		'every stuck cell is worth at least 2, so the load must exceed the count',
+	);
+	// Monotonic in the two things that actually drive it.
+	const longer = stickySaturation(
+		{
+			...spec,
+			game: { ...spec.game, stickyMultiplierWilds: { start: 2, step: 1, cap: 25 } },
+			freeSpins: { ...spec.freeSpins, awardedSpins: (spec.freeSpins?.awardedSpins ?? 10) * 3 },
+		},
+		{ alpha: 1.15 },
+	);
+	assert.ok(longer.stuckFraction > sticky.stuckFraction, 'a longer round saturates further');
+	assert.ok(longer.multiplierLoad > sticky.multiplierLoad, 'and carries more multiplier');
+});
+
+test('the cap actually bounds the modelled multiplier load', () => {
+	// A cap that the model ignores would let stickySaturation report a load the
+	// engine can never pay, which is worse than no check — it would push the art
+	// and paytable decisions the wrong way.
+	const spec = specFor('lines');
+	const build = (cap) =>
+		stickySaturation(
+			{
+				...spec,
+				game: { ...spec.game, stickyMultiplierWilds: { start: 2, step: 1, cap } },
+				freeSpins: { ...spec.freeSpins, awardedSpins: 50 },
+			},
+			{ alpha: 1.15 },
+		);
+	const low = build(3);
+	const high = build(500);
+	assert.ok(low.multiplierLoad < high.multiplierLoad, 'a lower cap must model a lower load');
+	// With cap 3 and 50 spins almost every cell is pinned at the cap.
+	assert.ok(
+		low.multiplierLoad <= low.stuckAtEnd * 3 + 1e-9,
+		`cap 3 cannot exceed 3 per stuck cell, got ${low.multiplierLoad} over ${low.stuckAtEnd} cells`,
+	);
+});
+
+test('stickySaturation is null when the mechanic is off', () => {
+	assert.equal(stickySaturation(specFor('lines'), { alpha: 1.15 }), null);
 });
 
 test('two doubling multipliers alone is severe, whatever the count', () => {
