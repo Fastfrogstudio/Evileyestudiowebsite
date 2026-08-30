@@ -61,7 +61,14 @@ git clone https://github.com/StakeEngine/math-sdk.git  && (cd math-sdk && python
 ## Workflow
 
 ```
-inspiration.yaml ──forge inspire──> game-spec.yaml ──┬──forge math:scaffold──> math-sdk/games/<game_id>
+     forge mechanics ──> what to build: 54 mechanics, 27 reference games,
+                         what each costs the art team, what conflicts with what
+
+inspiration.yaml ──forge inspire──> game-spec.yaml ──┬──forge brief──────────> what to DRAW,
+                                                     │                          before any art exists
+                                                     ├──forge math:balance───> is this paytable
+                                                     │                          payable at all? (1s)
+                                                     ├──forge math:scaffold──> math-sdk/games/<game_id>
                                                      └──forge scaffold───────> web-sdk/apps/<name>
      forge art:placeholder ──> stand-in symbol tiles, so it renders on day one
                     assets-manifest.yaml ──forge audit──> gaps, before anything is written
@@ -72,9 +79,15 @@ inspiration.yaml ──forge inspire──> game-spec.yaml ──┬──forge 
      forge math:optimise ──> reweighted until it pays the target RTP
      forge math:sync ──> the real maths into the web app
      forge math:report ──> what it actually pays
+     forge math:validate ──> whether that is SHIPPABLE, rule by rule
                                                           forge verify ──> proof it runs
                                                           forge package ──> the upload folder
 ```
+
+`math:balance` runs first because it is the cheap check that makes the expensive ones worth
+running: a paytable that cannot pay its RTP on this board will simulate for an hour and then fail
+in the optimiser with a message about pig counts. `math:validate` runs last because it is the only
+step that asks whether the finished numbers are good enough to submit.
 
 Or run the whole thing in a browser: `npm run app` opens a local editor with the
 spec, your assets, this pipeline and a live preview.
@@ -421,14 +434,40 @@ tumble-aware variant, which is design work rather than scaffolding.
 
 ## What this tool does NOT do
 
-- **It does not generate math or RTP.** The reel strips written by `math:scaffold` and the
-  `paddingReels` written by `scaffold` are deterministic placeholders so both SDKs can run
-  immediately. Real strips, weights and RTP come from a math-sdk optimisation run
-  (`python games/<game_id>/run.py`).
-- **It does not tune bet-mode distributions.** The generated `BetMode` blocks carry the minimum
-  distributions that let `create_books()` run. Balancing quotas is a math job.
-- **It does not replace design work.** It gets you to "the game runs in storybook with my art and my
-  paytable, and the math simulates end-to-end". Win presentation and bonus screens are still yours.
+Two claims used to live here that are no longer true, and are recorded rather than quietly
+deleted: *"it does not generate math or RTP"* and *"it does not tune bet-mode distributions"*.
+Both were accurate when written and both were made obsolete by the reel-strip designer and the
+balance model. What follows is the current honest boundary.
+
+- **It does not replace design work.** It gets you to "the game runs in storybook with my art and
+  my paytable, and the maths simulates, optimises and validates end-to-end". Win presentation,
+  bonus screens and the actual *feel* of the game are still yours.
+- **Its balance model is a pre-flight, not the truth.** `math:balance` evaluates the base board
+  only — no multipliers, no cascades, no free spins. It answers "is the level of this paytable
+  within reach of the target", in about a second. The simulation remains the ground truth.
+- **Four of the seven `math:validate` rules are our reading of Stake's approval criteria**,
+  gathered from research rather than handed to us, and the command says so on every run.
+  Confirm them before a submission.
+- **Nothing here has been through a real upload or certification.** `forge package` assembles a
+  bundle that satisfies every check we know how to write. That is not the same as a bundle Stake
+  has accepted, and until one has been, this line stays.
+- **The volatility bands are a declaration of intent, not a measurement.** No shipped math-sdk
+  sample carries simulation output, so there was nothing to calibrate against. `math:validate`
+  reports that check as advisory and never fails on it.
+
+## What it does do, that the above used to deny
+
+- **Designs reel strips against the paytable**, calibrating symbol frequency to the target RTP and
+  hit rate — and, on a cascading mechanic, to a cascade length that terminates.
+- **Balances the paytable against the board geometry.** Ways pay per way, so a 5x3 paytable on a
+  5x4 board is 4.2x too rich before anything else is considered. `math:balance` reports the exact
+  scale factor, and `--apply` writes it into the spec.
+- **Generates the wincap distribution** that makes a max win reachable at a chosen frequency —
+  `hit_rate = max_win / rtp_allocated`, which is why 100,000x at 0.5% of RTP is exactly
+  1-in-20,000,000.
+- **Optimises to target and proves it.** Three games, one per volatility tier, each reach their
+  cap with every rule passing: a 10,000x cluster game, a 5,000x lines game, and a 100,000x ways
+  game, all on 96.50% against 96.50%.
 
 ---
 
@@ -450,6 +489,10 @@ tumble-aware variant, which is design work rather than scaffolding.
 | `forge math:optimise --spec <yaml> --math-sdk <path> [--volatility <p>] [--force] [--setup-only]` | Reweight until it pays the target RTP |
 | `forge math:sync --spec <yaml> --math-sdk <path> --sdk <path> [--dry-run]` | Replace placeholder config + story data with the real maths |
 | `forge math:report --spec <yaml> --math-sdk <path> [--json]` | Measured RTP, hit rate and spread against your targets |
+| `forge math:balance --spec <yaml> [--volatility <p>] [--apply] [--json]` | Pre-flight: is this paytable payable at this RTP, on this board? |
+| `forge math:validate --spec <yaml> --math-sdk <path> [--json]` | Is it shippable? Every rule measured, with the number it was judged on |
+| `forge brief --spec <yaml> [--format md\|csv\|json\|manifest] [--out <path>]` | What to draw — the complete asset spec, before any art exists |
+| `forge mechanics [--id <id>] [--win-type <t>] [--volatility <v>] [--games] [--combine <ids>] [--art <ids>]` | Browse the researched mechanics library |
 | `forge package --spec <yaml> --sdk <path> --math-sdk <path> [--out <dir>] [--skip-build]` | Build and assemble both upload halves |
 
 ## Tests
@@ -459,8 +502,10 @@ npm test                                              # unit tests, no SDK neede
 npm run test:e2e -- --math-sdk ../math-sdk --sdk ../web-sdk   # real scaffold + run + typecheck
 ```
 
-The e2e run covers all four mechanics on both sides, and asserts that `expanding` is *refused* on
-tumbling mechanics as loudly as it asserts the successes.
+The e2e run covers all four mechanics on both sides. It asserts that `expanding` is *refused* on
+`scatter` as loudly as it asserts the successes — and, since the board-lifetime work made the
+combination real, that an expanding wild on a *cascading* board generates, constructs a
+`GameConfig`, runs a spin, and lands its restore call in both cascade loops.
 
 ## Starting your next game
 
