@@ -49,6 +49,7 @@ import { Canvas, encodePng } from '../src/lib/png.js';
 import { drawText, measureText } from '../src/lib/font5x7.js';
 import { renderSymbolTile, topPayoutOf } from '../src/lib/placeholderArt.js';
 import { applyWebRecipe } from '../src/lib/webRecipePatch.js';
+import { renderExpandingMath } from '../src/lib/recipes/expanding.js';
 import { buildConfigFromMath } from '../src/commands/mathSync.js';
 import { summarise } from '../src/commands/mathReport.js';
 import { auditSound, readSoundVocabulary, readSoundsUsed, readSoundSprite } from '../src/lib/sound.js';
@@ -2176,6 +2177,30 @@ test('a bet mode cannot be both a bonus buy and a hold-and-win round', () => {
 			assert.throws(() => loadGameSpec(file), /both superspin and buyBonus/);
 		},
 	);
+});
+
+
+// ── mult_values shape ───────────────────────────────────────────────────────
+
+test('a recipe that replaces the reader decides the mult_values shape', () => {
+	// 0_0_ways' own game_override.py is the ONE flat reader in the SDK. The
+	// expanding recipe owns assign_mult_property outright, so applying it to a
+	// ways game leaves no flat reader at all — and emitting the mechanic's flat
+	// shape produced KeyError: 'freegame' on the first free spin.
+	const recipe = renderExpandingMath({ wildSymbol: 'W' });
+	assert.equal(recipe.multValuesShape, 'nested');
+
+	// All three of its readers index by gametype, which is why.
+	const readers = [
+		...recipe.classMethods.map((c) => c.source),
+		...recipe.overridePatches.map((p) => p.pythonMethod ?? ''),
+	].join('\n');
+	const nested = readers.match(/\["mult_values"\]\[self\.gametype\]/g) ?? [];
+	assert.equal(nested.length, 3, 'expected three nested readers');
+	assert.doesNotMatch(readers, /\["mult_values"\]\s*\)/, 'no flat reader should remain');
+
+	// And the mechanic still says flat, so the override is doing real work.
+	assert.equal(MECHANICS.ways.multValuesShape, 'flat');
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

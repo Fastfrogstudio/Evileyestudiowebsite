@@ -240,6 +240,16 @@ def update_expanding_wild_event(gamestate) -> None:
 
 		/** Distribution conditions the recipe's code reads at runtime. */
 		requiredConditions: ['landing_wilds', 'mult_values'],
+
+		/**
+		 * This recipe reads mult_values NESTED by gametype, in all three places:
+		 * update_with_existing_wilds, assign_new_wilds, and the assign_mult_property
+		 * it owns outright. That last one REPLACES the sample's own reader — so on
+		 * 0_0_ways, whose reader is the only flat one in the SDK, applying this
+		 * recipe leaves no flat reader at all and the config must be emitted
+		 * nested. Declaring the shape here is what tells the scaffolder that.
+		 */
+		multValuesShape: 'nested',
 	};
 }
 

@@ -96,12 +96,25 @@ function patchGameConfig(gameDir, spec, mechanic, { recipes }) {
 	// game_override.py reads the condition unguarded, so a game without it dies
 	// with KeyError: 'mult_values' on the first simulated round.
 	//
-	// The SHAPE has to match that sample's reader: 0_0_ways reads it flat,
-	// everything else indexes it by gametype. See mechanics.js.
+	// The SHAPE has to match WHOEVER READS IT — which is not always the mechanic.
+	//
+	// 0_0_ways' own game_override.py reads mult_values FLAT; every other sample
+	// indexes it by gametype. But a recipe can REPLACE that reader: `expanding`
+	// owns assign_mult_property (ownMethod: true) and reads nested, and its
+	// executables read nested too. Applied to a ways game, the sample's only flat
+	// reader is gone and all three remaining readers are the recipe's — so
+	// emitting the mechanic's flat shape produced KeyError: 'freegame' on the
+	// first free spin. Verified by grepping every reader in the generated game.
+	//
+	// So: a recipe that declares a shape wins over the mechanic's.
 	const hasMultiplierSymbol = spec.symbols.some((s) => s.special.includes('multiplier'));
 	if (hasMultiplierSymbol) {
+		const recipeShape = recipes
+			.map((r) => r.emitted?.multValuesShape)
+			.find((shape) => shape !== undefined);
+		const shape = recipeShape ?? mechanic.multValuesShape;
 		conditionKeys.push(
-			mechanic.multValuesShape === 'flat'
+			shape === 'flat'
 				? '"mult_values": {1: 20, 2: 50, 3: 80, 5: 40, 10: 10},'
 				: '"mult_values": {self.basegame_type: {1: 1}, self.freegame_type: {2: 100, 3: 50, 5: 20, 10: 5}},',
 		);
