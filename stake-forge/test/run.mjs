@@ -3639,6 +3639,32 @@ test('an unknown id is a refusal, not a crash', () => {
 	assert.match(out, /Unknown mechanic/);
 });
 
+test('the frontend build is spawned into its own process group', () => {
+	// `npx vite build` is npx spawning vite as a CHILD, and the build never exits
+	// on its own — the adapter prints "done" and the process sits there. So the
+	// package step kills it once it sees the marker.
+	//
+	// child.kill() reaches npx and NOT the vite process it spawned, so every
+	// package run leaked an orphaned build. Measured: a build that takes 14
+	// seconds alone was still running after thirteen minutes with two orphans
+	// present, which reads exactly like a hang and is really contention.
+	//
+	// The orphans also hid from `pkill -f "vite build"`, because their command
+	// line is `node .../vite.js build`. Two of them survived several rounds of
+	// cleanup before being found by listing arguments properly.
+	const source = fs.readFileSync(
+		path.join(__dirname, '..', 'src', 'commands', 'packageGame.js'),
+		'utf8',
+	);
+	assert.match(source, /detached:\s*true/, 'the build must be its own process group');
+	assert.match(source, /process\.kill\(-child\.pid/, 'kill the GROUP, not just npx');
+	assert.equal(
+		/\bchild\.kill\('SIGKILL'\)/.test(source.slice(0, source.indexOf('function killGroup'))),
+		false,
+		'nothing before killGroup should still be killing the child directly',
+	);
+});
+
 // ── report ──────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(60)}`);
 if (failures.length) {

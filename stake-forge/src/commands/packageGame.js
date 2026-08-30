@@ -37,10 +37,40 @@ import { mathGameId } from './mathScaffold.js';
 const BUILD_DONE = /Wrote site to|✔ done|✓ built in/;
 const QUIET_MS = 4000;
 
+/**
+ * Kill a detached child and everything it spawned.
+ *
+ * A negative pid signals the whole PROCESS GROUP, which is the only way to
+ * reach the vite process npx spawned. Falls back to the plain kill if the group
+ * is already gone, so a race at exit is not an error.
+ */
+function killGroup(child) {
+	if (!child.pid) return;
+	try {
+		process.kill(-child.pid, 'SIGKILL');
+	} catch {
+		try {
+			child.kill('SIGKILL');
+		} catch {
+			// Already gone — nothing to do.
+		}
+	}
+}
+
 export function buildFrontend({ appDir, timeoutMs = 600000, onLine = () => {} }) {
 	return new Promise((resolve) => {
+		// `detached: true` puts the build in its own PROCESS GROUP, so it can be
+		// killed as a group below.
+		//
+		// Without it this leaked a build on every run. `npx vite build` is npx
+		// spawning vite as a CHILD, and since the build never exits on its own,
+		// child.kill() killed npx and left vite running forever. One orphan per
+		// package run, each holding the workspace and competing for CPU: a build
+		// that takes 14 seconds alone was still going after thirteen minutes with
+		// two orphans present, which reads exactly like a hang.
 		const child = spawn('npx', ['vite', 'build'], {
 			cwd: appDir,
+			detached: true,
 			env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1', CI: '1' },
 		});
 
@@ -54,11 +84,7 @@ export function buildFrontend({ appDir, timeoutMs = 600000, onLine = () => {} })
 			settled = true;
 			clearTimeout(quietTimer);
 			clearTimeout(hardTimer);
-			try {
-				child.kill('SIGKILL');
-			} catch {
-				// Already gone.
-			}
+			killGroup(child);
 			resolve(result);
 		};
 
