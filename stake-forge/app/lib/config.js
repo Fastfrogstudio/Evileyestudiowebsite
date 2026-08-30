@@ -39,9 +39,9 @@ const DEFAULTS = {
 	// The key is stored here in the same file as the paths, which is a local-only
 	// app on a local-only port — but it IS a secret sitting on disk, so the app
 	// never sends it back to the browser.
-	imageEndpoint: '',
+	imageEndpoint: 'https://ark.ap-southeast.bytepluses.com/api/v3/images/generations',
 	imageApiKey: '',
-	imageModel: 'seedance-2.5',
+	imageModel: 'seedream-5-0-pro',
 };
 
 /** Config keys that must never be sent to the browser. */

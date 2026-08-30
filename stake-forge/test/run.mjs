@@ -75,6 +75,7 @@ import { buildArtBrief, winLevelBands, LOCALES, LOCALISED_SHEETS, WIN_LEVEL_SCAL
 import { brief as runBrief, renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
 import { audit } from '../src/commands/audit.js';
 import { parseAtlas } from '../src/lib/atlasParts.js';
+import { generationSize, SIZE_LIMITS } from '../src/lib/imageProvider.js';
 import { buildGenerationManifest } from '../src/lib/artGuide.js';
 const SDK_LINES_ASSETS = '/home/user/web-sdk/apps/lines/static/assets/spines';
 import { coverageGaps, eventsImpliedBy, declaredHandlers } from '../src/lib/eventCoverage.js';
@@ -3299,6 +3300,42 @@ test('featureVariety says nothing when there is nothing to say', () => {
 		null,
 		'four rounds is not enough to call a distribution collapsed',
 	);
+});
+
+test('generation size clears the model floor without changing the aspect ratio', () => {
+	// Seedream accepts 512..2048 per side. Most of what a slot game needs is
+	// smaller: symbol parts in the shipped atlas are 160x160 and a background
+	// particle is 17x17, so asking for those directly is a rejected request.
+	//
+	// Scaling up is also the right thing on its own terms — the sample symbol
+	// skeletons have a 1080x1080 authoring canvas whose parts pack down to
+	// 160x160, so a high-resolution master the packer scales down is the correct
+	// artefact. Generating a 160px master throws away detail.
+	for (const [w, h] of [[200, 200], [160, 160], [17, 17], [404, 220]]) {
+		const size = generationSize(w, h);
+		assert.ok(size.width >= 512 && size.height >= 512, `${w}x${h} -> ${size.width}x${size.height} is under the floor`);
+		assert.ok(size.width <= 2048 && size.height <= 2048, `${w}x${h} exceeds the ceiling`);
+		assert.ok(
+			Math.abs(size.width / size.height - w / h) < 0.02,
+			`${w}x${h} -> ${size.width}x${size.height} changed the aspect ratio`,
+		);
+		assert.equal(size.distorted, false);
+	}
+
+	// Already inside the range: left alone rather than needlessly resampled.
+	const backdrop = generationSize(2020, 991);
+	assert.equal(backdrop.width, 2020);
+	assert.equal(backdrop.height, 991);
+});
+
+test('a part too thin to satisfy both limits is flagged, not silently squashed', () => {
+	// 189x850 is a dust column. Scaled to clear the 512 floor on its short side it
+	// would be 2295 tall, past the ceiling; clamped to the ceiling its short side
+	// falls back under the floor. No size satisfies both, so the ratio has to give
+	// — and that has to be said, because the fix is cropping rather than scaling.
+	const size = generationSize(189, 850);
+	assert.equal(size.distorted, true);
+	assert.ok(size.width >= 512 && size.height <= 2048);
 });
 
 test('atlas parts are read at the size the artist DREW, not the size they packed to', () => {
