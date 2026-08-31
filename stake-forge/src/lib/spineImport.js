@@ -233,3 +233,47 @@ export function groupSpineDeliveries(dir) {
 	}
 	return bundles;
 }
+
+/**
+ * The PNGs in a delivery folder that belong to a rig rather than to a slot.
+ *
+ * ── Why this is a function and not four lines at each call site ─────────────
+ * It was four lines at each call site, and they were not the same four lines.
+ * `validateSpineDelivery` found a rig's page through `parseAtlas`, which walks
+ * the file structurally; the import and the review tab each re-scanned the
+ * atlas with a regex of their own. So an atlas whose header the regex did not
+ * recognise validated as a complete rig AND had its page handed to the matcher
+ * as loose art — matched to the symbol it is named after, then refused for
+ * being 454x481 in a 200x200 slot, because a packed page is whatever size it
+ * packed to. The delivery was correct; the report blamed the artist for it.
+ *
+ * Both readings are kept, because they fail differently: parseAtlas
+ * understands the format, the scan catches a page in a file parseAtlas gives up
+ * on. What matters is that every caller now asks the same question and gets the
+ * same answer.
+ */
+export function atlasPageFiles(dir) {
+	if (!fs.existsSync(dir)) return new Set();
+	const entries = fs.readdirSync(dir);
+	const pages = new Set();
+
+	for (const file of entries.filter((f) => f.endsWith('.atlas'))) {
+		const full = path.join(dir, file);
+
+		// The structural read — the same one validateSpineDelivery trusts.
+		for (const page of readAtlasRegions(full)?.pages ?? []) {
+			pages.add(path.basename(page));
+		}
+
+		// And the textual one, for a header it could not follow. A BOM is stripped
+		// as well as whitespace: it is invisible in every editor and makes an
+		// exact-name comparison fail for no reason anybody can see.
+		for (const line of fs.readFileSync(full, 'utf8').split('\n')) {
+			const trimmed = line.replace(/^\uFEFF/, '').trim();
+			if (/\.(png|webp|jpg|jpeg)$/i.test(trimmed) && !trimmed.includes(':')) {
+				pages.add(path.basename(trimmed));
+			}
+		}
+	}
+	return pages;
+}

@@ -48,7 +48,7 @@ import { readSoundsUsed, readSoundVocabulary, readSoundSprite } from '../src/lib
 import { loadGameSpec } from '../src/lib/loadSpec.js';
 import { ART_GUIDE_TEMPLATE, loadArtGuide, buildGenerationManifest } from '../src/lib/artGuide.js';
 import { makeProvider, generateJob } from '../src/lib/imageProvider.js';
-import { groupSpineDeliveries, validateSpineDelivery } from '../src/lib/spineImport.js';
+import { groupSpineDeliveries, validateSpineDelivery, atlasPageFiles } from '../src/lib/spineImport.js';
 import { buildAnimBrief } from '../src/lib/animBrief.js';
 import { buildArtBrief } from '../src/lib/artBrief.js';
 import { renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
@@ -428,13 +428,7 @@ app.get('/api/games/:id/review', (req, res) => {
 			expectedFor = new Map();
 		}
 		// An atlas page belongs to a bundle, not to the loose-image list.
-		const pages = new Set();
-		for (const file of files.filter((f) => f.endsWith('.atlas'))) {
-			for (const line of fs.readFileSync(path.join(dir, file), 'utf8').split('\n')) {
-				const trimmed = line.trim();
-				if (/^[^:]+\.(png|webp|jpg|jpeg)$/i.test(trimmed)) pages.add(trimmed);
-			}
-		}
+		const pages = atlasPageFiles(dir);
 
 		res.json({
 			dir,

@@ -7,7 +7,12 @@ import { loadGameSpec } from '../lib/loadSpec.js';
 import { getMechanic } from '../lib/mechanics.js';
 import { loadArtGuide, buildGenerationManifest } from '../lib/artGuide.js';
 import { decodePng, resize, alphaCoverage, opaqueBounds, writePng } from '../lib/image.js';
-import { groupSpineDeliveries, validateSpineDelivery, readAtlasRegions } from '../lib/spineImport.js';
+import {
+	groupSpineDeliveries,
+	validateSpineDelivery,
+	readAtlasRegions,
+	atlasPageFiles,
+} from '../lib/spineImport.js';
 import { buildAnimBrief } from '../lib/animBrief.js';
 
 /**
@@ -258,16 +263,11 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 		.filter((e) => e.isFile() && /\.png$/i.test(e.name))
 		.map((e) => e.name);
 
-	// Atlas PAGES are part of a Spine delivery, not loose art. Listing them as
-	// "matched no slot" is a false alarm that trains people to ignore that list,
-	// which is where the real orphans show up.
-	const atlasPages = new Set();
-	for (const file of fs.readdirSync(fromDir).filter((f) => f.endsWith('.atlas'))) {
-		for (const line of fs.readFileSync(path.join(fromDir, file), 'utf8').split('\n')) {
-			const trimmed = line.trim();
-			if (/^[^:]+\.(png|webp|jpg|jpeg)$/i.test(trimmed)) atlasPages.add(trimmed);
-		}
-	}
+	// Atlas PAGES are part of a Spine delivery, not loose art. Left in, a page is
+	// matched to the symbol it is named after and refused for having the wrong
+	// shape — it is whatever size it packed to, never the 200x200 a slot wants —
+	// so the report blames the artist for a file they delivered correctly.
+	const atlasPages = atlasPageFiles(fromDir);
 
 	const { matched, unmatched: loose, ambiguous } = matchFiles(
 		delivered.filter((f) => !atlasPages.has(f)),

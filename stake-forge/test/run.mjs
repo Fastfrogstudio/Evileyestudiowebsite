@@ -75,7 +75,12 @@ import { buildArtBrief, winLevelBands, LOCALES, LOCALISED_SHEETS, WIN_LEVEL_SCAL
 import { brief as runBrief, renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
 import { audit } from '../src/commands/audit.js';
 import { parseAtlas } from '../src/lib/atlasParts.js';
-import { validateSpineDelivery, groupSpineDeliveries } from '../src/lib/spineImport.js';
+import {
+	validateSpineDelivery,
+	groupSpineDeliveries,
+	atlasPageFiles,
+	readAtlasRegions,
+} from '../src/lib/spineImport.js';
 import { generationSize, SIZE_LIMITS } from '../src/lib/imageProvider.js';
 import { resize, alphaCoverage, opaqueBounds, writePng } from '../src/lib/image.js';
 import { matchFiles, inspect, artImport } from '../src/commands/artImport.js';
@@ -3548,6 +3553,35 @@ function writeImportFixture(dir) {
 	fs.writeFileSync(guidePath, YAML.stringify({ style: { summary: 'a look' }, symbols: {} }));
 	return { gameDir, from, specPath, guidePath };
 }
+
+test('every caller identifies a rig\'s atlas page the same way', () => {
+	// The bug this closes was a disagreement, not a missing check.
+	// validateSpineDelivery found a page structurally, through parseAtlas, while
+	// the import and the review tab each re-scanned the atlas with a regex of
+	// their own. An atlas those regexes did not recognise therefore validated as
+	// a complete rig AND had its page handed to the matcher as loose art —
+	// matched to the symbol it is named after, then refused for being the size it
+	// packed to rather than the 200x200 a slot wants.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pages-'));
+	fs.mkdirSync(dir, { recursive: true });
+	writeRig(dir, 'h1', { animations: ['h1'] });
+
+	const viaHelper = atlasPageFiles(dir);
+	const viaParser = new Set((readAtlasRegions(path.join(dir, 'h1.atlas')).pages ?? []));
+	for (const page of viaParser) {
+		assert.ok(viaHelper.has(page), `${page} must be excluded by both readings, not one`);
+	}
+	assert.ok(viaHelper.has('h1_tex.png'));
+
+	// A page named with a BOM on the header line resolves to the same file. The
+	// BOM is invisible in every editor, so an exact-name comparison that keeps it
+	// fails for a reason nobody can see on screen.
+	const bomDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pages-'));
+	writeRig(bomDir, 'h1', { animations: ['h1'] });
+	const atlasFile = path.join(bomDir, 'h1.atlas');
+	fs.writeFileSync(atlasFile, `\uFEFF${fs.readFileSync(atlasFile, 'utf8')}`);
+	assert.ok(atlasPageFiles(bomDir).has('h1_tex.png'), 'a BOM must not hide the page');
+});
 
 test('art already drawn imports without an art guide', () => {
 	// The guide describes the LOOK, for generating art that does not exist yet.
