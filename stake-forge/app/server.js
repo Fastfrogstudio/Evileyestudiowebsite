@@ -48,7 +48,8 @@ import { readSoundsUsed, readSoundVocabulary, readSoundSprite } from '../src/lib
 import { loadGameSpec } from '../src/lib/loadSpec.js';
 import { ART_GUIDE_TEMPLATE, loadArtGuide, buildGenerationManifest } from '../src/lib/artGuide.js';
 import { makeProvider, generateJob } from '../src/lib/imageProvider.js';
-import { groupSpineDeliveries } from '../src/lib/spineImport.js';
+import { groupSpineDeliveries, validateSpineDelivery } from '../src/lib/spineImport.js';
+import { buildAnimBrief } from '../src/lib/animBrief.js';
 import { buildArtBrief } from '../src/lib/artBrief.js';
 import { renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
 
@@ -399,6 +400,33 @@ app.get('/api/games/:id/review', (req, res) => {
 
 		const files = fs.readdirSync(dir).filter((f) => fs.statSync(path.join(dir, f)).isFile());
 		const bundles = groupSpineDeliveries(dir);
+
+		// ── what the GAME will ask this rig for ─────────────────────────────
+		// Showing the animation playing proves it is a working rig. It does not
+		// prove the game can play it: the front end calls animations by literal
+		// string, so a correct rig whose animation carries Spine's default export
+		// name ("animation") loads cleanly, validates cleanly, and is inert on the
+		// board. Nothing downstream reports it, because nothing downstream is
+		// wrong. Reviewing a rig without this check is watching it work in the one
+		// place it is not required to.
+		let expectedFor = new Map();
+		try {
+			const spec = loadGameSpec(path.join(gameDir(config.workspace, req.params.id), 'game-spec.yaml'));
+			const mechanic = getMechanic(spec.game.mechanic);
+			const referenceAppDir = config.webSdk
+				? path.join(config.webSdk, 'apps', mechanic.webApp)
+				: null;
+			for (const entry of buildAnimBrief({ spec, referenceAppDir }).entries) {
+				if (!entry.skeletonFile) continue;
+				expectedFor.set(
+					path.basename(entry.skeletonFile, '.json').toLowerCase(),
+					{ id: entry.id, animations: entry.animations.map((a) => a.name) },
+				);
+			}
+		} catch {
+			// No readable spec yet — still show the delivery, just without a verdict.
+			expectedFor = new Map();
+		}
 		// An atlas page belongs to a bundle, not to the loose-image list.
 		const pages = new Set();
 		for (const file of files.filter((f) => f.endsWith('.atlas'))) {
@@ -417,12 +445,25 @@ app.get('/api/games/:id/review', (req, res) => {
 					file: f,
 					url: `/review-file/${req.params.id}/${encodeURIComponent(req.query.from || 'delivered')}/${encodeURIComponent(f)}`,
 				})),
-			spine: bundles.map((b) => ({
-				name: b.name,
-				animations: b.animations,
-				skeleton: path.basename(b.skeletonFile),
-				atlas: b.atlasFile ? path.basename(b.atlasFile) : null,
-			})),
+			spine: bundles.map((b) => {
+				const want = expectedFor.get(b.name.toLowerCase()) ?? null;
+				const check = validateSpineDelivery({
+					skeletonFile: b.skeletonFile,
+					atlasFile: b.atlasFile,
+					requiredAnimations: want?.animations ?? [],
+				});
+				return {
+					name: b.name,
+					animations: b.animations,
+					skeleton: path.basename(b.skeletonFile),
+					atlas: b.atlasFile ? path.basename(b.atlasFile) : null,
+					slot: want?.id ?? null,
+					expected: want?.animations ?? null,
+					problems: check.problems,
+					notes: check.notes,
+					canvas: check.skeleton?.canvas ?? null,
+				};
+			}),
 		});
 	} catch (err) {
 		fail(res, err);

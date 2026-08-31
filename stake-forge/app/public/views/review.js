@@ -192,16 +192,44 @@ export function renderReview(ctx) {
 		);
 	}
 
+	/**
+	 * The verdict line under a rig.
+	 *
+	 * Seeing it play proves the rig works. It does not prove the GAME can play it:
+	 * animations are called by literal string, so a perfect rig whose animation
+	 * kept Spine's default export name loads, validates, and sits inert on the
+	 * board with nothing anywhere reporting a fault. That gap is the whole reason
+	 * this tab is a gate rather than a gallery, so the verdict has to be here,
+	 * next to the thing it judges.
+	 */
+	function verdict(entry) {
+		if (!entry.expected) {
+			return h('div.rv-note',
+				`Nothing in this game is called ${entry.name}. `,
+				'It will be reviewed but not imported — check the name against the ',
+				'animation brief.');
+		}
+		if (entry.problems?.length) {
+			return h('div.rv-bad',
+				...entry.problems.map((problem) => h('div', problem)));
+		}
+		return h('div.rv-good', `plays in-game as ${entry.slot}`);
+	}
+
 	function spineTile(entry) {
+		const expected = new Set(entry.expected ?? []);
 		return h('div.rv-tile.rv-wide',
 			h('div.rv-art', { id: `spine-${entry.name}` }, h('span.dim', 'loading…')),
 			h('b', entry.name),
 			h('div.rv-size', { id: `size-${entry.name}` }),
 			h('div.rv-anims',
 				...entry.animations.map((animation) =>
-					h('button.chip', { onclick: () => setAnimation(entry.name, animation) }, animation),
+					h(expected.has(animation) ? 'button.chip.active' : 'button.chip',
+						{ onclick: () => setAnimation(entry.name, animation) },
+						animation),
 				),
 			),
+			verdict(entry),
 			entry.atlas ? null : h('div.gen-err', 'no atlas beside it — cannot play'),
 		);
 	}
@@ -240,7 +268,9 @@ export function renderReview(ctx) {
 			state.spine.length
 				? h('div.card',
 						h('h2', `Animations (${state.spine.length})`),
-						h('p.card-sub', 'Click an animation name to play it.'),
+						h('p.card-sub',
+							'Click an animation name to play it. A highlighted name is one the ' +
+							'game will actually call — the rest are along for the ride.'),
 						h('div.rv-grid', ...state.spine.map(spineTile)))
 				: null,
 

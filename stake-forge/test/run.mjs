@@ -75,6 +75,7 @@ import { buildArtBrief, winLevelBands, LOCALES, LOCALISED_SHEETS, WIN_LEVEL_SCAL
 import { brief as runBrief, renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
 import { audit } from '../src/commands/audit.js';
 import { parseAtlas } from '../src/lib/atlasParts.js';
+import { validateSpineDelivery, groupSpineDeliveries } from '../src/lib/spineImport.js';
 import { generationSize, SIZE_LIMITS } from '../src/lib/imageProvider.js';
 import { resize, alphaCoverage, opaqueBounds } from '../src/lib/image.js';
 import { matchFiles, inspect } from '../src/commands/artImport.js';
@@ -3525,6 +3526,106 @@ test('atlas parts are read at the size the artist DREW, not the size they packed
 	assert.equal(banner.width, 540, 'a BIG WIN banner is wide');
 	assert.equal(banner.height, 150);
 	assert.equal(banner.trimmed, true, 'it has offsets, so the drawn size is known');
+});
+
+group('spineImport — the delivery gate');
+
+/** A minimal but genuinely loadable Spine skeleton + its atlas, on disk. */
+function writeRig(dir, name, { animations, regions = ['body'], attachments = null, spine = '4.1.23' }) {
+	fs.mkdirSync(dir, { recursive: true });
+	const skin = {};
+	for (const region of attachments ?? regions) skin[region] = { [region]: {} };
+	fs.writeFileSync(
+		path.join(dir, `${name}.json`),
+		JSON.stringify({
+			skeleton: { spine, x: -100, y: -100, width: 200, height: 200 },
+			bones: [{ name: 'root' }],
+			slots: (attachments ?? regions).map((r) => ({ name: r, bone: 'root' })),
+			skins: [{ name: 'default', attachments: skin }],
+			animations: Object.fromEntries(animations.map((a) => [a, {}])),
+		}),
+	);
+	fs.writeFileSync(
+		path.join(dir, `${name}.atlas`),
+		`${name}_tex.png\nsize:64,64\nformat:RGBA8888\nfilter:Linear,Linear\nrepeat:none\n` +
+			regions.map((r) => `${r}\nbounds:0,0,32,32\n`).join(''),
+	);
+	fs.writeFileSync(path.join(dir, `${name}_tex.png`), '');
+	return { skeletonFile: path.join(dir, `${name}.json`), atlasFile: path.join(dir, `${name}.atlas`) };
+}
+
+test("Spine's default export name is caught, because nothing downstream can catch it", () => {
+	// The failure this gate exists for, and the one a human reviewer cannot see:
+	// the rig is correct, it plays perfectly in a preview, the atlas resolves, the
+	// version is right. The only thing wrong is the STRING. The front end calls
+	// animations by literal name, so `animation` — what Spine exports when nobody
+	// renames the track — loads without error and leaves the symbol inert on the
+	// board, with no fault reported anywhere.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-'));
+	const files = writeRig(dir, 'l5', { animations: ['animation'] });
+	const result = validateSpineDelivery({ ...files, requiredAnimations: ['l5'] });
+
+	assert.equal(result.problems.length, 1);
+	assert.match(result.problems[0], /missing animation\(s\): l5/);
+	// It must also say what IS in there, or the reader cannot act on it.
+	assert.match(result.problems[0], /contains: animation/);
+});
+
+test('a rig named the way the game calls it passes clean', () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-'));
+	const files = writeRig(dir, 'l5', { animations: ['l5'] });
+	const result = validateSpineDelivery({ ...files, requiredAnimations: ['l5'] });
+	assert.deepEqual(result.problems, []);
+	assert.deepEqual(result.notes, []);
+	assert.deepEqual(result.skeleton.canvas, { width: 200, height: 200 });
+});
+
+test('extra animations are a note, not a failure', () => {
+	// A rig may legitimately carry work nothing calls yet. Failing on that would
+	// make the gate cry wolf, and a gate that cries wolf gets switched off.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-'));
+	const files = writeRig(dir, 'l5', { animations: ['l5', 'l5_tease'] });
+	const result = validateSpineDelivery({ ...files, requiredAnimations: ['l5'] });
+	assert.deepEqual(result.problems, []);
+	assert.match(result.notes[0], /l5_tease/);
+});
+
+test('a skeleton whose attachments have no regions is reported as a mismatched export', () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-'));
+	const files = writeRig(dir, 'l5', {
+		animations: ['l5'],
+		regions: ['body'],
+		attachments: ['body', 'hat'], // hat was added after the atlas was packed
+	});
+	const result = validateSpineDelivery({ ...files, requiredAnimations: ['l5'] });
+	assert.equal(result.problems.length, 1);
+	assert.match(result.problems[0], /hat/);
+	assert.match(result.problems[0], /different states of the project/);
+});
+
+test('an undelivered atlas page is named, rather than failing later as a blank symbol', () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-'));
+	const files = writeRig(dir, 'l5', { animations: ['l5'] });
+	fs.rmSync(path.join(dir, 'l5_tex.png'));
+	const result = validateSpineDelivery({ ...files, requiredAnimations: ['l5'] });
+	assert.match(result.problems[0], /l5_tex\.png/);
+});
+
+test('a Spine 3.x export is refused, because the bundled 4.2 runtime cannot read it', () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-'));
+	const files = writeRig(dir, 'l5', { animations: ['l5'], spine: '3.8.99' });
+	const result = validateSpineDelivery({ ...files, requiredAnimations: ['l5'] });
+	assert.ok(result.problems.some((p) => /re-export from Spine 4/.test(p)));
+});
+
+test('ordinary JSON sitting in a delivery folder is not mistaken for a skeleton', () => {
+	// Art folders collect stray files — a manifest, an export log. Treating one as
+	// a broken rig would report a fault against a file nobody delivered as art.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-'));
+	writeRig(dir, 'l5', { animations: ['l5'] });
+	fs.writeFileSync(path.join(dir, 'notes.json'), JSON.stringify({ hello: 'world' }));
+	const bundles = groupSpineDeliveries(dir);
+	assert.deepEqual(bundles.map((b) => b.name), ['l5']);
 });
 
 test('a generation manifest carries a real size and a transparency rule per part', () => {
