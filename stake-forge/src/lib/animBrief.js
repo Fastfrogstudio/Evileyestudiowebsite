@@ -105,12 +105,36 @@ export function buildAnimBrief({ spec, referenceAppDir }) {
 
 	for (const symbol of art.symbols) {
 		const lower = symbol.name.toLowerCase();
-		// The animation names the front end will call, from this symbol's states.
-		const animations = (symbol.states ?? []).map((state) => ({
-			name: state.animationName,
-			loops: LOOPING.test(state.animationName),
-			why: state.requiredBy?.join(', ') ?? '',
-		}));
+
+		// ── ONE animation per symbol, not one per state ──────────────────────
+		// The first version of this brief asked for a rig per state — static,
+		// spin, land, win, postWinStatic — which is five animations a symbol and
+		// fifty-five for a game. That is not what the engine plays.
+		//
+		// Read off the shipped lines app: every symbol's `static`, `spin`, `land`
+		// and `postWinStatic` all point at ONE flat sprite (h1Static -> h1.webp),
+		// and only `win` is a Spine animation. `explosion` is a single shared rig
+		// for the whole game, not one per symbol.
+		//
+		//   H1: { win: {type:'spine', animationName:'h1'},
+		//         static: h1Static, spin: h1Static, land: h1Static,
+		//         postWinStatic: h1Static }
+		//
+		// So the ask is one animation — the one that plays when the symbol takes
+		// part in a win — and a flat PNG for everything else. Getting this wrong
+		// costs the animation team five times the work for no visible difference.
+		const animations = [
+			{
+				name: lower,
+				loops: false,
+				why: 'plays when this symbol is part of a win',
+			},
+		];
+		// The states that need no rig at all, so the brief can say so rather than
+		// leaving someone to wonder where they went.
+		const flatStates = (symbol.states ?? [])
+			.map((state) => state.state)
+			.filter((state) => state !== 'win');
 		entries.push({
 			id: `symbol.${symbol.name}`,
 			kind: 'symbol',
@@ -123,12 +147,14 @@ export function buildAnimBrief({ spec, referenceAppDir }) {
 			spineVersion: symbolFacts?.spineVersion ?? null,
 			renderedAt: symbol.size ?? null,
 			animations,
+			flatStates,
 			parts: (atlases.symbols?.parts ?? []).filter((p) =>
 				p.name.toLowerCase().startsWith(lower),
 			),
 			note:
-				'The front end plays these by literal name. A rig with the right motion under a ' +
-				'different name imports cleanly and does nothing on screen.',
+				`Only the win animation is rigged. ${flatStates.join(', ')} all render the flat ` +
+				`${lower}.png, so they need no animation. The name is matched literally — a rig ` +
+				`with the right motion under a different name loads cleanly and plays nothing.`,
 		});
 	}
 
@@ -199,6 +225,13 @@ export function renderAnimBrief(brief) {
 			'on the board, so consistency between them matters more than the value.',
 	);
 	out.push('');
+	out.push(
+		'**One animation per symbol.** Only the win animation is rigged; the resting, spinning and ' +
+			'landing states all render the flat PNG. The shipped sample works exactly this way, and ' +
+			'rigging a state that renders a still image is five times the work for no visible ' +
+			'difference. The explosion is one shared rig for the whole game, not one per symbol.',
+	);
+	out.push('');
 
 	for (const kind of ['symbol', 'screen']) {
 		const group = brief.entries.filter((e) => e.kind === kind);
@@ -230,11 +263,18 @@ export function renderAnimBrief(brief) {
 			if (entry.component) out.push(`| Played by | \`${entry.component}\` |`);
 			out.push('');
 			if (entry.animations.length) {
-				out.push('| Animation name | Plays |');
-				out.push('|---|---|');
+				out.push('| Animation name | Plays | Why |');
+				out.push('|---|---|---|');
 				for (const anim of entry.animations) {
-					out.push(`| \`${anim.name}\` | ${anim.loops ? 'loops' : 'once'} |`);
+					out.push(`| \`${anim.name}\` | ${anim.loops ? 'loops' : 'once'} | ${anim.why ?? ''} |`);
 				}
+				out.push('');
+			}
+			if (entry.flatStates?.length) {
+				out.push(
+					`_No rig needed for ${entry.flatStates.map((s) => `\`${s}\``).join(', ')} — ` +
+						`they all render the flat PNG._`,
+				);
 				out.push('');
 			}
 			if (entry.parts?.length) {

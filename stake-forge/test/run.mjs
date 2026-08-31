@@ -3369,20 +3369,69 @@ test('an entirely transparent delivery is refused', () => {
 	assert.ok(result.problems.some((p) => /entirely transparent/.test(p)));
 });
 
-test('the animation brief loops the poses that are held', () => {
-	// The names are matched at the END, case-insensitively, against the real
-	// vocabulary. `postWinStatic` is the case that matters: it is a held pose with
-	// no underscore before "Static", so an `_static` pattern briefs it as a
-	// one-shot and the symbol snaps back to nothing after a win.
+test('the animation brief asks for ONE animation per symbol', () => {
+	// The first version asked for a rig per STATE — static, spin, land, win,
+	// postWinStatic — which is five animations a symbol and fifty-five for a game.
+	// That is not what the engine plays. Read off the shipped lines app, every
+	// symbol's static/spin/land/postWinStatic point at ONE flat sprite
+	// (h1Static -> h1.webp) and only \ is a Spine animation:
+	//
+	//   H1: { win: {type:'spine', animationName:'h1'},
+	//         static: h1Static, spin: h1Static, land: h1Static, ... }
+	//
+	// Getting this wrong costs the animation team five times the work for no
+	// visible difference, so it is pinned.
 	const brief = buildAnimBrief({ spec: specFor('lines'), referenceAppDir: null });
-	const wild = brief.entries.find((e) => e.id.startsWith('symbol.'));
-	assert.ok(wild, 'every symbol gets an entry');
-	const byName = Object.fromEntries(wild.animations.map((a) => [a.name, a.loops]));
-	const held = Object.keys(byName).find((n) => /postWinStatic$/.test(n));
-	assert.ok(held, 'postWinStatic should be briefed');
-	assert.equal(byName[held], true, 'a held pose must loop');
-	const spin = Object.keys(byName).find((n) => /_spin$/.test(n));
-	assert.equal(byName[spin], false, 'a spin plays once');
+	const symbols = brief.entries.filter((e) => e.kind === 'symbol');
+	assert.ok(symbols.length >= 5, 'every symbol gets an entry');
+	for (const entry of symbols) {
+		assert.equal(entry.animations.length, 1, `${entry.id} should need exactly one animation`);
+		assert.ok(entry.flatStates.length > 1, `${entry.id} should name the states that need no rig`);
+		assert.ok(!entry.flatStates.includes('win'), 'win is the one that IS rigged');
+	}
+});
+
+test('the animation brief asks for ONE animation per symbol', () => {
+	// The first version asked for a rig per STATE — static, spin, land, win,
+	// postWinStatic — which is five animations a symbol and fifty-five for a game.
+	// That is not what the engine plays. Read off the shipped lines app, every
+	// symbol's static/spin/land/postWinStatic point at ONE flat sprite
+	// (h1Static -> h1.webp) and only `win` is a Spine animation:
+	//
+	//   H1: { win: { type: 'spine', animationName: 'h1' },
+	//         static: h1Static, spin: h1Static, land: h1Static, ... }
+	//
+	// Getting this wrong costs the animation team five times the work for no
+	// visible difference on screen, so it is pinned.
+	const brief = buildAnimBrief({ spec: specFor('lines'), referenceAppDir: null });
+	const symbols = brief.entries.filter((e) => e.kind === 'symbol');
+	assert.ok(symbols.length >= 5, 'every symbol gets an entry');
+	for (const entry of symbols) {
+		assert.equal(entry.animations.length, 1, `${entry.id} should need exactly one animation`);
+		assert.ok(entry.flatStates.length > 1, `${entry.id} should name the states needing no rig`);
+		assert.ok(!entry.flatStates.includes('win'), 'win is the one state that IS rigged');
+	}
+});
+
+test('a screen animation that is a held pose loops', () => {
+	// Loop detection matches the END of the name, case-insensitively, against the
+	// real vocabulary: idle, dust, glow, *_idle all rest; intro, outro, *_exit all
+	// play once. A held pose briefed as a one-shot reads on screen as the art
+	// snapping back to nothing.
+	const brief = buildAnimBrief({ spec: specFor('lines'), referenceAppDir: null });
+	const named = brief.entries
+		.filter((e) => e.kind === 'screen')
+		.flatMap((e) => e.animations);
+	const byName = new Map(named.map((a) => [a.name, a.loops]));
+	for (const [name, loops] of byName) {
+		if (/(idle|loop|dust|glow|static)$/i.test(name)) {
+			assert.equal(loops, true, `${name} is a held pose and must loop`);
+		}
+		if (/(intro|outro|exit)$/i.test(name)) {
+			assert.equal(loops, false, `${name} plays once`);
+		}
+	}
+	assert.ok(byName.size > 5, `expected several screen animations, got ${byName.size}`);
 });
 
 test('the animation brief does not invent one canvas for all symbols', () => {
