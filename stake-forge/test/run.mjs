@@ -76,6 +76,9 @@ import { brief as runBrief, renderMarkdown, renderCsv, renderManifest } from '..
 import { audit } from '../src/commands/audit.js';
 import { parseAtlas } from '../src/lib/atlasParts.js';
 import { generationSize, SIZE_LIMITS } from '../src/lib/imageProvider.js';
+import { resize, alphaCoverage, opaqueBounds } from '../src/lib/image.js';
+import { matchFiles, inspect } from '../src/commands/artImport.js';
+import { buildAnimBrief } from '../src/lib/animBrief.js';
 import { buildGenerationManifest } from '../src/lib/artGuide.js';
 const SDK_LINES_ASSETS = '/home/user/web-sdk/apps/lines/static/assets/spines';
 import { coverageGaps, eventsImpliedBy, declaredHandlers } from '../src/lib/eventCoverage.js';
@@ -3300,6 +3303,96 @@ test('featureVariety says nothing when there is nothing to say', () => {
 		null,
 		'four rounds is not enough to call a distribution collapsed',
 	);
+});
+
+test('resizing a transparent image premultiplies alpha', () => {
+	// The classic transparent-asset artefact: a fully-clear pixel usually carries
+	// garbage RGB, and averaging that in unpremultiplied puts a dark fringe around
+	// every symbol on the reel. It only shows up after packing, which is the worst
+	// time to find it.
+	//
+	// Built as a half-clear image whose transparent side is BLACK. Premultiplied,
+	// the clear side contributes nothing and the visible colour stays red; naively,
+	// it darkens toward black.
+	const width = 4;
+	const height = 2;
+	const rgba = Buffer.alloc(width * height * 4);
+	for (let i = 0; i < width * height; i += 1) {
+		const opaque = i % width < 2;
+		rgba[i * 4] = opaque ? 255 : 0;
+		rgba[i * 4 + 3] = opaque ? 255 : 0;
+	}
+	const small = resize({ width, height, rgba }, 2, 1);
+	// The left output pixel samples only opaque red neighbours.
+	assert.equal(small.rgba[0], 255, 'red must survive the resample undarkened');
+	assert.equal(small.rgba[3], 255, 'and stay opaque');
+});
+
+test('matchFiles keeps the digits that ARE the symbol name', () => {
+	// The first version stripped trailing digits to catch export suffixes like
+	// "cart 2". That collapsed h1, h2, h3 and h4 onto one key and made every high
+	// symbol ambiguous — the digits in a slot symbol's name are the name.
+	const jobs = ['W', 'H1', 'H2', 'H3', 'L1', 'L2'].map((n) => ({
+		id: `symbol.${n}`,
+		partName: n.toLowerCase(),
+	}));
+	const { matched, ambiguous, unmatched } = matchFiles(
+		['h1.png', 'h2.png', 'h3.png', 'L1.PNG', 'w_final_v2.png', 'stray.png'],
+		jobs,
+	);
+	assert.equal(ambiguous.length, 0, `nothing should be ambiguous: ${JSON.stringify(ambiguous)}`);
+	const byFile = Object.fromEntries(matched.map((m) => [m.file, m.job.id]));
+	assert.equal(byFile['h1.png'], 'symbol.H1');
+	assert.equal(byFile['h2.png'], 'symbol.H2');
+	assert.equal(byFile['L1.PNG'], 'symbol.L1', 'case and extension case must not matter');
+	assert.equal(byFile['w_final_v2.png'], 'symbol.W', 'export suffixes are stripped');
+	assert.deepEqual(unmatched, ['stray.png']);
+});
+
+test('an opaque symbol is refused and an opaque backdrop is not', () => {
+	// A symbol delivered on an opaque background tiles the reel with rectangles.
+	// It looks perfectly fine in a folder, which is why this is an error rather
+	// than a note. The reverse is only a note: a see-through backdrop is wrong but
+	// still renders.
+	const solid = (w, h) => ({ width: w, height: h, rgba: Buffer.alloc(w * h * 4, 255) });
+	const symbol = inspect(solid(8, 8), { kind: 'symbol', width: 8, height: 8 });
+	assert.equal(symbol.problems.length, 1);
+	assert.match(symbol.problems[0], /no transparency/);
+
+	const backdrop = inspect(solid(8, 8), { kind: 'backdrop', width: 8, height: 8 });
+	assert.deepEqual(backdrop.problems, [], 'an opaque backdrop is exactly right');
+});
+
+test('an entirely transparent delivery is refused', () => {
+	const empty = { width: 8, height: 8, rgba: Buffer.alloc(8 * 8 * 4, 0) };
+	const result = inspect(empty, { kind: 'symbol', width: 8, height: 8 });
+	assert.ok(result.problems.some((p) => /entirely transparent/.test(p)));
+});
+
+test('the animation brief loops the poses that are held', () => {
+	// The names are matched at the END, case-insensitively, against the real
+	// vocabulary. `postWinStatic` is the case that matters: it is a held pose with
+	// no underscore before "Static", so an `_static` pattern briefs it as a
+	// one-shot and the symbol snaps back to nothing after a win.
+	const brief = buildAnimBrief({ spec: specFor('lines'), referenceAppDir: null });
+	const wild = brief.entries.find((e) => e.id.startsWith('symbol.'));
+	assert.ok(wild, 'every symbol gets an entry');
+	const byName = Object.fromEntries(wild.animations.map((a) => [a.name, a.loops]));
+	const held = Object.keys(byName).find((n) => /postWinStatic$/.test(n));
+	assert.ok(held, 'postWinStatic should be briefed');
+	assert.equal(byName[held], true, 'a held pose must loop');
+	const spin = Object.keys(byName).find((n) => /_spin$/.test(n));
+	assert.equal(byName[spin], false, 'a spin plays once');
+});
+
+test('the animation brief does not invent one canvas for all symbols', () => {
+	// Measured across the lines sample the symbol skeletons run 1072x1076,
+	// 1080x1080, 1200x1023 and 1225x1242 — they do not share a canvas. Reporting
+	// any single one as "the" size would be inventing a requirement.
+	const brief = buildAnimBrief({ spec: specFor('lines'), referenceAppDir: null });
+	for (const entry of brief.entries.filter((e) => e.kind === 'symbol')) {
+		assert.equal(entry.canvas, null, 'no single canvas should be asserted for a symbol');
+	}
 });
 
 test('generation size clears the model floor without changing the aspect ratio', () => {

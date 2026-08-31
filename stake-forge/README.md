@@ -580,6 +580,37 @@ The guide is a **description**, not a collection. It is not a place for another
 studio's screenshots, sprite sheets or extracted files — the same line
 `inspirationRules.js` holds for mechanics.
 
+### Art made elsewhere
+
+Generate art in whatever tool the studio already uses; forge says what to make and
+makes it work.
+
+```bash
+forge art:prompts --spec game-spec.yaml --sdk ../web-sdk --out art-prompts.json
+# ...your art tool produces PNGs...
+forge art:import  --spec game-spec.yaml --from ./delivered --dry-run
+forge anim:brief  --spec game-spec.yaml --sdk ../web-sdk --out animation-brief.md
+```
+
+`art:import` matches files to slots by name — forgiving about case, separators and
+export suffixes (`w_final_v2.png` finds `symbol.W`), unforgiving about ambiguity,
+because guessing puts the cart art in the shovel's slot and nothing downstream
+notices. Then it fixes what can be fixed and refuses what cannot:
+
+- **Size** — resampled to the slot's size, premultiplied. Resizing transparent art
+  without premultiplying puts a dark fringe on every symbol, and it only shows up
+  after packing.
+- **Aspect ratio** — a different ratio is refused rather than squashed. That is a
+  different composition, not the same picture at another size.
+- **Alpha** — a symbol with no transparency is an error, not a note: it tiles the
+  reel with rectangles and looks perfectly fine in a folder. A see-through backdrop
+  is flagged the other way.
+
+`anim:brief` is the handoff to whoever rigs the Spine files. The sharp edge is that
+**animation names are literal** — the front end calls `h4` and `h4_static` by
+string, so a rig with the right motion under a different name imports cleanly,
+validates cleanly, and plays nothing.
+
 ### The gate that reads what the optimiser cannot fix
 
 Nine of the ten `math:validate` rules read the **optimised** table, where RTP, hit rate and the
@@ -655,6 +686,8 @@ the 1-in-20,000,000 frequency in every tier because that frequency is *chosen*
 | `forge math:validate --spec <yaml> --math-sdk <path> [--json]` | Is it shippable? Every rule measured, with the number it was judged on |
 | `forge brief --spec <yaml> [--format md\|csv\|json\|manifest] [--out <path>]` | What to draw — the complete asset spec, before any art exists |
 | `forge art:guide [--out <path>]` | Write art-guide.yaml — the look, once, for every asset in this game |
+| `forge art:import --spec <yaml> --from <dir> [--game <dir>] [--dry-run]` | Bring in art made elsewhere: match to slots, resample, check alpha |
+| `forge anim:brief --spec <yaml> [--sdk <path>] [--out <md>]` | What the animation team needs: skeleton names, animation names, canvas sizes |
 | `forge art:check [--endpoint <url>] [--key <key>] [--model <id>]` | One request to the image provider, reported in full — run before a batch |
 | `forge art:prompts --spec <yaml> [--guide <yaml>] [--sdk <path>] [--out <json>] [--only <kinds>]` | One prompt per asset part, at the exact size this game needs |
 | `forge art:accept --manifest <json> --id <id> --file <png> [--guide <yaml>] [--game <dir>]` | Promote a generated candidate and make it a style anchor |

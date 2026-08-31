@@ -27,6 +27,8 @@ import { preview } from '../src/commands/preview.js';
 import { artGuide, artPrompts } from '../src/commands/artPrompts.js';
 import { artAccept } from '../src/commands/artAccept.js';
 import { artCheck } from '../src/commands/artCheck.js';
+import { artImport } from '../src/commands/artImport.js';
+import { buildAnimBrief, renderAnimBrief } from '../src/lib/animBrief.js';
 import { SpecValidationError } from '../src/lib/loadSpec.js';
 
 const program = new Command();
@@ -221,6 +223,64 @@ program
 	.option('--out <path>', 'where to write it', 'art-guide.yaml')
 	.option('--force', 'overwrite an existing guide', false)
 	.action(run((opts) => artGuide({ out: path.resolve(opts.out), force: opts.force })));
+
+program
+	.command('anim:brief')
+	.description('What the animation team needs: skeleton names, animation names, canvas sizes')
+	.requiredOption('--spec <path>', 'path to game-spec.yaml')
+	.option('--sdk <path>', 'a web-sdk checkout, to read the reference skeletons from')
+	.option('--out <path>', 'write the brief as markdown')
+	.option('--json', 'machine-readable output', false)
+	.action(
+		run(async (opts) => {
+			const { loadGameSpec } = await import('../src/lib/loadSpec.js');
+			const { getMechanic } = await import('../src/lib/mechanics.js');
+			const spec = loadGameSpec(path.resolve(opts.spec));
+			const referenceAppDir = opts.sdk
+				? path.join(path.resolve(opts.sdk), 'apps', getMechanic(spec.game.mechanic).webApp)
+				: null;
+			const brief = buildAnimBrief({ spec, referenceAppDir });
+			if (opts.json) {
+				console.log(JSON.stringify(brief, null, 2));
+				return { ok: true };
+			}
+			const markdown = renderAnimBrief(brief);
+			if (opts.out) {
+				const fsx = await import('fs-extra');
+				fsx.default.outputFileSync(path.resolve(opts.out), markdown, 'utf8');
+				console.log(
+					chalk.green('✓'),
+					`wrote ${opts.out} — ${brief.totals.skeletons} skeletons, ` +
+						`${brief.totals.animations} named animations, ${brief.totals.parts} parts`,
+				);
+			} else {
+				console.log(markdown);
+			}
+			return { ok: true };
+		}),
+	);
+
+program
+	.command('art:import')
+	.description('Bring in art made elsewhere: match it to slots, resize, and check alpha')
+	.requiredOption('--spec <path>', 'path to game-spec.yaml')
+	.requiredOption('--from <dir>', 'folder of delivered PNGs')
+	.option('--guide <path>', 'path to art-guide.yaml', 'art-guide.yaml')
+	.option('--sdk <path>', 'a web-sdk checkout, to read the reference layer lists from')
+	.option('--game <dir>', 'the game folder assets-source/ lives in', '.')
+	.option('--dry-run', 'report what would happen and write nothing', false)
+	.action(
+		run((opts) =>
+			artImport({
+				specPath: path.resolve(opts.spec),
+				guidePath: path.resolve(opts.guide),
+				sdkDir: opts.sdk ? path.resolve(opts.sdk) : null,
+				fromDir: path.resolve(opts.from),
+				gameDir: path.resolve(opts.game),
+				dryRun: opts.dryRun,
+			}),
+		),
+	);
 
 program
 	.command('art:check')
