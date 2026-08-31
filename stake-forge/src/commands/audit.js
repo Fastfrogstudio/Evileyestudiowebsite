@@ -211,7 +211,20 @@ export function audit({ specPath, manifestPath, sdkDir, json }) {
 					: `Tick "${id}" under screens: in game-spec.yaml, then supply it in assets-manifest.yaml.`,
 			);
 		} else if (!slot.required && !supplied) {
-			add('info', `screen ${id}`, `not supplied — ${slot.component} will fall back to the sample app's art`);
+			// Most fallbacks are invisible until you look for them. This one is not:
+			// `payframe` from the anticipation rig is drawn around every winning
+			// symbol, so an unsupplied anticipation puts the SAMPLE GAME's gold
+			// frame on your own art, where it reads as a fault in the art rather
+			// than as a screen asset nobody has replaced yet.
+			add(
+				'info',
+				`screen ${id}`,
+				id === 'anticipation'
+					? `not supplied — ${slot.component} falls back to the sample app's art, and its ` +
+						`"payframe" track is the frame drawn around every winning symbol. That is the ` +
+						`sample's gold surround you will see on your symbols until this is replaced.`
+					: `not supplied — ${slot.component} will fall back to the sample app's art`,
+			);
 		}
 
 		screenRows.push({

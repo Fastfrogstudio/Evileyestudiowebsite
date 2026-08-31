@@ -185,9 +185,37 @@ export const SCREEN_SLOTS = {
 		assetKey: 'anticipation',
 		component: 'Anticipation.svelte',
 		assetType: 'spine',
-		animations: ['idle'],
+		// Read off the shipped rig rather than guessed. The previous list here
+		// said `idle`, which does not exist in it — an animator following that
+		// would have delivered one animation nothing calls and none of the ones
+		// the game does.
+		animations: [
+			'payframe',
+			'anticipation_intro',
+			'anticipation_loop',
+			'anticipation_out',
+			'anticipation1_intro',
+			'anticipation1_loop',
+			'anticipation1_out',
+			'anticipation2_intro',
+			'anticipation2_loop',
+			'anticipation2_out',
+			'anticipation3_intro',
+			'anticipation3_loop',
+			'anticipation3_out',
+			'anticipation4_intro',
+			'anticipation4_loop',
+			'anticipation4_out',
+		],
 		required: false,
-		note: 'Driven by the `anticipation` array on the reveal bookEvent.',
+		note:
+			'Two jobs in one rig, which is worth knowing because only one of them is ' +
+			'about anticipation. The `anticipation*` tracks are the reel build-up, driven ' +
+			'by the `anticipation` array on the reveal bookEvent. `payframe` is the FRAME ' +
+			'DRAWN AROUND EVERY WINNING SYMBOL — SymbolSpine.svelte plays it on the win ' +
+			'state for every spine symbol except S and M. Until this asset is supplied, ' +
+			'that frame is the sample game\'s gold surround, and it appears on your ' +
+			'symbols looking like a fault in your own art.',
 	},
 	logo: {
 		assetKey: 'logo',
