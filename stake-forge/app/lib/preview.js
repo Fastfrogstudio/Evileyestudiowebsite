@@ -54,7 +54,10 @@ export function previewState(gameName) {
 		port: preview.port,
 		url: preview.status === 'ready' ? `http://localhost:${preview.port}` : null,
 		startedAt: preview.startedAt,
-		log: preview.log.slice(-40),
+		// 40 lines is enough to see a start-up; a Vite compile error and its stack
+		// is longer than that, and it arrives after start-up, so trimming to 40
+		// would cut off the one thing anybody opens the log for.
+		log: preview.log.slice(-120),
 		error: preview.error ?? null,
 	};
 }

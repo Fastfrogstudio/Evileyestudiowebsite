@@ -24,6 +24,40 @@ export function renderPreview(ctx) {
 	let stories = [];
 	let selected = ctx.preview.storyId ?? null;
 
+	/**
+	 * The storybook process's own output, on demand.
+	 *
+	 * ── Why it is fetched rather than rendered from state ───────────────────
+	 * Vite compiles a story the first time it is REQUESTED, so a compile error
+	 * happens minutes after the preview went green — long after the log snapshot
+	 * taken at start-up. Rendering that snapshot would show a clean start-up and
+	 * none of the error being asked about.
+	 *
+	 * The browser side of that failure is "Failed to fetch dynamically imported
+	 * module", followed by three generic storybook guesses that are never the
+	 * cause here. The cause is in this log: an unresolved workspace import when
+	 * deps:link has not been run, or an asset named in assets.ts that is not on
+	 * disk.
+	 */
+	function logPanel() {
+		const pre = h('pre', 'opening…');
+		return h('details.preview-log',
+			{
+				ontoggle: async (e) => {
+					if (!e.target.open) return;
+					try {
+						const fresh = await api(`/api/games/${game.id}/preview`);
+						pre.textContent = (fresh.log ?? []).join('\n') || 'nothing logged yet';
+					} catch (err) {
+						pre.textContent = err.message;
+					}
+				},
+			},
+			h('summary', 'Storybook log — open this if a story shows an error'),
+			pre,
+		);
+	}
+
 	async function refresh() {
 		try {
 			const state = await api(`/api/games/${game.id}/preview`);
@@ -134,6 +168,14 @@ export function renderPreview(ctx) {
 					'Book stories replay the sample app’s fixture data, not your generated math — ',
 					'they exercise your config, symbols and art. To see your own math, run it in the math-sdk.',
 				),
+				// ── why the log stays after it is ready ──────────────────────────
+				// When a story fails to compile, the browser gets "Failed to fetch
+				// dynamically imported module" and storybook offers three generic
+				// guesses, none of which is ever the cause here. The actual error —
+				// an unresolved workspace import, a missing asset file named in
+				// assets.ts — is printed by the storybook process and was being
+				// thrown away the moment the preview went green.
+				logPanel(),
 			),
 		);
 	}
