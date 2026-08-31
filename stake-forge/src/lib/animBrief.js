@@ -166,8 +166,11 @@ export function buildAnimBrief({ spec, referenceAppDir }) {
 			),
 			note:
 				`Only the win animation is rigged. ${flatStates.join(', ')} all render the flat ` +
-				`${lower}.png, so they need no animation. The name is matched literally — a rig ` +
-				`with the right motion under a different name loads cleanly and plays nothing.`,
+				`${lower}.png, so they need no animation. The NAME is a convention, not a ` +
+				`requirement: a symbol's track is wired up by name on import, so one animation ` +
+				`under any name works — Spine's default "animation" included. What does matter ` +
+				`is that there is exactly ONE, because with several nothing can tell which plays ` +
+				`on a win.`,
 		});
 	}
 

@@ -88,7 +88,12 @@ export function readAtlasRegions(file) {
  * `requiredAnimations` comes from the animation brief — the names the front end
  * calls. Everything else is internal consistency.
  */
-export function validateSpineDelivery({ skeletonFile, atlasFile, requiredAnimations = [] }) {
+export function validateSpineDelivery({
+	skeletonFile,
+	atlasFile,
+	requiredAnimations = [],
+	indirect = false,
+}) {
 	const problems = [];
 	const notes = [];
 
@@ -98,17 +103,56 @@ export function validateSpineDelivery({ skeletonFile, atlasFile, requiredAnimati
 	const skeleton = readSkeleton(skeletonFile);
 	if (skeleton.error) return { problems: [skeleton.error], notes };
 
-	// ── the check that matters ──────────────────────────────────────────────
+	// ── animation names ─────────────────────────────────────────────────────
+	// Whether the NAME matters depends on who is doing the calling, and the two
+	// cases are genuinely different:
+	//
+	//   SYMBOLS go through assets-manifest.yaml, which carries an explicit
+	//   `animations: { win: <name> }` map that importAssets writes into
+	//   constants.ts as animationName. That map is an indirection layer — the
+	//   name in the rig never has to match anything, because the manifest says
+	//   which track to play. So there is no naming rule to enforce here, only a
+	//   track to identify.
+	//
+	//   SCREENS do not. Background.svelte plays "idle" and "dust" as literals in
+	//   its own source; nothing indirects them. A rig whose tracks are called
+	//   something else loads cleanly and plays nothing, and the only fix is the
+	//   name.
+	//
+	// Conflating the two produced a rule that was half wrong: it rejected correct
+	// symbol rigs over a string the manifest was about to override anyway, which
+	// sends the delivery back to the animation team for no reason.
 	const present = new Set(skeleton.animations);
 	const missing = requiredAnimations.filter((name) => !present.has(name));
-	if (missing.length) {
+
+	// Which track each required name will actually play. Names that match are
+	// themselves; for symbols, one required name against one animation resolves
+	// to that animation whatever it is called.
+	const resolved = {};
+	for (const name of requiredAnimations) if (present.has(name)) resolved[name] = name;
+
+	if (indirect && missing.length === 1 && requiredAnimations.length === 1 && skeleton.animations.length === 1) {
+		// Nothing to work out: one track, one slot for it.
+		resolved[missing[0]] = skeleton.animations[0];
+		notes.push(
+			`its animation is called "${skeleton.animations[0]}", not "${missing[0]}" — wired up ` +
+				`by name in the manifest, so it plays as delivered and nothing needs re-exporting.`,
+		);
+	} else if (missing.length) {
 		problems.push(
-			`missing animation(s): ${missing.join(', ')}. The front end plays these by literal ` +
-				`name, so the rig loads and plays nothing. It contains: ` +
-				`${skeleton.animations.join(', ') || '(none)'}`,
+			indirect && skeleton.animations.length > 1
+				? `${skeleton.animations.length} animations, and none is called ` +
+					`${missing.join(' or ')} — so which one plays on a win is a guess, and guessing ` +
+					`wrong plays the wrong motion. Rename the right one, or name it in ` +
+					`assets-manifest.yaml. It contains: ${skeleton.animations.join(', ')}`
+				: `missing animation(s): ${missing.join(', ')}. The front end plays these by literal ` +
+					`name, so the rig loads and plays nothing. It contains: ` +
+					`${skeleton.animations.join(', ') || '(none)'}`,
 		);
 	}
-	const extra = skeleton.animations.filter((name) => !requiredAnimations.includes(name));
+
+	const used = new Set(Object.values(resolved));
+	const extra = skeleton.animations.filter((name) => !used.has(name));
 	if (requiredAnimations.length && extra.length) {
 		// Not a problem — a rig may carry working animations nothing calls yet.
 		notes.push(`also contains ${extra.length} animation(s) nothing calls: ${extra.join(', ')}`);
@@ -154,7 +198,7 @@ export function validateSpineDelivery({ skeletonFile, atlasFile, requiredAnimati
 		);
 	}
 
-	return { problems, notes, skeleton };
+	return { problems, notes, skeleton, resolved };
 }
 
 /**

@@ -213,7 +213,14 @@ export function renderReview(ctx) {
 			return h('div.rv-bad',
 				...entry.problems.map((problem) => h('div', problem)));
 		}
-		return h('div.rv-good', `plays in-game as ${entry.slot}`);
+		// Symbols are wired by name through the manifest, so a rig's animation can
+		// be called anything — but then it is worth saying WHICH track will play,
+		// because "l5 works" and "the track called `animation` plays on a win" are
+		// different facts and only the second one is checkable against the rig.
+		const renamed = entry.plays && entry.plays !== entry.expected[0];
+		return h('div.rv-good',
+			`plays in-game as ${entry.slot}`,
+			renamed ? h('div.dim', `on a win it plays "${entry.plays}"`) : null);
 	}
 
 	function spineTile(entry) {

@@ -346,17 +346,22 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 	const spineResults = [];
 	for (const bundle of groupSpineDeliveries(fromDir)) {
 		const required = requiredByName.get(bundle.name.toLowerCase()) ?? [];
+		const slot = slotByName.get(bundle.name.toLowerCase()) ?? null;
 		const result = validateSpineDelivery({
 			skeletonFile: bundle.skeletonFile,
 			atlasFile: bundle.atlasFile,
 			requiredAnimations: required,
+			// Symbols are wired by name through the manifest, so the rig's own
+			// animation names are free. Screens are called as literals in the
+			// sample components and are not.
+			indirect: Boolean(slot && /^symbol\./.test(slot.id)),
 		});
 		// A skeleton nothing asked for is worth saying, not failing on — it may be
 		// a shared asset or something delivered ahead of the spec.
 		if (!required.length) {
 			result.notes.push('nothing in this game asks for a skeleton by this name');
 		}
-		spineResults.push({ ...bundle, ...result, required, slot: slotByName.get(bundle.name.toLowerCase()) ?? null });
+		spineResults.push({ ...bundle, ...result, required, slot });
 	}
 
 	// A rig only reaches the game if it passed. Wiring a broken one in would put
@@ -383,7 +388,9 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 			skeleton: path.posix.join(relDir, path.basename(entry.skeletonFile)),
 			atlas: path.posix.join(relDir, path.basename(entry.atlasFile)),
 			png: pages[0] ? path.posix.join(relDir, pages[0]) : null,
-			winAnimation: entry.required[0] ?? null,
+			// The track the manifest will name — the required name when the rig uses
+			// it, otherwise whatever the rig actually calls it.
+			winAnimation: entry.resolved?.[entry.required[0]] ?? entry.required[0] ?? null,
 		});
 	}
 

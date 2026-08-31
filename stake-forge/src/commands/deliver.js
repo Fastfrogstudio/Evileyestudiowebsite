@@ -168,9 +168,16 @@ export function deliver({ specPath, guidePath, sdkDir, out = null, json = false 
 	);
 	lines.push('');
 	lines.push(
-		'**Animation names are checked on import.** The front end plays them by literal string, ' +
-			'so a rig with the right motion under a different name loads without error and plays ' +
-			'nothing on screen.',
+		'**One animation per symbol — the name is up to you.** A symbol\'s track is wired up by ' +
+			'name on import, so whatever it is called is what plays on a win; Spine\'s default ' +
+			'"animation" is fine and needs no re-export. What cannot be worked out is which of ' +
+			'SEVERAL tracks is the win, so a symbol rig carrying more than one is refused rather ' +
+			'than guessed at.',
+	);
+	lines.push('');
+	lines.push(
+		'Screens are the exception. Background.svelte and friends call their tracks as literal ' +
+			'strings in their own source, with nothing in between, so those names are exact.',
 	);
 	lines.push('');
 	lines.push('| Skeleton | Atlas | Animations it must contain |');

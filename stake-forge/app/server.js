@@ -451,6 +451,7 @@ app.get('/api/games/:id/review', (req, res) => {
 					skeletonFile: b.skeletonFile,
 					atlasFile: b.atlasFile,
 					requiredAnimations: want?.animations ?? [],
+					indirect: Boolean(want && /^symbol\./.test(want.id)),
 				});
 				return {
 					name: b.name,
@@ -461,6 +462,9 @@ app.get('/api/games/:id/review', (req, res) => {
 					expected: want?.animations ?? null,
 					problems: check.problems,
 					notes: check.notes,
+					// The track that will actually play, which is not always the one
+					// the brief asked for — see validateSpineDelivery.
+					plays: want ? (check.resolved?.[want.animations[0]] ?? null) : null,
 					canvas: check.skeleton?.canvas ?? null,
 				};
 			}),

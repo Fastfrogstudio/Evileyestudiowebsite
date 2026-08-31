@@ -3618,8 +3618,10 @@ test('a rig that failed validation is not wired in', () => {
 	// pipeline stays green and the symbol is inert on the board.
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'import-'));
 	const { gameDir, from } = writeImportFixture(dir);
-	// Spine's default export name — the rig is fine, the string is wrong.
-	writeRig(from, 'h1', { animations: ['animation'] });
+	// Several tracks, none of them the one the game asks for: unresolvable, so it
+	// must not reach the manifest. A green pipeline over an inert symbol is the
+	// worst outcome available.
+	writeRig(from, 'h1', { animations: ['idle', 'pop', 'shine'] });
 
 	const result = artImport({
 		specPath: path.join(gameDir, 'game-spec.yaml'),
@@ -3675,21 +3677,46 @@ function writeRig(dir, name, { animations, regions = ['body'], attachments = nul
 	return { skeletonFile: path.join(dir, `${name}.json`), atlasFile: path.join(dir, `${name}.atlas`) };
 }
 
-test("Spine's default export name is caught, because nothing downstream can catch it", () => {
-	// The failure this gate exists for, and the one a human reviewer cannot see:
-	// the rig is correct, it plays perfectly in a preview, the atlas resolves, the
-	// version is right. The only thing wrong is the STRING. The front end calls
-	// animations by literal name, so `animation` — what Spine exports when nobody
-	// renames the track — loads without error and leaves the symbol inert on the
-	// board, with no fault reported anywhere.
+test('a SCREEN rig is held to its animation names, because the component calls them literally', () => {
+	// Background.svelte plays "idle" and "dust" as literals in its own source.
+	// Nothing indirects them, so a rig whose tracks are called something else
+	// loads without error and plays nothing — and the only fix is the name.
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-'));
-	const files = writeRig(dir, 'l5', { animations: ['animation'] });
-	const result = validateSpineDelivery({ ...files, requiredAnimations: ['l5'] });
+	const files = writeRig(dir, 'bg', { animations: ['animation'] });
+	const result = validateSpineDelivery({ ...files, requiredAnimations: ['idle'] });
 
 	assert.equal(result.problems.length, 1);
-	assert.match(result.problems[0], /missing animation\(s\): l5/);
+	assert.match(result.problems[0], /missing animation\(s\): idle/);
 	// It must also say what IS in there, or the reader cannot act on it.
 	assert.match(result.problems[0], /contains: animation/);
+});
+
+test("a SYMBOL rig is not, because the manifest names the track for it", () => {
+	// The rule that was half wrong. A symbol's animation is wired through
+	// assets-manifest.yaml as `animations: { win: <name> }`, which importAssets
+	// writes into constants.ts — an indirection layer, so the name in the rig
+	// never has to match anything. Rejecting Spine's default export name here
+	// sent correct work back to the animation team over a string the manifest
+	// was about to override anyway.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-'));
+	const files = writeRig(dir, 'l5', { animations: ['animation'] });
+	const result = validateSpineDelivery({ ...files, requiredAnimations: ['l5'], indirect: true });
+
+	assert.deepEqual(result.problems, []);
+	assert.equal(result.resolved.l5, 'animation', 'the track that will play is identified');
+	assert.match(result.notes[0], /plays as delivered/);
+});
+
+test('several animations and none matching is refused, because picking one is a guess', () => {
+	// The line the bypass stops at. With one track there is nothing to work out;
+	// with four, choosing wrong plays the explode animation when a symbol lands.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-'));
+	const files = writeRig(dir, 'l5', { animations: ['idle', 'pop', 'shine'] });
+	const result = validateSpineDelivery({ ...files, requiredAnimations: ['l5'], indirect: true });
+
+	assert.equal(result.problems.length, 1);
+	assert.match(result.problems[0], /which one plays on a win is a guess/);
+	assert.match(result.problems[0], /idle, pop, shine/);
 });
 
 test('a rig named the way the game calls it passes clean', () => {
