@@ -147,8 +147,13 @@ export function deliver({ specPath, guidePath, sdkDir, out = null, json = false 
 	lines.push('## Spine deliveries');
 	lines.push('');
 	lines.push(
-		'Each is a skeleton, its atlas, and the atlas page — all three, together. A skeleton ' +
-			'names regions but does not contain them.',
+		'Each is a skeleton, its atlas, and the atlas page — all three, together, exactly as Spine ' +
+			'exports them. A skeleton names regions but does not contain them.',
+	);
+	lines.push('');
+	lines.push(
+		'**Self-contained per symbol.** No shared atlas, nothing to pack, nothing to coordinate — ' +
+			'one symbol can be re-exported and re-delivered without touching the others.',
 	);
 	lines.push('');
 	lines.push(

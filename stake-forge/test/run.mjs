@@ -3369,6 +3369,31 @@ test('an entirely transparent delivery is refused', () => {
 	assert.ok(result.problems.some((p) => /entirely transparent/.test(p)));
 });
 
+test('each symbol gets its own atlas, not a shared one', () => {
+	// The shipped sample points every symbol at one shared symbols.atlas, but
+	// nothing requires that: assets.ts declares an atlas AND a skeleton path per
+	// asset key, and importAssets writes whatever the manifest names —
+	//
+	//   H1: { type: 'spine', assets: { atlas: '...', skeleton: '...' } }
+	//
+	// so they simply happen to be the same file there. Per-symbol is what Spine
+	// exports by default, which makes it the delivery that needs no coordination:
+	// one symbol can be re-exported without touching the other ten, and nobody has
+	// to pack anything.
+	const brief = buildAnimBrief({ spec: specFor('lines'), referenceAppDir: null });
+	const symbols = brief.entries.filter((e) => e.kind === 'symbol');
+	const atlases = symbols.map((e) => e.atlasFile);
+	assert.equal(
+		new Set(atlases).size,
+		symbols.length,
+		`each symbol needs its own atlas, got: ${atlases.join(', ')}`,
+	);
+	for (const entry of symbols) {
+		const stem = path.basename(entry.skeletonFile, '.json');
+		assert.equal(entry.atlasFile, `${stem}.atlas`, 'the atlas is named after its skeleton');
+	}
+});
+
 test('the animation brief asks for ONE animation per symbol', () => {
 	// The first version asked for a rig per STATE — static, spin, land, win,
 	// postWinStatic — which is five animations a symbol and fifty-five for a game.

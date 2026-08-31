@@ -82,8 +82,21 @@ export function buildAnimBrief({ spec, referenceAppDir }) {
 	const entries = [];
 
 	// ── symbols ─────────────────────────────────────────────────────────────
-	// One skeleton per symbol, all sharing a single atlas — the sample's own
-	// arrangement, and the reason the atlas is named once rather than per symbol.
+	// ONE SELF-CONTAINED BUNDLE PER SYMBOL: h1.json + h1.atlas + its page.
+	//
+	// The shipped sample points every symbol at one shared symbols.atlas, but
+	// nothing requires that — assets.ts declares an atlas and a skeleton path per
+	// asset key, and importAssets writes whatever the manifest names. They simply
+	// happen to be the same file there.
+	//
+	// Per-symbol is what Spine exports by default, so it is the delivery that
+	// needs no coordination: one symbol can be re-exported and re-delivered
+	// without touching the other ten, and nobody has to pack anything.
+	//
+	// The cost is real but small at this scale: each atlas is a separate texture,
+	// so eleven symbols is eleven texture bindings rather than one. Packing them
+	// into a shared atlas stays available later as an optimisation, and doing it
+	// later does not change what anyone delivers.
 	// The reference symbols do NOT share one canvas — measured across the lines
 	// sample they run 1072x1076, 1080x1080, 1200x1023, 1225x1242. So reporting any
 	// single one of them as "the" canvas would be inventing a requirement.
@@ -139,7 +152,7 @@ export function buildAnimBrief({ spec, referenceAppDir }) {
 			id: `symbol.${symbol.name}`,
 			kind: 'symbol',
 			skeletonFile: `${lower}.json`,
-			atlasFile: 'symbols.atlas (shared by every symbol)',
+			atlasFile: `${lower}.atlas`,
 			assetKey: 'symbols',
 			// Deliberately not a single number — see canvasRange above.
 			canvas: null,
@@ -230,6 +243,12 @@ export function renderAnimBrief(brief) {
 			'landing states all render the flat PNG. The shipped sample works exactly this way, and ' +
 			'rigging a state that renders a still image is five times the work for no visible ' +
 			'difference. The explosion is one shared rig for the whole game, not one per symbol.',
+	);
+	out.push('');
+	out.push(
+		'**Each symbol is self-contained** — its own skeleton, its own atlas, its own page, exactly ' +
+			'as Spine exports them. Nothing needs packing and nothing needs coordinating: one symbol ' +
+			'can be re-exported and re-delivered without touching the others.',
 	);
 	out.push('');
 

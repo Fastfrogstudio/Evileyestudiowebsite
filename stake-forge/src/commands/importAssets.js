@@ -71,7 +71,7 @@ export function importAssets({ manifestPath, sdkDir, gameName, specPath }) {
 	if (spineEntries.length) {
 		console.log(
 			chalk.green('✓'),
-			`copied ${spineEntries.length} spine skeleton(s) + shared atlas/png into static/assets/spines/symbols`,
+			`copied ${spineEntries.length} spine skeleton(s) + atlas/png into static/assets/spines/symbols`,
 		);
 	}
 
