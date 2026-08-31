@@ -434,7 +434,7 @@ app.get('/api/games/:id/review', (req, res) => {
 			dir,
 			exists: true,
 			images: files
-				.filter((f) => /\.(png|webp)$/i.test(f) && !pages.has(f))
+				.filter((f) => /\.(png|webp)$/i.test(f) && !pages.has(f.toLowerCase()))
 				.map((f) => ({
 					file: f,
 					url: `/review-file/${req.params.id}/${encodeURIComponent(req.query.from || 'delivered')}/${encodeURIComponent(f)}`,

@@ -269,8 +269,10 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 	// so the report blames the artist for a file they delivered correctly.
 	const atlasPages = atlasPageFiles(fromDir);
 
+	// Lowercased both sides — see atlasPageFiles. On a case-insensitive
+	// filesystem the atlas and the file can disagree on case invisibly.
 	const { matched, unmatched: loose, ambiguous } = matchFiles(
-		delivered.filter((f) => !atlasPages.has(f)),
+		delivered.filter((f) => !atlasPages.has(f.toLowerCase())),
 		jobs,
 	);
 	const unmatched = loose;
@@ -285,6 +287,31 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 	const refused = [];
 	const noted = [];
 
+	// ── the last line of defence for an atlas page ──────────────────────────
+	// Everything above tries to identify a rig's page by READING the atlas, and
+	// that has now failed three different ways on real deliveries: a header
+	// neither reader recognised, no page line at all, and a name differing only
+	// in case on a case-insensitive filesystem where every existence check still
+	// passes. Each was invisible to the artist and each ended the same way — the
+	// packed page matched to the symbol it is named after and refused for being
+	// the size it packed to, which reads as "your art is wrong" about a correct
+	// delivery.
+	//
+	// So the refusal itself is the signal. A file that shares its name with a
+	// delivered skeleton AND does not fit the slot is the rig's page, whatever
+	// the atlas does or does not say. A genuine flat symbol called l5.png fits
+	// its slot and is imported before ever reaching here, so this cannot swallow
+	// real art.
+	const rigStems = new Set(
+		fs
+			.readdirSync(fromDir)
+			.filter((f) => f.endsWith('.json') || f.endsWith('.atlas'))
+			.map((f) => path.basename(f, path.extname(f)).toLowerCase()),
+	);
+	const looksLikeAPage = (file) =>
+		rigStems.has(path.basename(file, path.extname(file)).toLowerCase());
+	const pagesRecovered = [];
+
 	for (const { file, job } of matched) {
 		const source = path.join(fromDir, file);
 		let image;
@@ -297,6 +324,10 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 
 		const { problems, notes } = inspect(image, job);
 		if (problems.length) {
+			if (looksLikeAPage(file)) {
+				pagesRecovered.push(file);
+				continue;
+			}
 			refused.push({ file, job, reasons: problems });
 			continue;
 		}
@@ -307,6 +338,10 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 		if (ratioChanged) {
 			// Resampling a different shape squashes it. That is a re-export, not
 			// something to fix silently.
+			if (looksLikeAPage(file)) {
+				pagesRecovered.push(file);
+				continue;
+			}
 			refused.push({
 				file,
 				job,
@@ -429,6 +464,14 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 		);
 		for (const problem of entry.problems) console.log(chalk.red(`      ${problem}`));
 		for (const note of entry.notes) console.log(chalk.dim(`      ${note}`));
+	}
+	for (const file of pagesRecovered) {
+		console.log(
+			chalk.cyan('  ·'),
+			`${file} is ${path.basename(file, path.extname(file))}'s packed atlas page, not symbol ` +
+				`art — left for the rig`,
+			chalk.dim('(the atlas did not name it in a way that could be read)'),
+		);
 	}
 	for (const entry of ambiguous) {
 		console.log(

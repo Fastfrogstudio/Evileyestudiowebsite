@@ -306,6 +306,17 @@ export function groupSpineDeliveries(dir) {
  * understands the format, the scan catches a page in a file parseAtlas gives up
  * on. What matters is that every caller now asks the same question and gets the
  * same answer.
+ *
+ * ── Names come back LOWERCASED, and callers must compare that way ───────────
+ * macOS and Windows have case-insensitive filesystems. An atlas naming
+ * "L5.png" beside a file called "l5.png" therefore passes every existence
+ * check — the page loads, the rig validates, nothing is wrong anywhere — while
+ * an exact-string comparison against the directory listing quietly fails to
+ * match. The page is then treated as loose art, matched to the symbol it is
+ * named after and refused for being the size it packed to.
+ *
+ * The artist cannot see this: both spellings open the same file on their
+ * machine.
  */
 export function atlasPageFiles(dir) {
 	if (!fs.existsSync(dir)) return new Set();
@@ -353,7 +364,7 @@ export function atlasPageFiles(dir) {
 			}
 		}
 
-		for (const page of found) pages.add(page);
+		for (const page of found) pages.add(page.toLowerCase());
 	}
 	return pages;
 }

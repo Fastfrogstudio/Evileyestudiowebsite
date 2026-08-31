@@ -3583,6 +3583,48 @@ test('every caller identifies a rig\'s atlas page the same way', () => {
 	assert.ok(atlasPageFiles(bomDir).has('h1_tex.png'), 'a BOM must not hide the page');
 });
 
+test('a page the atlas fails to identify is recovered from the refusal itself', () => {
+	// The last line of defence. Identifying a page by READING the atlas has now
+	// failed three ways on real deliveries — a header neither reader recognised,
+	// no page line at all, and a name differing only in case on a filesystem
+	// where every existence check still passes. Each ended identically: the
+	// packed page matched to the symbol it is named after and refused for being
+	// the size it packed to, which reads as "your art is wrong" about a correct
+	// delivery.
+	//
+	// So the refusal is the signal. Here the atlas names a page that exists under
+	// another name, so nothing above can know l5.png is the real one.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'net-'));
+	const { gameDir, from, specPath, guidePath } = writeImportFixture(dir);
+	writeRig(from, 'h1', { animations: ['h1'] });   // atlas names h1_tex.png
+
+	// The packed page, at a packed size, under the skeleton's name.
+	const page = Buffer.alloc(454 * 481 * 4, 0);
+	writePng(path.join(from, 'h1.png'), { width: 454, height: 481, rgba: page });
+
+	const result = artImport({
+		specPath, guidePath, sdkDir: null, fromDir: from, gameDir, dryRun: false,
+	});
+	assert.equal(result.refused, 0, 'a rig-named file that does not fit a slot is its page');
+
+	// And real flat art under the same name is untouched, because it FITS its
+	// slot and is imported before the net is ever reached.
+	const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'net-'));
+	const two = writeImportFixture(dir2);
+	writeRig(two.from, 'h1', { animations: ['h1'] });
+	const rgba = Buffer.alloc(200 * 200 * 4, 0);
+	for (let i = 0; i < 200 * 200; i += 1) {
+		rgba[i * 4] = 200;
+		rgba[i * 4 + 3] = i % 7 === 0 ? 0 : 255;
+	}
+	writePng(path.join(two.from, 'h1.png'), { width: 200, height: 200, rgba });
+	const ok = artImport({
+		specPath: two.specPath, guidePath: two.guidePath, sdkDir: null,
+		fromDir: two.from, gameDir: two.gameDir, dryRun: false,
+	});
+	assert.equal(ok.imported, 1, 'flat art named after its rig still imports');
+});
+
 test('art already drawn imports without an art guide', () => {
 	// The guide describes the LOOK, for generating art that does not exist yet.
 	// Every fact an import uses — which slots exist, their pixel sizes, whether
@@ -3728,6 +3770,26 @@ function writeRig(dir, name, { animations, regions = ['body'], attachments = nul
 	fs.writeFileSync(path.join(dir, `${name}_tex.png`), '');
 	return { skeletonFile: path.join(dir, `${name}.json`), atlasFile: path.join(dir, `${name}.atlas`) };
 }
+
+test('a page named in different case is still the page, not loose art', () => {
+	// Invisible to the artist and fatal to an exact-string comparison. macOS and
+	// Windows are case-insensitive, so an atlas naming "L5.png" beside a file
+	// called "l5.png" opens the same file: the page loads, the rig validates,
+	// every existence check passes. Only the comparison against the directory
+	// listing fails — and the page is then matched to the symbol it is named
+	// after and refused for being the size it packed to.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'case-'));
+	writeRig(dir, 'l5', { animations: ['l5'] });
+	fs.rmSync(path.join(dir, 'l5_tex.png'));
+	fs.writeFileSync(
+		path.join(dir, 'l5.atlas'),
+		'L5.PNG\nsize:64,64\nfilter:Linear,Linear\nbody\nbounds:0,0,32,32\n',
+	);
+	fs.writeFileSync(path.join(dir, 'l5.png'), 'the packed page');
+
+	const pages = atlasPageFiles(dir);
+	assert.ok(pages.has('l5.png'), `expected the page regardless of case, got ${[...pages]}`);
+});
 
 test('an atlas that names no page still keeps its page out of the symbol slots', () => {
 	// The delivery this failed on. Neither reader could find a page line, so
