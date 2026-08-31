@@ -506,11 +506,15 @@ app.get('/api/games/:id/generate/jobs', (req, res) => {
 		const config = loadConfig();
 		const dir = gameDir(config.workspace, req.params.id);
 		const spec = loadGameSpec(path.join(dir, 'game-spec.yaml'));
+		// Asking loadArtGuide rather than testing for the yaml file: it falls back
+		// to a written art-guide.md, and short-circuiting on the yaml's absence
+		// meant a studio that had dropped its real style guide in was told the game
+		// had no brief and offered a worse one.
 		const guidePath = path.join(dir, 'art-guide.yaml');
-		if (!fs.existsSync(guidePath)) {
+		const guide = loadArtGuide(guidePath);
+		if (!guide) {
 			return res.json({ jobs: [], needsGuide: true, guidePath });
 		}
-		const guide = loadArtGuide(guidePath);
 		const mechanic = getMechanic(spec.game.mechanic);
 		const referenceAppDir = config.webSdk
 			? path.join(config.webSdk, 'apps', mechanic.webApp)
@@ -554,7 +558,9 @@ app.post('/api/games/:id/generate', async (req, res) => {
 		const dir = gameDir(config.workspace, req.params.id);
 		const spec = loadGameSpec(path.join(dir, 'game-spec.yaml'));
 		const guide = loadArtGuide(path.join(dir, 'art-guide.yaml'));
-		if (!guide) return fail(res, new Error('This game has no art-guide.yaml.'));
+		if (!guide) {
+			return fail(res, new Error('This game has no art brief — art-guide.md or art-guide.yaml.'));
+		}
 
 		const mechanic = getMechanic(spec.game.mechanic);
 		const referenceAppDir = config.webSdk
@@ -609,8 +615,23 @@ app.post('/api/games/:id/art-guide', (req, res) => {
 app.get('/api/games/:id/art-guide', (req, res) => {
 	try {
 		const config = loadConfig();
-		const file = path.join(gameDir(config.workspace, req.params.id), 'art-guide.yaml');
-		res.json({ exists: fs.existsSync(file), content: fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '' });
+		const dir = gameDir(config.workspace, req.params.id);
+		// A written art-guide.md wins, and is reported as such. Checking only for
+		// the yaml told a studio that had just dropped its real style guide in
+		// that the game "has no art brief yet", and offered to write a worse one.
+		const markdown = path.join(dir, 'art-guide.md');
+		const yaml = path.join(dir, 'art-guide.yaml');
+		const file = fs.existsSync(markdown) ? markdown : yaml;
+		const exists = fs.existsSync(file);
+		res.json({
+			exists,
+			format: fs.existsSync(markdown) ? 'markdown' : 'yaml',
+			file: path.basename(file),
+			// Markdown is not editable in the box — it is the studio's own document,
+			// and a textarea that silently rewrites it on save would be a trap.
+			editable: !fs.existsSync(markdown),
+			content: exists ? fs.readFileSync(file, 'utf8') : '',
+		});
 	} catch (err) {
 		fail(res, err);
 	}

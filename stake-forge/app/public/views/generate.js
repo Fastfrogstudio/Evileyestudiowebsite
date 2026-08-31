@@ -42,6 +42,11 @@ export function renderGenerate(ctx) {
 		state.model = jobs.model ?? '';
 		state.needsGuide = Boolean(jobs.needsGuide) || !guide.exists;
 		state.guide = guide.content ?? '';
+		state.guideFile = guide.file ?? 'art-guide.yaml';
+		// A written art-guide.md is the studio's own document. It is shown, not
+		// offered as a textarea: a box that silently rewrote it on save would be a
+		// trap, and it is edited in whatever they already write it in.
+		state.guideEditable = guide.editable !== false;
 		render();
 	};
 
@@ -151,7 +156,12 @@ export function renderGenerate(ctx) {
 				state.needsGuide
 					? h('div.empty',
 							h('p', 'This game has no art brief yet.'),
-							h('button.btn.primary', { onclick: createGuide }, 'Create art-guide.yaml'))
+							h('p.dim',
+								'Already have one? Drop it in the game folder as ',
+								h('code', 'art-guide.md'),
+								' — a written guide is used in preference, and its prompt template is ',
+								'used as-is rather than rebuilt from its parts.'),
+							h('button.btn.primary', { onclick: createGuide }, 'Or write art-guide.yaml here'))
 					: null,
 
 				!state.ready && !state.needsGuide
@@ -162,17 +172,25 @@ export function renderGenerate(ctx) {
 
 				!state.needsGuide
 					? h('div.gen-guide',
-							h('label', 'Art brief'),
+							h('label', `Art brief — ${state.guideFile}`),
 							h('textarea.mono', {
 								rows: 14,
 								value: state.guide,
-								oninput: (e) => { state.guide = e.target.value; state.guideDirty = true; },
+								readOnly: !state.guideEditable,
+								style: state.guideEditable ? '' : 'opacity:0.72',
+								oninput: (e) => {
+									if (!state.guideEditable) return;
+									state.guide = e.target.value;
+									state.guideDirty = true;
+								},
 							}),
 							h('div.row',
-								h('button.btn', {
-									disabled: !state.guideDirty,
-									onclick: saveGuide,
-								}, state.guideDirty ? 'Save brief and re-derive prompts' : 'Brief saved'),
+								state.guideEditable
+									? h('button.btn', {
+											disabled: !state.guideDirty,
+											onclick: saveGuide,
+										}, state.guideDirty ? 'Save brief and re-derive prompts' : 'Brief saved')
+									: h('span.dim', 'Your own document — edit it where you write it, then Reload'),
 								h('span.dim',
 									`${state.jobs.length} asset(s)` +
 									(undescribed ? ` · ${undescribed} with no subject line` : '') +

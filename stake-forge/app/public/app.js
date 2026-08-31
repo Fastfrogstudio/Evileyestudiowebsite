@@ -184,6 +184,9 @@ function renderGame() {
 				tab('spec', 'Spec', errorCount ? { count: errorCount, kind: 'err' } : warnCount ? { count: warnCount, kind: 'warn' } : null),
 				tab('build', 'Build'),
 				tab('brief', 'Art brief'),
+				// Generate sits between the brief and the review because that is the
+				// order the work happens in: what the game needs, make it, look at it.
+				tab('generate', 'Generate'),
 				tab('review', 'Review'),
 				tab('assets', 'Assets'),
 				tab('preview', 'Preview'),
@@ -204,6 +207,7 @@ function renderGame() {
 		if (state.tab === 'spec') mount(body, renderEditor(ctx));
 		else if (state.tab === 'build') mount(body, renderPipeline(ctx));
 		else if (state.tab === 'brief') mount(body, renderBrief(ctx));
+		else if (state.tab === 'generate') mount(body, renderGenerate(ctx));
 		else if (state.tab === 'review') mount(body, renderReview(ctx));
 		else if (state.tab === 'assets') mount(body, renderAssets(ctx));
 		else mount(body, renderPreview(ctx));
