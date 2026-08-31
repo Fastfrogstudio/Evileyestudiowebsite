@@ -49,6 +49,70 @@ export function renderReview(ctx) {
 		if (state.spine.length) queueMicrotask(mountSpine);
 	};
 
+	// The canvas is the tile, exactly. A larger one is drawn and then clipped by
+	// the tile's overflow, which reads on screen as a cropped rig.
+	const TILE = 240;
+	const PAD = 20;
+
+	/**
+	 * Scale a rig to fit the tile and centre it ON ITS OWN BOUNDS.
+	 *
+	 * ── Why the origin cannot be used for this ──────────────────────────────────
+	 * A skeleton's origin is wherever the rigger put it, and both conventions are
+	 * common: at the feet for a character, at the middle for a slot symbol. So the
+	 * origin says nothing about where the art actually is. The SETUP-POSE BOUNDS
+	 * do, and Spine exports them in the skeleton itself:
+	 *
+	 *   h1.json  "skeleton": { x: -613.43, y: -620.56, width: 1225.25, height: 1241.81 }
+	 *
+	 * x ≈ -width/2 and y ≈ -height/2 — centre-origin. Nudging such a rig down by
+	 * half its height (the correct correction for a bottom-origin one) drops it
+	 * half out of the tile. That was the bug this replaces, and it is invisible on
+	 * a bottom-origin rig, which is why it survived: it renders correctly for one
+	 * convention and wrongly for the other.
+	 *
+	 * Measured once from the setup pose rather than per animation. Bounds move as a
+	 * rig plays, so re-centring every frame would make the preview crawl around its
+	 * tile instead of animating in place.
+	 *
+	 * Spine is y-up and pixi is y-down, so the vertical extent [y, y+height] in
+	 * skeleton space is [-(y+height), -y] on the canvas — hence the negated centre.
+	 */
+	const fitToTile = (spine) => {
+		const data = spine.skeleton?.data;
+		let cx;
+		let cy;
+		let width;
+		let height;
+
+		if (data && data.width > 0 && data.height > 0) {
+			width = data.width;
+			height = data.height;
+			cx = data.x + width / 2;
+			cy = -(data.y + height / 2);
+		} else {
+			// Older exports omit the bounds. Fall back to what the runtime measures,
+			// read at scale 1 from the origin so the numbers are the rig's own.
+			spine.scale.set(1);
+			spine.position.set(0, 0);
+			const b = spine.getBounds();
+			width = b.width;
+			height = b.height;
+			if (!(width > 0) || !(height > 0)) return null;
+			cx = b.x + width / 2;
+			cy = b.y + height / 2;
+		}
+
+		// Only ever shrink. Blowing a 64px rig up to fill the tile would hide that
+		// it is far too small for a 200px symbol slot — which is precisely what a
+		// review is meant to catch.
+		const scale = Math.min(1, (TILE - PAD) / width, (TILE - PAD) / height);
+		spine.scale.set(scale);
+		spine.x = TILE / 2 - cx * scale;
+		spine.y = TILE / 2 - cy * scale;
+		return { width: Math.round(width), height: Math.round(height), scale };
+	};
+
 	/**
 	 * Boot one pixi canvas per rig and play its animation.
 	 *
@@ -89,7 +153,7 @@ export function renderReview(ctx) {
 				// Path-based so the atlas's page image resolves as its sibling.
 				const base = `/review-file/${ctx.game.id}/${encodeURIComponent(state.from)}/`;
 				const app = new PIXI.Application();
-				await app.init({ width: 260, height: 260, backgroundAlpha: 0, antialias: true });
+				await app.init({ width: TILE, height: TILE, backgroundAlpha: 0, antialias: true });
 				host.innerHTML = '';
 				host.appendChild(app.canvas);
 
@@ -101,18 +165,15 @@ export function renderReview(ctx) {
 					skeleton: `${entry.name}-skel`,
 					atlas: `${entry.name}-atlas`,
 				});
-				// Fit whatever size it was rigged at into the tile, so a 1080px
-				// skeleton and a 200px one are both fully visible.
-				const bounds = spine.getBounds();
-				const scale = Math.min(220 / (bounds.width || 220), 220 / (bounds.height || 220));
-				spine.scale.set(scale);
-				spine.x = 130;
-				spine.y = 130 + (bounds.height * scale) / 2;
 				app.stage.addChild(spine);
+				const box = fitToTile(spine);
 
 				const first = entry.animations[0];
 				if (first) spine.state.setAnimation(0, first, true);
 				state.playing.set(entry.name, { app, spine });
+
+				const label = document.getElementById(`size-${entry.name}`);
+				if (label && box) label.textContent = `rigged at ${box.width} \u00d7 ${box.height}`;
 			} catch (err) {
 				mount(host, h('div.err-box', `could not play: ${err.message}`));
 			}
@@ -135,6 +196,7 @@ export function renderReview(ctx) {
 		return h('div.rv-tile.rv-wide',
 			h('div.rv-art', { id: `spine-${entry.name}` }, h('span.dim', 'loading…')),
 			h('b', entry.name),
+			h('div.rv-size', { id: `size-${entry.name}` }),
 			h('div.rv-anims',
 				...entry.animations.map((animation) =>
 					h('button.chip', { onclick: () => setAnimation(entry.name, animation) }, animation),
