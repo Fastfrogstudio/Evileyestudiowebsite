@@ -2,7 +2,7 @@ import fs from 'fs-extra';
 import path from 'node:path';
 import chalk from 'chalk';
 
-import { seedream, generationSize, REQUEST_SHAPE } from '../lib/imageProvider.js';
+import { makeProvider, providerFor, generationSize, REQUEST_SHAPE } from '../lib/imageProvider.js';
 import { readPngSize } from '../lib/png.js';
 
 /**
@@ -27,7 +27,13 @@ export function artCheck({ endpoint, apiKey, model, out = null, prompt = null })
 	if (!endpoint) throw new Error('no --endpoint, and none configured');
 	if (!apiKey) throw new Error('no --key, and none configured');
 
-	const provider = seedream({ endpoint, apiKey, model });
+	// Through makeProvider, so this checks the adapter the pipeline will really
+	// use. Building one directly is how it came to test Seedream against an
+	// OpenRouter endpoint: it sent prompt/size/watermark to a chat API, which
+	// answered 200 with no image, and the report blamed the response shape. The
+	// one command whose job is to prove the wiring has to use the wiring.
+	const provider = makeProvider({ imageEndpoint: endpoint, imageApiKey: apiKey, imageModel: model });
+	if (!provider) throw new Error('could not build a provider for that endpoint and key');
 	// A square well inside the accepted range, so a size rejection means the
 	// FIELD is wrong rather than the value.
 	const size = generationSize(512, 512);
@@ -38,14 +44,18 @@ export function artCheck({ endpoint, apiKey, model, out = null, prompt = null })
 		height: size.height,
 		prompt:
 			prompt ??
+			// White, not transparent — the same instruction the real prompts carry,
+			// since a check that asks for something the pipeline never asks for is
+			// testing a request nobody sends.
 			'a single polished brass coin, centred, painterly digital illustration, ' +
-				'transparent background, no text',
+				'isolated on a plain pure white background, no text',
 		negative: 'text or lettering',
 	};
 
 	console.log(chalk.bold('\nChecking the image provider\n'));
+	console.log(chalk.dim(`  adapter   ${provider.name}`));
 	console.log(chalk.dim(`  endpoint  ${endpoint}`));
-	console.log(chalk.dim(`  model     ${model}`));
+	console.log(chalk.dim(`  model     ${provider.model ?? model}`));
 	console.log(chalk.dim(`  size      ${job.width}x${job.height}`));
 	console.log(chalk.dim(`  prompt    ${job.prompt.slice(0, 72)}…\n`));
 
@@ -63,8 +73,12 @@ export function artCheck({ endpoint, apiKey, model, out = null, prompt = null })
 					chalk.dim(`    ${JSON.stringify(result.sent ?? {}, null, 2).replace(/\n/g, '\n    ')}\n`),
 				);
 				console.log(chalk.bold('  What the adapter expects back:'));
+				const expects =
+					provider.name === 'openrouter'
+						? { 'choices[0].message.images[0].image_url.url': 'a data:image/png;base64 URL' }
+						: REQUEST_SHAPE.response;
 				console.log(
-					chalk.dim(`    ${Object.entries(REQUEST_SHAPE.response).map(([k, v]) => `${k} — ${v}`).join('\n    ')}\n`),
+					chalk.dim(`    ${Object.entries(expects).map(([k, v]) => `${k} — ${v}`).join('\n    ')}\n`),
 				);
 				console.log(
 					chalk.dim(
@@ -79,14 +93,26 @@ export function artCheck({ endpoint, apiKey, model, out = null, prompt = null })
 			fs.writeFileSync(target, result.bytes);
 			const actual = readPngSize(target);
 
-			console.log(chalk.green('✓'), `the provider returned ${(result.bytes.length / 1024).toFixed(0)}KB`);
+		console.log(
+				chalk.green('✓'),
+				`the provider returned ${result.bytes.length < 1024 ? `${result.bytes.length} bytes` : `${(result.bytes.length / 1024).toFixed(0)}KB`}`,
+			);
 			console.log(chalk.green('✓'), `wrote ${target}`);
 			if (actual) {
+				// Only a mismatch worth reporting where a size was ASKED FOR. A chat
+				// endpoint has no size field, so flagging "asked for 512x512" there
+				// reports a request that was never made, and sends someone looking for
+				// a setting that does not exist.
+				const sizeable = provider.name !== 'openrouter';
 				const matches = actual.width === job.width && actual.height === job.height;
 				console.log(
-					matches ? chalk.green('✓') : chalk.yellow('  !'),
+					!sizeable || matches ? chalk.green('✓') : chalk.yellow('  !'),
 					`image is ${actual.width}x${actual.height}` +
-						(matches ? '' : ` — asked for ${job.width}x${job.height}`),
+						(sizeable
+							? matches
+								? ''
+								: ` — asked for ${job.width}x${job.height}`
+							: ' — this endpoint has no size field, and art:import trims the subject onto the slot canvas anyway'),
 				);
 			} else {
 				// Not a PNG. Worth saying plainly: the pipeline writes .png paths and
@@ -98,8 +124,12 @@ export function artCheck({ endpoint, apiKey, model, out = null, prompt = null })
 			}
 			console.log(
 				chalk.dim(
-					'\n  Open it. If it has a watermark, the watermark:false field is not being\n' +
-						'  honoured and the batch is not worth running yet.\n',
+					provider.name === 'openrouter'
+						? '\n  Open it. A watermark, or a picture of something else entirely, means the\n' +
+							'  model is wrong for this rather than the wiring — the batch is not worth\n' +
+							'  running yet.\n'
+						: '\n  Open it. If it has a watermark, the watermark:false field is not being\n' +
+							'  honoured and the batch is not worth running yet.\n',
 				),
 			);
 			return { ok: true, path: target, size: actual };

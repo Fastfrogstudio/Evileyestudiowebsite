@@ -82,7 +82,7 @@ import {
 	atlasPageFiles,
 	readAtlasRegions,
 } from '../src/lib/spineImport.js';
-import { generationSize, SIZE_LIMITS, openrouter, providerFor } from '../src/lib/imageProvider.js';
+import { generationSize, SIZE_LIMITS, openrouter, providerFor, makeProvider } from '../src/lib/imageProvider.js';
 import { resize, alphaCoverage, opaqueBounds, writePng, decodePng } from '../src/lib/image.js';
 import { removeWhiteBackground, looksWhiteBacked, fitOnCanvas } from '../src/lib/cutout.js';
 import { matchFiles, inspect, artImport } from '../src/commands/artImport.js';
@@ -3626,6 +3626,29 @@ test('a non-square slot asks for its shape in words, since there is no size fiel
 				assert.ok(!/aspect ratio/.test(fetchImpl.calls[1].body.messages[0].content));
 			}),
 		);
+});
+
+test('makeProvider is the only way an adapter is built, so a check tests the wiring', () => {
+	// The bug this pins. art:check built a Seedream adapter directly, so pointed
+	// at OpenRouter it sent prompt/size/response_format/watermark to a chat API.
+	// That returns 200 with no image, and the report blamed the response shape —
+	// on the one command whose entire job is to prove the wiring is right.
+	assert.equal(
+		makeProvider({
+			imageEndpoint: 'https://openrouter.ai/api/v1/chat/completions',
+			imageApiKey: 'k',
+			imageModel: 'google/gemini-2.5-flash-image',
+		}).name,
+		'openrouter',
+	);
+	assert.equal(
+		makeProvider({
+			imageEndpoint: 'https://ark.ap-southeast.bytepluses.com/api/v3/images/generations',
+			imageApiKey: 'k',
+		}).name,
+		'seedream',
+	);
+	assert.equal(makeProvider({ imageEndpoint: 'x' }), null, 'no key, no provider');
 });
 
 test('the adapter is chosen from the endpoint, so the two cannot disagree', () => {
