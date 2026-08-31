@@ -239,7 +239,15 @@ tr:last-child td { border-bottom: 0; }
 }
 .modal h2 { margin: 0 0 4px; font-size: 16px; }
 .modal .modal-sub { margin: 0 0 18px; font-size: 12px; color: var(--ink-faint); }
-.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+/* Sticky, because the settings form now runs past a screen and the primary
+   action of a dialog should never be something you have to go looking for. The
+   background is opaque so content scrolling underneath does not show through. */
+.modal-actions {
+	display: flex; gap: 8px; justify-content: flex-end;
+	position: sticky; bottom: -22px; margin: 20px -22px -22px; padding: 14px 22px;
+	background: var(--bg-raised); border-top: 1px solid var(--line);
+	border-radius: 0 0 12px 12px;
+}
 
 /* ── toasts ──────────────────────────────────────────────────────────────── */
 .toasts { position: fixed; bottom: 18px; right: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 90; }

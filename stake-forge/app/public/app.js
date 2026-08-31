@@ -426,6 +426,15 @@ function openSettings({ firstRun = false } = {}) {
 			mathSdk: h('input.mono', { value: state.config.mathSdk || guesses.mathSdk || '' }),
 			python: h('input.mono', { value: state.config.python || '' }),
 			sims: h('input.mono', { type: 'number', min: '1', value: String(state.config.sims ?? 1000) }),
+			imageEndpoint: h('input.mono', { value: state.config.imageEndpoint || '' }),
+			imageModel: h('input.mono', { value: state.config.imageModel || '' }),
+			// Never populated from the server — the key is not sent to the browser.
+			// Left blank it keeps whatever is stored, so opening Settings to change
+			// the simulation count cannot silently wipe it.
+			imageApiKey: h('input.mono', {
+				type: 'password',
+				placeholder: state.config.imageApiKeySet ? '•••••••• (stored — leave blank to keep)' : 'not set',
+			}),
 		};
 		const problemBox = h('div');
 
@@ -438,6 +447,10 @@ function openSettings({ firstRun = false } = {}) {
 		const save = async () => {
 			try {
 				const body = Object.fromEntries(Object.entries(fields).map(([k, el]) => [k, el.value.trim()]));
+				// An untouched key field means "leave it alone", not "clear it". The
+				// server treats an absent key that way; an empty string would too, but
+				// not sending it at all is the unambiguous version.
+				if (!body.imageApiKey) delete body.imageApiKey;
 				const data = await api('/api/config', { method: 'POST', body });
 				state.config = data.config;
 				state.problems = data.problems;
@@ -472,6 +485,28 @@ function openSettings({ firstRun = false } = {}) {
 				h('div.field-hint',
 					'Per bet mode, each time you Simulate. 1000 runs in a second and shows the shape of ' +
 					'the paytable; a real RTP needs hundreds of thousands, and the optimiser.')),
+
+			h('h2', { style: 'margin:26px 0 0;font-size:15px' }, 'Image generation'),
+			h('p.modal-sub', 'Only needed if you generate art here. Importing art made elsewhere does not use these.'),
+			h('div.field', h('label', 'Endpoint'), fields.imageEndpoint,
+				h('div.field-hint',
+					'The adapter follows this URL, so switching provider is this one field. ',
+					h('code', 'https://openrouter.ai/api/v1/chat/completions'),
+					' for OpenRouter — its image models run through the chat endpoint, which is why ' +
+					'the URL says chat. Or ',
+					h('code', 'https://ark.ap-southeast.bytepluses.com/api/v3/images/generations'),
+					' for BytePlus ModelArk.')),
+			h('div.field', h('label', 'Model'), fields.imageModel,
+				h('div.field-hint',
+					'It must be able to OUTPUT images — e.g. ', h('code', 'google/gemini-2.5-flash-image'),
+					' on OpenRouter, or ', h('code', 'seedream-5-0-pro'),
+					' on ModelArk. A text model accepts the request and answers in prose.')),
+			h('div.field', h('label', 'API key'), fields.imageApiKey,
+				h('div.field-hint',
+					'Stored on this machine and never sent to the browser. Leave blank to keep the ' +
+					'stored one. Check it with ', h('code', 'forge art:check'), ' — one request, ' +
+					'reported in full, before you spend on a batch.')),
+
 			h('div.modal-actions',
 				firstRun ? null : h('button.btn', { onclick: close }, 'Cancel'),
 				h('button.btn.btn-primary', { onclick: save }, 'Save'),
