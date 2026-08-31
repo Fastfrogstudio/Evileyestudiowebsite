@@ -1,12 +1,13 @@
 import fs from 'fs-extra';
 import path from 'node:path';
 import chalk from 'chalk';
+import YAML from 'yaml';
 
 import { loadGameSpec } from '../lib/loadSpec.js';
 import { getMechanic } from '../lib/mechanics.js';
 import { loadArtGuide, buildGenerationManifest } from '../lib/artGuide.js';
 import { decodePng, resize, alphaCoverage, opaqueBounds, writePng } from '../lib/image.js';
-import { groupSpineDeliveries, validateSpineDelivery } from '../lib/spineImport.js';
+import { groupSpineDeliveries, validateSpineDelivery, readAtlasRegions } from '../lib/spineImport.js';
 import { buildAnimBrief } from '../lib/animBrief.js';
 
 /**
@@ -138,6 +139,105 @@ export function inspect(image, job) {
 	return { problems, notes, coverage };
 }
 
+
+/**
+ * Write what was imported into assets-manifest.yaml.
+ *
+ * ── Why importing files is not importing art ────────────────────────────────
+ * `assets:import` copies into the web-sdk app from the MANIFEST, not from the
+ * folder. So art landing in assets-source/ changes nothing on its own: the
+ * manifest still names whatever `art:placeholder` put there, and the build
+ * cheerfully ships stand-in tiles over the top of real work. Every step passes,
+ * the pipeline is green, and the game renders placeholders — the worst shape a
+ * failure can take, because there is nothing to notice.
+ *
+ * Two shapes have to agree here. Flat symbol art is written to
+ * `assets-source/symbols/l5.png`, while placeholders sit at `assets-source/
+ * l5.png` — the same symbol, two files, and the manifest decides which one is
+ * the game's. Paths are therefore written exactly as the files sit relative to
+ * assetsSourceDir, never as bare basenames.
+ *
+ * ── Why rigs get a folder each ──────────────────────────────────────────────
+ * A Spine export names its atlas page after the skeleton, so `l5.json` ships
+ * with an `l5.png` that is the PACKED PAGE — which collides with the flat
+ * `l5.png` this same import writes for the same symbol. Different pictures,
+ * identical name. `assets-source/spines/l5/` keeps each rig with its own page
+ * and makes the collision impossible rather than merely unlikely.
+ */
+function wireManifest({ gameDir, imported, spineWired, dryRun }) {
+	const manifestPath = path.join(gameDir, 'assets-manifest.yaml');
+	let manifest = {};
+	if (fs.existsSync(manifestPath)) {
+		manifest = YAML.parse(fs.readFileSync(manifestPath, 'utf8')) ?? {};
+	}
+	manifest.assetsSourceDir = manifest.assetsSourceDir ?? './assets-source';
+
+	const changed = { sprites: [], spines: [], screens: [] };
+
+	// Flat symbol art. A symbol that also has a working rig takes the flat PNG as
+	// its resting pose instead, so the two are never registered as rivals.
+	const riggedSymbols = new Set(spineWired.filter((w) => w.symbol).map((w) => w.symbol));
+	for (const entry of imported) {
+		const match = /^symbol\.(.+)$/.exec(entry.job.id);
+		if (!match) continue;
+		const name = match[1];
+		const rel = entry.job.outputPath.replace(/^assets-source\//, '');
+		if (riggedSymbols.has(name)) continue; // handled as staticSprite below
+		manifest.spriteSymbols = manifest.spriteSymbols ?? {};
+		manifest.spriteSymbols[name] = { ...(manifest.spriteSymbols[name] ?? {}), sprite: rel };
+		changed.sprites.push(name);
+	}
+
+	for (const wired of spineWired) {
+		if (wired.symbol) {
+			manifest.spineSymbols = manifest.spineSymbols ?? {};
+			const flat = imported.find((e) => e.job.id === `symbol.${wired.symbol}`);
+			manifest.spineSymbols[wired.symbol] = {
+				skeleton: wired.skeleton,
+				atlas: wired.atlas,
+				png: wired.png,
+				// Naming the track is not optional. Without it importAssets wires the
+				// symbol's win state to the static frame, so the rig ships, loads, and
+				// the symbol still does not move when it pays — the same silent
+				// nothing as a misnamed animation, arrived at from the other side.
+				// One animation per symbol, and it is the win: everything else renders
+				// the flat PNG. See buildAnimBrief.
+				...(wired.winAnimation ? { animations: { win: wired.winAnimation } } : {}),
+				...(flat
+					? { staticSprite: flat.job.outputPath.replace(/^assets-source\//, '') }
+					: {}),
+			};
+			// loadSpec refuses a symbol present in both maps — they would register
+			// conflicting assets under one key — so the placeholder entry goes.
+			if (manifest.spriteSymbols) delete manifest.spriteSymbols[wired.symbol];
+			changed.spines.push(wired.symbol);
+		} else if (wired.screen) {
+			manifest.screens = manifest.screens ?? {};
+			manifest.screens[wired.screen] = {
+				skeleton: wired.skeleton,
+				atlas: wired.atlas,
+				png: wired.png,
+			};
+			changed.screens.push(wired.screen);
+		}
+	}
+
+	if (manifest.spriteSymbols && !Object.keys(manifest.spriteSymbols).length) {
+		delete manifest.spriteSymbols;
+	}
+
+	if (!dryRun && (changed.sprites.length || changed.spines.length || changed.screens.length)) {
+		const header =
+			`# assets-manifest.yaml — updated by \`forge art:import\`.\n` +
+			`#\n` +
+			`# Paths are relative to assetsSourceDir. A symbol with a rig lists its\n` +
+			`# skeleton/atlas/png here and keeps the flat PNG as staticSprite, which is\n` +
+			`# what the non-win states render.\n\n`;
+		fs.writeFileSync(manifestPath, header + YAML.stringify(manifest, { lineWidth: 0 }), 'utf8');
+	}
+	return changed;
+}
+
 export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRun = false }) {
 	const spec = loadGameSpec(specPath);
 	const guide = loadArtGuide(guidePath);
@@ -235,12 +335,12 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 	// and plays nothing on screen.
 	const anim = buildAnimBrief({ spec, referenceAppDir });
 	const requiredByName = new Map();
+	const slotByName = new Map();
 	for (const entry of anim.entries) {
 		if (!entry.skeletonFile) continue;
-		requiredByName.set(
-			path.basename(entry.skeletonFile, '.json').toLowerCase(),
-			entry.animations.map((a) => a.name),
-		);
+		const key = path.basename(entry.skeletonFile, '.json').toLowerCase();
+		requiredByName.set(key, entry.animations.map((a) => a.name));
+		slotByName.set(key, entry);
 	}
 
 	const spineResults = [];
@@ -256,8 +356,38 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 		if (!required.length) {
 			result.notes.push('nothing in this game asks for a skeleton by this name');
 		}
-		spineResults.push({ ...bundle, ...result, required });
+		spineResults.push({ ...bundle, ...result, required, slot: slotByName.get(bundle.name.toLowerCase()) ?? null });
 	}
+
+	// A rig only reaches the game if it passed. Wiring a broken one in would put
+	// an inert symbol on the board with a green pipeline behind it.
+	const spineWired = [];
+	for (const entry of spineResults) {
+		if (entry.problems.length || !entry.slot) continue;
+		const relDir = path.join('spines', entry.name);
+		const destDir = path.join(gameDir, 'assets-source', relDir);
+		const pages = readAtlasRegions(entry.atlasFile)?.pages ?? [];
+		if (!dryRun) {
+			fs.ensureDirSync(destDir);
+			fs.copySync(entry.skeletonFile, path.join(destDir, path.basename(entry.skeletonFile)));
+			fs.copySync(entry.atlasFile, path.join(destDir, path.basename(entry.atlasFile)));
+			for (const page of pages) {
+				fs.copySync(path.join(fromDir, page), path.join(destDir, page));
+			}
+		}
+		const symbolMatch = /^symbol\.(.+)$/.exec(entry.slot.id);
+		spineWired.push({
+			name: entry.name,
+			symbol: symbolMatch ? symbolMatch[1] : null,
+			screen: symbolMatch ? null : entry.slot.assetKey,
+			skeleton: path.posix.join(relDir, path.basename(entry.skeletonFile)),
+			atlas: path.posix.join(relDir, path.basename(entry.atlasFile)),
+			png: pages[0] ? path.posix.join(relDir, pages[0]) : null,
+			winAnimation: entry.required[0] ?? null,
+		});
+	}
+
+	const wired = wireManifest({ gameDir, imported, spineWired, dryRun });
 
 	const missing = jobs.filter((job) => !matched.some((m) => m.job.id === job.id));
 
@@ -303,6 +433,17 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 		if (unmatched.length > 8) console.log(chalk.dim(`      ... and ${unmatched.length - 8} more`));
 	}
 
+	if (wired.spines.length || wired.sprites.length || wired.screens.length) {
+		const parts = [];
+		if (wired.spines.length) parts.push(`${wired.spines.join(', ')} as rigs`);
+		if (wired.sprites.length) parts.push(`${wired.sprites.length} as flat sprites`);
+		if (wired.screens.length) parts.push(`${wired.screens.join(', ')} as screens`);
+		console.log(
+			chalk.green('\n  ✓'),
+			`assets-manifest.yaml now points at your art — ${parts.join(', ')}`,
+		);
+	}
+
 	console.log('');
 	console.log(
 		`  ${chalk.green(`${imported.length} imported`)}` +
@@ -335,5 +476,6 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 		missing: missing.length,
 		unmatched: unmatched.length,
 		spine: { checked: spineResults.length, failed: badSpine },
+		wired,
 	};
 }

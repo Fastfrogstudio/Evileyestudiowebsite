@@ -77,8 +77,8 @@ import { audit } from '../src/commands/audit.js';
 import { parseAtlas } from '../src/lib/atlasParts.js';
 import { validateSpineDelivery, groupSpineDeliveries } from '../src/lib/spineImport.js';
 import { generationSize, SIZE_LIMITS } from '../src/lib/imageProvider.js';
-import { resize, alphaCoverage, opaqueBounds } from '../src/lib/image.js';
-import { matchFiles, inspect } from '../src/commands/artImport.js';
+import { resize, alphaCoverage, opaqueBounds, writePng } from '../src/lib/image.js';
+import { matchFiles, inspect, artImport } from '../src/commands/artImport.js';
 import { buildAnimBrief } from '../src/lib/animBrief.js';
 import { buildGenerationManifest } from '../src/lib/artGuide.js';
 const SDK_LINES_ASSETS = '/home/user/web-sdk/apps/lines/static/assets/spines';
@@ -3526,6 +3526,127 @@ test('atlas parts are read at the size the artist DREW, not the size they packed
 	assert.equal(banner.width, 540, 'a BIG WIN banner is wide');
 	assert.equal(banner.height, 150);
 	assert.equal(banner.trimmed, true, 'it has offsets, so the drawn size is known');
+});
+
+group('art:import — reaching the game, not just the folder');
+
+/** A spec on disk that passes full validation, for the commands that load one. */
+function writeImportFixture(dir) {
+	const gameDir = path.join(dir, 'game');
+	const from = path.join(dir, 'delivered');
+	fs.mkdirSync(gameDir, { recursive: true });
+	fs.mkdirSync(from, { recursive: true });
+	const spec = specFor('lines');
+	delete spec._mechanic;
+	// specFor's paytables are deliberately gappy elsewhere; loadSpec rejects a gap.
+	spec.symbols = spec.symbols.map((symbol) =>
+		symbol.paytable ? { ...symbol, paytable: { 3: 5, '4-5': 20 } } : symbol,
+	);
+	const specPath = path.join(gameDir, 'game-spec.yaml');
+	const guidePath = path.join(gameDir, 'art-guide.yaml');
+	fs.writeFileSync(specPath, YAML.stringify(spec));
+	fs.writeFileSync(guidePath, YAML.stringify({ style: { summary: 'a look' }, symbols: {} }));
+	return { gameDir, from, specPath, guidePath };
+}
+
+
+test('delivered art is wired into the manifest, or the build ships placeholders over it', () => {
+	// The gap this closes, and the reason it was invisible: `assets:import`
+	// copies into the web-sdk app from the MANIFEST, not from assets-source. So
+	// importing art used to write correct files that nothing pointed at — the
+	// manifest still named `art:placeholder`'s stand-ins, every pipeline step went
+	// green, and the game rendered tiles over the top of real work. A failure with
+	// no symptom anywhere is worse than a loud one.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'import-'));
+	const { gameDir, from, specPath, guidePath } = writeImportFixture(dir);
+
+	// A rig for H1 named the way the game will call it, plus the flat PNG that
+	// every non-win state renders.
+	writeRig(from, 'h1', { animations: ['h1'] });
+	const rgba = Buffer.alloc(200 * 200 * 4, 0);
+	for (let i = 0; i < 200 * 200; i += 1) {
+		rgba[i * 4] = 200;                          // a visible tile...
+		rgba[i * 4 + 3] = i % 7 === 0 ? 0 : 255;    // ...with real transparency
+	}
+	writePng(path.join(from, 'h1.png'), { width: 200, height: 200, rgba });
+
+	const result = artImport({
+		specPath, guidePath, sdkDir: null, fromDir: from, gameDir, dryRun: false,
+	});
+	assert.equal(result.spine.failed, 0);
+
+	const manifest = YAML.parse(fs.readFileSync(path.join(gameDir, 'assets-manifest.yaml'), 'utf8'));
+	const h1 = manifest.spineSymbols?.H1;
+	assert.ok(h1, 'a validated rig has to reach the manifest');
+	// Paths are relative to assetsSourceDir and must resolve — importAssets joins
+	// them blind, so a wrong one fails as a missing file much later.
+	for (const field of ['skeleton', 'atlas', 'png', 'staticSprite']) {
+		assert.ok(h1[field], `${field} must be named`);
+		assert.ok(
+			fs.existsSync(path.join(gameDir, 'assets-source', h1[field])),
+			`${field} -> ${h1[field]} must exist`,
+		);
+	}
+	// Naming the track is the difference between a rig that plays on a win and one
+	// that silently falls back to the static frame.
+	assert.equal(h1.animations?.win, 'h1');
+	// And it must NOT also be a sprite symbol — loadSpec refuses a symbol in both.
+	assert.equal(manifest.spriteSymbols?.H1, undefined);
+});
+
+test("a rig's page lives in its own folder, so it cannot collide with the flat PNG", () => {
+	// Spine names the atlas page after the skeleton, so `h1.json` ships with an
+	// `h1.png` that is the PACKED PAGE — the same name as the flat symbol art for
+	// the same symbol, and a different picture. Flattening both into assets-source
+	// means one silently overwrites the other.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'import-'));
+	const { gameDir, from } = writeImportFixture(dir);
+	writeRig(from, 'h1', { animations: ['h1'] });
+
+	artImport({
+		specPath: path.join(gameDir, 'game-spec.yaml'),
+		guidePath: path.join(gameDir, 'art-guide.yaml'),
+		sdkDir: null, fromDir: from, gameDir, dryRun: false,
+	});
+	const manifest = YAML.parse(fs.readFileSync(path.join(gameDir, 'assets-manifest.yaml'), 'utf8'));
+	assert.match(manifest.spineSymbols.H1.png, /^spines\/h1\//);
+	assert.match(manifest.spineSymbols.H1.atlas, /^spines\/h1\//);
+});
+
+test('a rig that failed validation is not wired in', () => {
+	// A broken rig reaching the manifest is the worst outcome available: the
+	// pipeline stays green and the symbol is inert on the board.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'import-'));
+	const { gameDir, from } = writeImportFixture(dir);
+	// Spine's default export name — the rig is fine, the string is wrong.
+	writeRig(from, 'h1', { animations: ['animation'] });
+
+	const result = artImport({
+		specPath: path.join(gameDir, 'game-spec.yaml'),
+		guidePath: path.join(gameDir, 'art-guide.yaml'),
+		sdkDir: null, fromDir: from, gameDir, dryRun: false,
+	});
+	assert.equal(result.spine.failed, 1);
+	assert.equal(result.ok, false);
+	const manifestPath = path.join(gameDir, 'assets-manifest.yaml');
+	const manifest = fs.existsSync(manifestPath)
+		? YAML.parse(fs.readFileSync(manifestPath, 'utf8'))
+		: {};
+	assert.equal(manifest.spineSymbols?.H1, undefined);
+});
+
+test('--dry-run writes nothing at all', () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'import-'));
+	const { gameDir, from } = writeImportFixture(dir);
+	writeRig(from, 'h1', { animations: ['h1'] });
+
+	artImport({
+		specPath: path.join(gameDir, 'game-spec.yaml'),
+		guidePath: path.join(gameDir, 'art-guide.yaml'),
+		sdkDir: null, fromDir: from, gameDir, dryRun: true,
+	});
+	assert.equal(fs.existsSync(path.join(gameDir, 'assets-manifest.yaml')), false);
+	assert.equal(fs.existsSync(path.join(gameDir, 'assets-source')), false);
 });
 
 group('spineImport — the delivery gate');
