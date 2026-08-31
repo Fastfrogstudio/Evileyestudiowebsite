@@ -81,7 +81,9 @@ export const SCREEN_SLOTS = {
 		assetKey: 'fsIntro',
 		component: 'FreeSpinIntro.svelte',
 		assetType: 'spine',
-		animations: ['intro', 'idle', 'outro'],
+		// `type AnimationName = 'intro' | 'idle'`. It plays intro once, then loops idle
+		// until dismissed — there is no outro, and briefing one is work nobody plays.
+		animations: ['intro', 'idle'],
 		required: false,
 		note: 'Shown by the freeSpinTrigger bookEvent handler.',
 	},
@@ -105,7 +107,9 @@ export const SCREEN_SLOTS = {
 		assetKey: 'transition',
 		component: 'TransitionAnimation.svelte',
 		assetType: 'spine',
-		animations: ['transition'],
+		// TransitionAnimation.svelte plays the literal string 'animation' — Spine's
+		// default export name, left as exported. Not 'transition'.
+		animations: ['animation'],
 		required: false,
 		note: 'Played between basegame and freegame by the "transition" emitterEvent.',
 	},
@@ -150,7 +154,9 @@ export const SCREEN_SLOTS = {
 		assetKey: 'globalMultiplier',
 		component: 'GlobalMultiplier.svelte',
 		assetType: 'spine',
-		animations: ['idle'],
+		// GlobalMultiplier.svelte: `type AnimationName = 'static' | 'win' | 'reset' |
+		// 'increment'`. It rests on `static` and returns there after each of the others.
+		animations: ['static', 'win', 'reset', 'increment'],
 		required: false,
 		note:
 			'apps/lines ships this component and asset key but does NOT add ' +
@@ -177,7 +183,9 @@ export const SCREEN_SLOTS = {
 		assetKey: 'reelhouse',
 		component: 'BoardFrame.svelte',
 		assetType: 'spine',
-		animations: ['idle', 'glow'],
+		// The frame ITSELF is two sprites (frame_bg.png, frame_edge.png); the rig only
+		// carries the freegame glow, as `reelhouse_glow_start | _idle | _exit`.
+		animations: ['reelhouse_glow_start', 'reelhouse_glow_idle', 'reelhouse_glow_exit'],
 		required: false,
 		note: 'The glow shown while in freegame (boardFrameGlowShow emitterEvent).',
 	},
@@ -185,37 +193,19 @@ export const SCREEN_SLOTS = {
 		assetKey: 'anticipation',
 		component: 'Anticipation.svelte',
 		assetType: 'spine',
-		// Read off the shipped rig rather than guessed. The previous list here
-		// said `idle`, which does not exist in it — an animator following that
-		// would have delivered one animation nothing calls and none of the ones
-		// the game does.
-		animations: [
-			'payframe',
-			'anticipation_intro',
-			'anticipation_loop',
-			'anticipation_out',
-			'anticipation1_intro',
-			'anticipation1_loop',
-			'anticipation1_out',
-			'anticipation2_intro',
-			'anticipation2_loop',
-			'anticipation2_out',
-			'anticipation3_intro',
-			'anticipation3_loop',
-			'anticipation3_out',
-			'anticipation4_intro',
-			'anticipation4_loop',
-			'anticipation4_out',
-		],
+		// FOUR, not the sixteen the sample rig happens to contain. Anticipation.svelte
+		// declares `type AnimationName = 'anticipation_intro' | 'anticipation_loop' |
+		// 'anticipation_out'` and SymbolSpine.svelte plays 'payframe'. The twelve
+		// numbered variants in the shipped file are called by nothing.
+		animations: ['payframe', 'anticipation_intro', 'anticipation_loop', 'anticipation_out'],
 		required: false,
 		note:
-			'Two jobs in one rig, which is worth knowing because only one of them is ' +
-			'about anticipation. The `anticipation*` tracks are the reel build-up, driven ' +
-			'by the `anticipation` array on the reveal bookEvent. `payframe` is the FRAME ' +
-			'DRAWN AROUND EVERY WINNING SYMBOL — SymbolSpine.svelte plays it on the win ' +
-			'state for every spine symbol except S and M. Until this asset is supplied, ' +
-			'that frame is the sample game\'s gold surround, and it appears on your ' +
-			'symbols looking like a fault in your own art.',
+			'Two jobs in one rig, and only one of them is about anticipation. The three ' +
+			'`anticipation_*` tracks are the reel build-up, driven by the `anticipation` ' +
+			'array on the reveal bookEvent. `payframe` is the FRAME DRAWN AROUND EVERY ' +
+			'WINNING SYMBOL — SymbolSpine.svelte plays it on the win state of every spine ' +
+			"symbol except S and M. Until this is supplied that frame is the sample game's " +
+			'gold surround, and it appears on your symbols looking like a fault in your art.',
 	},
 	logo: {
 		assetKey: 'logo',

@@ -255,6 +255,36 @@ export function renderAnimBrief(brief) {
 	);
 	out.push('');
 
+	// ── how many, per asset, before any detail ──────────────────────────────
+	// The question an animation lead asks first is "how much work is this", and
+	// the answer was only derivable by counting rows across a dozen sections.
+	// Every count here is read from what the components actually call, not from
+	// what the sample rigs happen to contain — the shipped anticipation file has
+	// sixteen animations and the game plays four of them, so briefing the file
+	// would be four times the work for no visible difference.
+	out.push('## How many animations');
+	out.push('');
+	out.push('| Asset | Animations | Names |');
+	out.push('|---|---|---|');
+	for (const entry of brief.entries) {
+		if (!entry.animations.length) continue;
+		out.push(
+			`| ${entry.id} | **${entry.animations.length}** | ` +
+				`${entry.animations.map((a) => `\`${a.name}\``).join(' ')} |`,
+		);
+	}
+	out.push('');
+	const symbolCount = brief.entries.filter((e) => e.kind === 'symbol').length;
+	const symbolAnims = brief.entries
+		.filter((e) => e.kind === 'symbol')
+		.reduce((sum, e) => sum + e.animations.length, 0);
+	const screenAnims = brief.totals.animations - symbolAnims;
+	out.push(
+		`**${brief.totals.animations} animations in total** — ${symbolAnims} across ` +
+			`${symbolCount} symbols (one each), ${screenAnims} across the screens.`,
+	);
+	out.push('');
+
 	for (const kind of ['symbol', 'screen']) {
 		const group = brief.entries.filter((e) => e.kind === kind);
 		if (!group.length) continue;
@@ -285,6 +315,8 @@ export function renderAnimBrief(brief) {
 			if (entry.component) out.push(`| Played by | \`${entry.component}\` |`);
 			out.push('');
 			if (entry.animations.length) {
+				out.push(`**${entry.animations.length} animation(s).**`);
+				out.push('');
 				out.push('| Animation name | Plays | Why |');
 				out.push('|---|---|---|');
 				for (const anim of entry.animations) {
