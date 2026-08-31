@@ -1,0 +1,198 @@
+import { h, mount, api } from '../lib.js';
+
+/**
+ * The Review tab — look at every delivered asset before it goes into the game.
+ *
+ * ── Why this is a gate and not a gallery ────────────────────────────────────
+ * `art:import` reports what it can measure: size, transparency, whether the
+ * animation names match. All of that can pass on an asset that is simply wrong —
+ * the right size, correct alpha, correct names, and the wrong picture, or a rig
+ * that technically animates and reads as broken. No amount of validation
+ * substitutes for looking at it.
+ *
+ * So this shows the delivery as delivered, before anything is written into the
+ * game: PNGs at real size on a checkerboard, and Spine rigs actually PLAYING.
+ *
+ * ── Playing them in the runtime the game uses ───────────────────────────────
+ * The animation is run through the SDK's own spine-pixi, served out of the
+ * configured web-sdk checkout rather than vendored here. A preview that used a
+ * different runtime version could show something the game will not, which would
+ * make it worse than no preview at all.
+ */
+export function renderReview(ctx) {
+	const state = {
+		from: 'delivered',
+		loading: true,
+		exists: false,
+		dir: '',
+		images: [],
+		spine: [],
+		error: null,
+		playing: new Map(),
+	};
+
+	const root = h('div');
+
+	const load = async () => {
+		state.loading = true;
+		render();
+		try {
+			const data = await api(
+				`/api/games/${ctx.game.id}/review?from=${encodeURIComponent(state.from)}`,
+			);
+			Object.assign(state, data, { loading: false, error: null });
+		} catch (err) {
+			state.error = err.message;
+			state.loading = false;
+		}
+		render();
+		if (state.spine.length) queueMicrotask(mountSpine);
+	};
+
+	/**
+	 * Boot one pixi canvas per rig and play its animation.
+	 *
+	 * Loaded through an import map so the SDK's own ESM packages resolve without
+	 * a bundler. Done per-canvas rather than one shared app because each rig has
+	 * its own atlas and its own natural size, and a shared stage would need
+	 * layout logic that adds nothing to the review.
+	 */
+	const mountSpine = async () => {
+		let PIXI;
+		let SpinePixi;
+		try {
+			PIXI = await import('/vendor/pixi.mjs');
+			SpinePixi = await import('/vendor/spine-pixi/dist/index.js');
+		} catch (err) {
+			// Almost always a web-sdk path that is not set, which is worth saying
+			// plainly rather than as a module-resolution error.
+			for (const entry of state.spine) {
+				const host = document.getElementById(`spine-${entry.name}`);
+				if (host) {
+					mount(
+						host,
+						h('div.err-box',
+							'Could not load the Spine runtime from the configured web-sdk. ',
+							'Check the path in Settings. ',
+							h('span.dim', err.message)),
+					);
+				}
+			}
+			return;
+		}
+
+		for (const entry of state.spine) {
+			const host = document.getElementById(`spine-${entry.name}`);
+			if (!host || host.dataset.mounted) continue;
+			host.dataset.mounted = '1';
+			try {
+				// Path-based so the atlas's page image resolves as its sibling.
+				const base = `/review-file/${ctx.game.id}/${encodeURIComponent(state.from)}/`;
+				const app = new PIXI.Application();
+				await app.init({ width: 260, height: 260, backgroundAlpha: 0, antialias: true });
+				host.innerHTML = '';
+				host.appendChild(app.canvas);
+
+				PIXI.Assets.add({ alias: `${entry.name}-atlas`, src: base + encodeURIComponent(entry.atlas) });
+				PIXI.Assets.add({ alias: `${entry.name}-skel`, src: base + encodeURIComponent(entry.skeleton) });
+				await PIXI.Assets.load([`${entry.name}-atlas`, `${entry.name}-skel`]);
+
+				const spine = SpinePixi.Spine.from({
+					skeleton: `${entry.name}-skel`,
+					atlas: `${entry.name}-atlas`,
+				});
+				// Fit whatever size it was rigged at into the tile, so a 1080px
+				// skeleton and a 200px one are both fully visible.
+				const bounds = spine.getBounds();
+				const scale = Math.min(220 / (bounds.width || 220), 220 / (bounds.height || 220));
+				spine.scale.set(scale);
+				spine.x = 130;
+				spine.y = 130 + (bounds.height * scale) / 2;
+				app.stage.addChild(spine);
+
+				const first = entry.animations[0];
+				if (first) spine.state.setAnimation(0, first, true);
+				state.playing.set(entry.name, { app, spine });
+			} catch (err) {
+				mount(host, h('div.err-box', `could not play: ${err.message}`));
+			}
+		}
+	};
+
+	const setAnimation = (name, animation) => {
+		const live = state.playing.get(name);
+		if (live) live.spine.state.setAnimation(0, animation, true);
+	};
+
+	function imageTile(image) {
+		return h('div.rv-tile',
+			h('div.rv-art', h('img', { src: image.url, loading: 'lazy' })),
+			h('b', image.file),
+		);
+	}
+
+	function spineTile(entry) {
+		return h('div.rv-tile.rv-wide',
+			h('div.rv-art', { id: `spine-${entry.name}` }, h('span.dim', 'loading…')),
+			h('b', entry.name),
+			h('div.rv-anims',
+				...entry.animations.map((animation) =>
+					h('button.chip', { onclick: () => setAnimation(entry.name, animation) }, animation),
+				),
+			),
+			entry.atlas ? null : h('div.gen-err', 'no atlas beside it — cannot play'),
+		);
+	}
+
+	function render() {
+		mount(
+			root,
+			h('div.card',
+				h('h2', 'Review delivered assets'),
+				h('p.card-sub',
+					'What is in the delivery folder, before anything is written into the game. ' +
+					'Rigs play in the same runtime the game uses.'),
+				h('div.row',
+					h('label', { style: 'font-size:12px;color:#8b8397' }, 'Folder'),
+					h('input.mono', {
+						value: state.from,
+						style: 'background:#16131c;color:#ded7e8;border:1px solid #322a3c;border-radius:6px;padding:6px 10px;font-size:12px',
+						onchange: (e) => { state.from = e.target.value.trim() || 'delivered'; load(); },
+					}),
+					h('button.btn', { onclick: load }, 'Reload'),
+					state.dir ? h('span.dim', state.dir) : null,
+				),
+			),
+
+			state.error ? h('div.card', h('div.err-box', state.error)) : null,
+
+			state.loading
+				? h('div.card', h('p.dim', 'reading the folder…'))
+				: !state.exists
+					? h('div.card',
+							h('div.warn-box',
+								h('b', 'No such folder. '),
+								'Drop the delivery into it, or point at another one above.'))
+					: null,
+
+			state.spine.length
+				? h('div.card',
+						h('h2', `Animations (${state.spine.length})`),
+						h('p.card-sub', 'Click an animation name to play it.'),
+						h('div.rv-grid', ...state.spine.map(spineTile)))
+				: null,
+
+			state.images.length
+				? h('div.card',
+						h('h2', `Images (${state.images.length})`),
+						h('p.card-sub',
+							'Shown at real size on a chequerboard — anything with an opaque ' +
+							'rectangle behind it will tile the reel with rectangles.'),
+						h('div.rv-grid', ...state.images.map(imageTile)))
+				: null,
+		);
+	}
+
+	load();
+	return root;
+}

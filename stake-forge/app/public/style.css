@@ -303,3 +303,15 @@ tr:last-child td { border-bottom: 0; }
 .err-box { background: #2c1a1c; border: 1px solid #5a2a2e; color: #f0b5b5; border-radius: 6px;
   padding: 10px 12px; font-size: 12px; margin: 10px 0; }
 .row.between { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+
+/* ── Review tab ────────────────────────────────────────────────────────── */
+.rv-grid { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; }
+.rv-tile { background: #1c1825; border: 1px solid #2f2839; border-radius: 8px; padding: 10px; text-align: center; }
+.rv-tile b { display: block; margin-top: 8px; font-size: 11px; color: #cec3de; font-weight: 600; word-break: break-all; max-width: 240px; }
+.rv-art { width: 240px; height: 240px; display: flex; align-items: center; justify-content: center;
+  background: repeating-conic-gradient(#2b2435 0 25%, #221c2b 0 50%) 0 0/14px 14px;
+  border-radius: 5px; overflow: hidden; }
+.rv-art img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.rv-art canvas { display: block; }
+.rv-anims { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin-top: 8px; max-width: 240px; }
+.rv-anims .chip { font-size: 10px; padding: 3px 9px; }

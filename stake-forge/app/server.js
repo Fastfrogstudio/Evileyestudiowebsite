@@ -48,6 +48,7 @@ import { readSoundsUsed, readSoundVocabulary, readSoundSprite } from '../src/lib
 import { loadGameSpec } from '../src/lib/loadSpec.js';
 import { ART_GUIDE_TEMPLATE, loadArtGuide, buildGenerationManifest } from '../src/lib/artGuide.js';
 import { makeProvider, generateJob } from '../src/lib/imageProvider.js';
+import { groupSpineDeliveries } from '../src/lib/spineImport.js';
 import { buildArtBrief } from '../src/lib/artBrief.js';
 import { renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
 
@@ -322,6 +323,132 @@ app.get('/api/games/:id/brief', (req, res) => {
 			csv: renderCsv(data),
 			manifest: renderManifest(data),
 		});
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+// ── asset review ────────────────────────────────────────────────────────────
+/**
+ * Serve the Spine runtime out of the web-sdk checkout.
+ *
+ * The review page has to PLAY an animation, not describe one, and the only way
+ * to know a rig works is to run it in the same runtime the game uses. That
+ * runtime is already on disk in the SDK the user configured — vendoring a second
+ * copy would let the preview and the game drift, which is the one thing a
+ * preview must not do.
+ *
+ * All three packages ship ESM with bare imports, so the page resolves them with
+ * an import map pointing back here.
+ */
+const RUNTIME_FILES = {
+	'pixi.mjs': ['pixi.js', 'dist', 'pixi.mjs'],
+	'spine-core': ['@esotericsoftware', 'spine-core'],
+	'spine-pixi': ['@esotericsoftware', 'spine-pixi-v8'],
+};
+
+function resolveInSdk(webSdk, segments) {
+	// pnpm stores real packages under .pnpm/<name>@<version>/node_modules/<name>,
+	// so the flat path is a symlink that may not exist. Both layouts are tried.
+	const flat = path.join(webSdk, 'node_modules', ...segments);
+	if (fs.existsSync(flat)) return flat;
+	const store = path.join(webSdk, 'node_modules', '.pnpm');
+	if (!fs.existsSync(store)) return null;
+	// pnpm encodes a scoped package as `@scope+name@version` — it KEEPS the
+	// leading @, which the first version of this stripped, so every scoped
+	// package 404'd while the unscoped pixi.js resolved fine.
+	const wanted = segments[0].startsWith('@')
+		? `${segments[0]}+${segments[1]}`
+		: segments[0];
+	const dir = fs
+		.readdirSync(store)
+		.find((entry) => entry.startsWith(`${wanted}@`));
+	if (!dir) return null;
+	const full = path.join(store, dir, 'node_modules', ...segments);
+	return fs.existsSync(full) ? full : null;
+}
+
+app.get('/vendor/pixi.mjs', (_req, res) => {
+	const config = loadConfig();
+	const file = resolveInSdk(config.webSdk, RUNTIME_FILES['pixi.mjs']);
+	if (!file) return res.status(404).send('pixi not found in the configured web-sdk');
+	// Read and send rather than sendFile: pnpm stores real packages behind a
+	// symlinked .pnpm path, and send() applies its own path policy that rejects
+	// them with a bare 404 giving no hint that the file is right there.
+	res.type('application/javascript').send(fs.readFileSync(file));
+});
+
+app.get(/^\/vendor\/(spine-core|spine-pixi)\/(.*)$/, (req, res) => {
+	const config = loadConfig();
+	const root = resolveInSdk(config.webSdk, RUNTIME_FILES[req.params[0]]);
+	if (!root) return res.status(404).send(`${req.params[0]} not found in the configured web-sdk`);
+	const requested = path.normalize(req.params[1]);
+	// Path traversal would let a browser read anything the app user can read.
+	if (requested.startsWith('..') || path.isAbsolute(requested)) return res.status(400).end();
+	const file = path.join(root, requested);
+	if (!fs.existsSync(file)) return res.status(404).end();
+	res.type('application/javascript').send(fs.readFileSync(file));
+});
+
+/** The files sitting in a delivery folder, before anything is imported. */
+app.get('/api/games/:id/review', (req, res) => {
+	try {
+		const config = loadConfig();
+		const dir = path.join(gameDir(config.workspace, req.params.id), req.query.from || 'delivered');
+		if (!fs.existsSync(dir)) return res.json({ dir, exists: false, images: [], spine: [] });
+
+		const files = fs.readdirSync(dir).filter((f) => fs.statSync(path.join(dir, f)).isFile());
+		const bundles = groupSpineDeliveries(dir);
+		// An atlas page belongs to a bundle, not to the loose-image list.
+		const pages = new Set();
+		for (const file of files.filter((f) => f.endsWith('.atlas'))) {
+			for (const line of fs.readFileSync(path.join(dir, file), 'utf8').split('\n')) {
+				const trimmed = line.trim();
+				if (/^[^:]+\.(png|webp|jpg|jpeg)$/i.test(trimmed)) pages.add(trimmed);
+			}
+		}
+
+		res.json({
+			dir,
+			exists: true,
+			images: files
+				.filter((f) => /\.(png|webp)$/i.test(f) && !pages.has(f))
+				.map((f) => ({
+					file: f,
+					url: `/review-file/${req.params.id}/${encodeURIComponent(req.query.from || 'delivered')}/${encodeURIComponent(f)}`,
+				})),
+			spine: bundles.map((b) => ({
+				name: b.name,
+				animations: b.animations,
+				skeleton: path.basename(b.skeletonFile),
+				atlas: b.atlasFile ? path.basename(b.atlasFile) : null,
+			})),
+		});
+	} catch (err) {
+		fail(res, err);
+	}
+});
+
+/**
+ * Serve one delivered file.
+ *
+ * PATH-based, not a query string, and that is load bearing rather than
+ * cosmetic: the Spine atlas loader resolves its page image RELATIVE to the
+ * atlas URL. Served as `...?name=h1.atlas`, the page `h1_tex.png` resolves
+ * against the route rather than the folder and the rig fails to load with
+ * "cannot read properties of null" — an error that says nothing about the
+ * actual cause. As `/review-file/audit/delivered/h1.atlas`, the page resolves
+ * to its sibling exactly as it would on disk.
+ */
+app.get('/review-file/:id/:from/:name', (req, res) => {
+	try {
+		const config = loadConfig();
+		// basename on both, so neither can climb out of the workspace.
+		const from = path.basename(req.params.from);
+		const name = path.basename(req.params.name);
+		const file = path.join(gameDir(config.workspace, req.params.id), from, name);
+		if (!fs.existsSync(file)) return res.status(404).end();
+		res.sendFile(file);
 	} catch (err) {
 		fail(res, err);
 	}
