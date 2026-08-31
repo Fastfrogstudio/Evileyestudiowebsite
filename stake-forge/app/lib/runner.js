@@ -112,10 +112,11 @@ export const STEPS = {
 	},
 	'deps:link': {
 		id: 'deps:link',
-		title: 'Link the new app',
+		title: 'Link and build the workspace',
 		blurb:
-			'pnpm install at the web-sdk root. A scaffolded app is a new workspace package, and until ' +
-			'the workspace is re-linked every import in it fails to resolve.',
+			'pnpm install at the web-sdk root, then build any workspace package whose entry point is ' +
+			'missing. A scaffolded app is a new workspace package; and pixi-svelte ships as a build, ' +
+			'without which no app renders a frame.',
 		needs: ['webSdk', 'scaffolded'],
 		// Its own command rather than a hidden part of `scaffold`, because it is a
 		// workspace-level operation that takes a minute and a user re-scaffolding

@@ -4,6 +4,76 @@ import path from 'node:path';
 import chalk from 'chalk';
 
 /**
+ * Workspace packages whose declared entry point is not on disk.
+ *
+ * Most of the web-sdk's packages point `main` straight at `index.ts` and need no
+ * build. `pixi-svelte` does not: it declares `./dist/index.js`, produced by
+ * svelte-package. Until that exists, Vite reports
+ *
+ *   Failed to resolve entry for package "pixi-svelte"
+ *
+ * against every file that imports it — which is every component in every app.
+ * In storybook that surfaces as "Failed to fetch dynamically imported module"
+ * on EVERY story, with three generic suggestions and no mention of the package.
+ *
+ * Nothing installs it either, because the install runs --ignore-scripts, so the
+ * prepare hook that would have built it never fires. A fresh checkout therefore
+ * links cleanly, type-checks, and cannot render a single frame.
+ */
+export function unbuiltPackages(sdkDir) {
+	const dir = path.join(sdkDir, 'packages');
+	if (!fs.existsSync(dir)) return [];
+	const out = [];
+	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+		if (!entry.isDirectory()) continue;
+		const manifest = path.join(dir, entry.name, 'package.json');
+		if (!fs.existsSync(manifest)) continue;
+		let pkg;
+		try {
+			pkg = fs.readJsonSync(manifest);
+		} catch {
+			continue;
+		}
+		// Only a package that declares a build script can be missing a build; one
+		// pointing at source is complete as delivered.
+		if (!pkg.scripts?.build) continue;
+		const target = pkg.main ?? pkg.module;
+		if (!target) continue;
+		if (!fs.existsSync(path.join(dir, entry.name, target))) {
+			out.push({ name: entry.name, entry: target });
+		}
+	}
+	return out;
+}
+
+/** Run a command in the SDK, streaming its output. */
+function runIn(sdkDir, args, { timeoutMs }) {
+	return new Promise((resolve, reject) => {
+		const child = spawn('pnpm', args, { cwd: sdkDir, stdio: 'inherit' });
+		const timer = setTimeout(() => {
+			child.kill('SIGKILL');
+			reject(new Error(`pnpm ${args[0]} did not finish within ${Math.round(timeoutMs / 1000)}s.`));
+		}, timeoutMs);
+		child.on('error', (err) => {
+			clearTimeout(timer);
+			reject(
+				err.code === 'ENOENT'
+					? new Error(
+							'pnpm is not on PATH. The web-sdk is a pnpm workspace and npm cannot link it — ' +
+								'install pnpm (npm i -g pnpm) and re-run.',
+						)
+					: err,
+			);
+		});
+		child.on('close', (code) => {
+			clearTimeout(timer);
+			if (code === 0) resolve();
+			else reject(new Error(`pnpm ${args.join(' ')} exited ${code}.`));
+		});
+	});
+}
+
+/**
  * `forge deps:link` — re-link the web-sdk workspace after scaffolding an app.
  *
  * ── Why this is a command and not a footnote ────────────────────────────────
@@ -39,32 +109,39 @@ export function depsLink({ sdkDir, ignoreScripts = true, timeoutMs = 900_000 }) 
 	console.log(chalk.dim(`  $ pnpm ${args.join(' ')}`));
 	console.log(chalk.dim(`  in ${sdkDir}\n`));
 
-	return new Promise((resolve, reject) => {
-		const child = spawn('pnpm', args, { cwd: sdkDir, stdio: 'inherit' });
-		const timer = setTimeout(() => {
-			child.kill('SIGKILL');
-			reject(new Error(`pnpm install did not finish within ${Math.round(timeoutMs / 1000)}s.`));
-		}, timeoutMs);
+	return runIn(sdkDir, args, { timeoutMs }).then(async () => {
+		console.log(chalk.green('\n✓'), 'workspace linked');
 
-		child.on('error', (err) => {
-			clearTimeout(timer);
-			reject(
-				err.code === 'ENOENT'
-					? new Error(
-							'pnpm is not on PATH. The web-sdk is a pnpm workspace and npm cannot link it — ' +
-								'install pnpm (npm i -g pnpm) and re-run.',
-						)
-					: err,
+		// Linked is not the same as runnable. See unbuiltPackages.
+		const unbuilt = unbuiltPackages(sdkDir);
+		if (!unbuilt.length) {
+			console.log(chalk.green('✓'), 'all workspace packages have their entry points');
+			return { ok: true, built: [] };
+		}
+
+		console.log('');
+		for (const pkg of unbuilt) {
+			console.log(chalk.yellow('  !'), `${pkg.name} has no ${pkg.entry} — building it`);
+		}
+		console.log('');
+		// pnpm's own recursive runner rather than `pnpm build`, which is
+		// `turbo run build` and would build every APP too — minutes of work for
+		// something no app needs in order to run in dev.
+		await runIn(sdkDir, ['--filter', './packages/**', 'run', 'build'], { timeoutMs });
+
+		const stillMissing = unbuiltPackages(sdkDir);
+		if (stillMissing.length) {
+			throw new Error(
+				`built the workspace packages, but ${stillMissing
+					.map((p) => p.name)
+					.join(', ')} still has no entry point. Run \`pnpm --filter './packages/**' run build\` ` +
+					`in ${sdkDir} and read what it says.`,
 			);
-		});
-		child.on('close', (code) => {
-			clearTimeout(timer);
-			if (code === 0) {
-				console.log(chalk.green('\n✓'), 'workspace linked — `forge verify --sdk` can now type-check');
-				resolve({ ok: true });
-			} else {
-				reject(new Error(`pnpm install exited ${code}.`));
-			}
-		});
+		}
+		console.log(
+			chalk.green('\n✓'),
+			`built ${unbuilt.map((p) => p.name).join(', ')} — storybook can resolve them now`,
+		);
+		return { ok: true, built: unbuilt.map((p) => p.name) };
 	});
 }
