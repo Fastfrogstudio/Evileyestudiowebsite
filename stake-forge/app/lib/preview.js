@@ -15,6 +15,15 @@ import { spawn } from 'node:child_process';
 const BASE_PORT = 6100;
 const MAX_PREVIEWS = 4;
 
+/**
+ * Heap ceiling for the storybook process, in MB.
+ *
+ * 4GB rather than something larger: it is comfortably past what the compile
+ * needs while still leaving room on an 8GB laptop for the browser that has to
+ * render the result. Raising it further would trade a crash for swapping.
+ */
+const HEAP_MB = 4096;
+
 /** gameName -> { port, child, status, log, startedAt } */
 const previews = new Map();
 
@@ -99,7 +108,29 @@ export async function startPreview({ gameName, webSdk }) {
 		['--no-install', 'storybook', 'dev', '-p', String(port), '--no-open', '--quiet', '--ci'],
 		{
 			cwd: appDir,
-			env: { ...process.env, PUBLIC_CHROMATIC: 'true', FORCE_COLOR: '0', NO_COLOR: '1', CI: 'true' },
+			env: {
+				...process.env,
+				PUBLIC_CHROMATIC: 'true',
+				FORCE_COLOR: '0',
+				NO_COLOR: '1',
+				CI: 'true',
+				// ── heap ────────────────────────────────────────────────────────
+				// Node's default old-space is around 2GB, and compiling this app —
+				// pixi, spine, every workspace package, sixteen locales — goes past
+				// it. The result is not a build error but
+				//
+				//   FATAL ERROR: Ineffective mark-compacts near heap limit
+				//
+				// and a dead process, so the preview simply never becomes ready
+				// while the browser shows a module it cannot fetch. Nothing in that
+				// says "out of memory".
+				//
+				// Appended rather than assigned: a machine that already sets
+				// NODE_OPTIONS for its own reasons keeps them, and a later
+				// --max-old-space-size wins over an earlier one, so an explicit
+				// value the user set still takes effect.
+				NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --max-old-space-size=${HEAP_MB}`.trim(),
+			},
 			// Its own process group, so stopping it can kill the whole tree.
 			// `npx` forks the real storybook process; SIGTERM to npx alone left
 			// that child alive and holding the port.
@@ -123,12 +154,20 @@ export async function startPreview({ gameName, webSdk }) {
 		preview.error = err.message;
 	});
 	child.on('close', (code) => {
-		if (preview.status !== 'stopping') {
-			preview.status = 'error';
-			preview.error = `storybook exited with code ${code}`;
-		} else {
+		if (preview.status === 'stopping') {
 			preview.status = 'stopped';
+			return;
 		}
+		preview.status = 'error';
+		// An out-of-memory death exits 134 and buries the reason under a hundred
+		// lines of native stack trace. Saying it plainly is the difference between
+		// a number to search for and a fix.
+		const oom = preview.log.some((line) => /heap out of memory|mark-compacts near heap limit/i.test(line));
+		preview.error = oom
+			? `storybook ran out of memory (heap limit ${HEAP_MB}MB). Close other applications and ` +
+				`start it again; if it keeps happening the app has grown past this ceiling and ` +
+				`HEAP_MB in app/lib/preview.js needs raising.`
+			: `storybook exited with code ${code}`;
 	});
 
 	// Storybook prints its banner before it can actually serve, so poll the
