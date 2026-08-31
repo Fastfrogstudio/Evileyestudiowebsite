@@ -41,7 +41,7 @@ export const STEPS = {
 			'Match the delivery folder to this game’s slots, resample, check transparency, ' +
 			'validate the rigs, and point assets-manifest.yaml at your art instead of the ' +
 			'placeholders.',
-		needs: ['artGuide'],
+		needs: ['delivered'],
 		// After art:placeholder, never before. The placeholder step fills every
 		// symbol with a stand-in and preserves only spineSymbols, so running it
 		// second would overwrite real flat art with tiles — silently, since a tile

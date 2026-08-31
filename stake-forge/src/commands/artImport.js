@@ -240,10 +240,12 @@ function wireManifest({ gameDir, imported, spineWired, dryRun }) {
 
 export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRun = false }) {
 	const spec = loadGameSpec(specPath);
-	const guide = loadArtGuide(guidePath);
-	if (!guide) {
-		throw new Error(`no art guide at ${guidePath} — run "forge art:guide" first.`);
-	}
+	// The guide describes the LOOK, and importing does not need one. Every fact an
+	// import uses — which slots exist, their pixel sizes, whether each takes alpha
+	// — comes from the spec and the reference app. Requiring a guide here made
+	// bringing in finished art wait on writing a style document for art that was
+	// already drawn.
+	const guide = loadArtGuide(guidePath) ?? {};
 	if (!fs.existsSync(fromDir)) throw new Error(`--from does not exist: ${fromDir}`);
 
 	const mechanic = getMechanic(spec.game.mechanic);

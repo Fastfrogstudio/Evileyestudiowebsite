@@ -228,7 +228,7 @@ export function buildGenerationManifest({ spec, guide, referenceAppDir, assetKey
 
 	return {
 		game: brief.game,
-		guide: { summary: guide.style.summary, references: guide.references ?? [] },
+		guide: { summary: guide.style?.summary ?? null, references: guide.references ?? [] },
 		jobs,
 		totals: {
 			jobs: jobs.filter((j) => !j.skipped).length,

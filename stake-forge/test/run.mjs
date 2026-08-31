@@ -3549,6 +3549,24 @@ function writeImportFixture(dir) {
 	return { gameDir, from, specPath, guidePath };
 }
 
+test('art already drawn imports without an art guide', () => {
+	// The guide describes the LOOK, for generating art that does not exist yet.
+	// Every fact an import uses — which slots exist, their pixel sizes, whether
+	// each takes alpha — comes from the spec and the reference app. Demanding one
+	// here made finished art wait on a style document written after the fact.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'import-'));
+	const { gameDir, from, specPath, guidePath } = writeImportFixture(dir);
+	fs.rmSync(guidePath);
+	writeRig(from, 'h1', { animations: ['h1'] });
+
+	const result = artImport({
+		specPath, guidePath, sdkDir: null, fromDir: from, gameDir, dryRun: false,
+	});
+	assert.equal(result.spine.failed, 0);
+	const manifest = YAML.parse(fs.readFileSync(path.join(gameDir, 'assets-manifest.yaml'), 'utf8'));
+	assert.ok(manifest.spineSymbols?.H1, 'the rig still reaches the game');
+});
+
 
 test('delivered art is wired into the manifest, or the build ships placeholders over it', () => {
 	// The gap this closes, and the reason it was invisible: `assets:import`
