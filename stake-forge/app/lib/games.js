@@ -101,6 +101,14 @@ export function readGame(workspace, id) {
 		: null;
 	result.hasManifest = Boolean(result.manifest);
 
+	// What `art:import` needs to run at all: a guide to derive the slot list from,
+	// and something in the delivery folder to match against it.
+	result.hasArtGuide = fs.existsSync(path.join(dir, 'art-guide.yaml'));
+	const deliveredDir = path.join(dir, 'delivered');
+	result.deliveredCount = fs.existsSync(deliveredDir)
+		? fs.readdirSync(deliveredDir).filter((f) => /\.(png|webp|atlas|json)$/i.test(f)).length
+		: 0;
+
 	return result;
 }
 

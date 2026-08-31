@@ -37,6 +37,12 @@ export function renderPipeline(ctx) {
 			if (need === 'mathScaffolded' && !current.scaffolded?.math) return 'math not scaffolded yet';
 			if (need === 'simulated' && !current.simulated) return 'nothing simulated yet — run "Simulate" first';
 			if (need === 'sounds' && !current.soundCount) return 'no audio files uploaded yet (Assets → Sound)';
+			if (need === 'artGuide' && !current.hasArtGuide) {
+				return 'no art-guide.yaml yet — write one on the Art brief tab';
+			}
+			if (need === 'artGuide' && !current.deliveredCount) {
+				return 'nothing in the delivered/ folder yet — see the Review tab';
+			}
 		}
 		if (!current.valid) return 'the spec has errors — fix those first';
 		return null;

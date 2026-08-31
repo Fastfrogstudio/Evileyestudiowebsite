@@ -34,6 +34,32 @@ export const STEPS = {
 			'--manifest', path.join(dir, 'assets-manifest.yaml'),
 		],
 	},
+	'art:import': {
+		id: 'art:import',
+		title: 'Import your art',
+		blurb:
+			'Match the delivery folder to this game’s slots, resample, check transparency, ' +
+			'validate the rigs, and point assets-manifest.yaml at your art instead of the ' +
+			'placeholders.',
+		needs: ['artGuide'],
+		// After art:placeholder, never before. The placeholder step fills every
+		// symbol with a stand-in and preserves only spineSymbols, so running it
+		// second would overwrite real flat art with tiles — silently, since a tile
+		// is a valid PNG. This way placeholders fill the gaps and delivered art
+		// wins wherever it exists.
+		//
+		// Advisory: an incomplete delivery is the NORMAL state for most of a
+		// game's life — art arrives symbol by symbol — and a partial one must not
+		// stop the pipeline from reaching the maths.
+		advisory: true,
+		args: ({ dir }) => [
+			'art:import',
+			'--spec', path.join(dir, 'game-spec.yaml'),
+			'--guide', path.join(dir, 'art-guide.yaml'),
+			'--from', path.join(dir, 'delivered'),
+			'--game', dir,
+		],
+	},
 	audit: {
 		id: 'audit',
 		title: 'Audit assets',
@@ -247,6 +273,7 @@ export const STEPS = {
  */
 export const STEP_ORDER = [
 	'art:placeholder',
+	'art:import',
 	'audit',
 	// Before math:scaffold, because it is the cheap check that makes the expensive
 	// ones worth running: a paytable that cannot pay its RTP on this board will
