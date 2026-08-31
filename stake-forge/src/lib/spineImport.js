@@ -183,7 +183,32 @@ export function validateSpineDelivery({
 			// when the exporter's "Premultiply alpha" box is ticked.
 			const declaresPma = /^\s*pma\s*:\s*true/im.test(fs.readFileSync(atlasFile, 'utf8'));
 
-			for (const page of atlas.pages) {
+			// An atlas that names no page is not a rig, it is a region list. Said
+			// plainly here because the downstream symptoms point everywhere else:
+			// the page gets matched to a symbol slot and refused for its size, and
+			// every check that reads pages quietly does nothing.
+			const named = atlas.pages.length
+				? atlas.pages
+				: fs
+						.readdirSync(path.dirname(atlasFile))
+						.filter((f) => /\.(png|webp)$/i.test(f))
+						.filter(
+							(f) =>
+								path.basename(f, path.extname(f)).toLowerCase() ===
+								path.basename(atlasFile, '.atlas').toLowerCase(),
+						);
+			if (!atlas.pages.length) {
+				notes.push(
+					named.length
+						? `the atlas names no page image, so "${named[0]}" is being used on the export ` +
+							`convention that the page is named after the skeleton. Worth adding the page ` +
+							`line — nothing else can confirm it.`
+						: `the atlas names no page image and none was found beside it, so this rig has ` +
+							`region names with no texture behind them.`,
+				);
+			}
+
+			for (const page of named) {
 				const pageFile = path.join(path.dirname(atlasFile), page);
 				if (!fs.existsSync(pageFile)) {
 					problems.push(`the atlas names "${page}", which was not delivered beside it`);
@@ -289,10 +314,11 @@ export function atlasPageFiles(dir) {
 
 	for (const file of entries.filter((f) => f.endsWith('.atlas'))) {
 		const full = path.join(dir, file);
+		const found = new Set();
 
 		// The structural read — the same one validateSpineDelivery trusts.
 		for (const page of readAtlasRegions(full)?.pages ?? []) {
-			pages.add(path.basename(page));
+			found.add(path.basename(page));
 		}
 
 		// And the textual one, for a header it could not follow. A BOM is stripped
@@ -301,9 +327,33 @@ export function atlasPageFiles(dir) {
 		for (const line of fs.readFileSync(full, 'utf8').split('\n')) {
 			const trimmed = line.replace(/^\uFEFF/, '').trim();
 			if (/\.(png|webp|jpg|jpeg)$/i.test(trimmed) && !trimmed.includes(':')) {
-				pages.add(path.basename(trimmed));
+				found.add(path.basename(trimmed));
 			}
 		}
+
+		// ── when the atlas names nothing ────────────────────────────────────
+		// Some exports carry no page line either reader can find. With no page
+		// identified there is nothing to exclude, so the packed page is handed to
+		// the matcher as loose art, matched to the symbol it is named after, and
+		// refused for being the size it packed to. That is the worst available
+		// outcome, and it happens on a delivery that is otherwise correct.
+		//
+		// So fall back to the export CONVENTION, but only here — where there is
+		// no better evidence. Spine names the page after the skeleton, which is
+		// exactly why `l5.json` arrives beside an `l5.png` that is the page. When
+		// the atlas DOES name its page, that always wins, so a delivery whose
+		// flat symbol art is legitimately called `l5.png` is untouched.
+		if (!found.size) {
+			const stem = path.basename(file, '.atlas').toLowerCase();
+			for (const candidate of entries) {
+				if (!/\.(png|webp)$/i.test(candidate)) continue;
+				if (path.basename(candidate, path.extname(candidate)).toLowerCase() === stem) {
+					found.add(candidate);
+				}
+			}
+		}
+
+		for (const page of found) pages.add(page);
 	}
 	return pages;
 }

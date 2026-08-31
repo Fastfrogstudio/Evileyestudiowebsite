@@ -3729,6 +3729,48 @@ function writeRig(dir, name, { animations, regions = ['body'], attachments = nul
 	return { skeletonFile: path.join(dir, `${name}.json`), atlasFile: path.join(dir, `${name}.atlas`) };
 }
 
+test('an atlas that names no page still keeps its page out of the symbol slots', () => {
+	// The delivery this failed on. Neither reader could find a page line, so
+	// nothing was excluded — and the packed page was matched to the symbol it is
+	// named after and refused for being 454x481 in a 200x200 slot. Every check
+	// that reads pages quietly did nothing, including the premultiplied-alpha
+	// one, so the report pointed everywhere except at the cause.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nopage-'));
+	writeRig(dir, 'l5', { animations: ['l5'] });
+	fs.rmSync(path.join(dir, 'l5_tex.png'));
+	// A region list with no page header — what the failing export looks like.
+	fs.writeFileSync(path.join(dir, 'l5.atlas'), 'body\nbounds:0,0,32,32\n');
+	fs.writeFileSync(path.join(dir, 'l5.png'), 'packed page');
+	fs.writeFileSync(path.join(dir, 'l5 .png'), 'the flat symbol');
+
+	const pages = atlasPageFiles(dir);
+	assert.ok(pages.has('l5.png'), 'the page is found by the export convention');
+	assert.ok(!pages.has('l5 .png'), 'the flat symbol delivered beside it is not');
+
+	// And it is said out loud, because a rig with no page line is worth fixing
+	// even though this recovers from it.
+	const check = validateSpineDelivery({
+		skeletonFile: path.join(dir, 'l5.json'),
+		atlasFile: path.join(dir, 'l5.atlas'),
+		requiredAnimations: ['l5'],
+		indirect: true,
+	});
+	assert.ok(check.notes.some((n) => /names no page image/.test(n)));
+});
+
+test('an atlas that DOES name its page keeps flat art called after the rig', () => {
+	// The other side of the fallback. Where the atlas names its page, that wins,
+	// so a delivery whose flat symbol art is legitimately `h1.png` — which is
+	// exactly what the checklist asks for — is left alone.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'haspage-'));
+	writeRig(dir, 'h1', { animations: ['h1'] });   // page is h1_tex.png
+	fs.writeFileSync(path.join(dir, 'h1.png'), 'the flat symbol');
+
+	const pages = atlasPageFiles(dir);
+	assert.ok(pages.has('h1_tex.png'));
+	assert.ok(!pages.has('h1.png'), 'the flat symbol must remain importable');
+});
+
 test('a premultiplied page in an atlas that does not declare it is caught', () => {
 	// The bug that gets past every other check. The rig is valid, the animation
 	// plays, the names match, the atlas resolves — and the symbol has a hard gold
