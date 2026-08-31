@@ -82,7 +82,7 @@ import {
 	atlasPageFiles,
 	readAtlasRegions,
 } from '../src/lib/spineImport.js';
-import { generationSize, SIZE_LIMITS } from '../src/lib/imageProvider.js';
+import { generationSize, SIZE_LIMITS, openrouter, providerFor } from '../src/lib/imageProvider.js';
 import { resize, alphaCoverage, opaqueBounds, writePng, decodePng } from '../src/lib/image.js';
 import { removeWhiteBackground, looksWhiteBacked, fitOnCanvas } from '../src/lib/cutout.js';
 import { matchFiles, inspect, artImport } from '../src/commands/artImport.js';
@@ -3533,6 +3533,108 @@ test('atlas parts are read at the size the artist DREW, not the size they packed
 	assert.equal(banner.width, 540, 'a BIG WIN banner is wide');
 	assert.equal(banner.height, 150);
 	assert.equal(banner.trimmed, true, 'it has offsets, so the drawn size is known');
+});
+
+group('openrouter — the provider the studio already pays for');
+
+/** A fetch that records what it was sent and replies with whatever is given. */
+function stubFetch(reply) {
+	const calls = [];
+	const impl = async (url, init) => {
+		calls.push({ url, init, body: JSON.parse(init.body) });
+		return {
+			ok: reply.ok ?? true,
+			status: reply.status ?? 200,
+			statusText: reply.statusText ?? 'OK',
+			json: async () => reply.json,
+			text: async () => reply.text ?? '',
+		};
+	};
+	impl.calls = calls;
+	return impl;
+}
+
+/** A 1x1 PNG, as a data URL — the shape OpenRouter actually returns. */
+const PNG_DATA_URL =
+	'data:image/png;base64,' +
+	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+test('the image is read from where OpenRouter actually puts it', () => {
+	// Not `data[0].b64_json`, which is what every other image API uses and what
+	// the Seedream adapter reads. OpenRouter generates through the CHAT endpoint,
+	// so the picture arrives inside the assistant's message. Reading the wrong
+	// path gets a successful request with no image.
+	const fetchImpl = stubFetch({
+		json: {
+			choices: [
+				{ message: { role: 'assistant', content: 'here you go',
+					images: [{ type: 'image_url', image_url: { url: PNG_DATA_URL } }] } },
+			],
+		},
+	});
+	const provider = openrouter({ apiKey: 'k', model: 'google/gemini-2.5-flash-image', fetchImpl });
+
+	return provider.generate({ prompt: 'a wild symbol', width: 200, height: 200 }).then((result) => {
+		assert.equal(result.ok, true, result.error);
+		// A real PNG, decoded from the data URL rather than stored as one.
+		assert.equal(result.bytes.subarray(1, 4).toString('ascii'), 'PNG');
+
+		const sent = fetchImpl.calls[0];
+		assert.deepEqual(sent.body.modalities, ['image', 'text'], 'without this it answers in text');
+		assert.equal(sent.init.headers['http-referer'] !== undefined, true, 'OpenRouter requires it');
+	});
+});
+
+test('a text-only model is named as the problem, not reported as a bad response', () => {
+	// The likeliest way this fails, and the most confusing: a text model accepts
+	// the request, answers in prose, and returns HTTP 200. Nothing about that is
+	// an error, so without naming it the failure reads as a malformed response
+	// from a working model.
+	const fetchImpl = stubFetch({
+		json: { choices: [{ message: { role: 'assistant', content: 'I cannot generate images.' } }] },
+	});
+	const provider = openrouter({ apiKey: 'k', model: 'deepseek/deepseek-chat-v3.1', fetchImpl });
+
+	return provider.generate({ prompt: 'a wild symbol', width: 200, height: 200 }).then((result) => {
+		assert.equal(result.ok, false);
+		assert.match(result.error, /may be a text-only model/);
+		assert.match(result.error, /deepseek/, 'it names the model that was asked');
+		assert.match(result.error, /I cannot generate images/, 'and what it said');
+	});
+});
+
+test('a non-square slot asks for its shape in words, since there is no size field', () => {
+	// A chat request cannot ask for 404x220. That would normally rule the endpoint
+	// out of a pipeline built on exact sizes — but the importer trims the subject
+	// out of whatever comes back and centres it on the slot canvas, so only the
+	// SHAPE still matters, and words are the only lever the endpoint offers.
+	const fetchImpl = stubFetch({
+		json: { choices: [{ message: { images: [{ image_url: { url: PNG_DATA_URL } }] } }] },
+	});
+	const provider = openrouter({ apiKey: 'k', model: 'm', fetchImpl });
+
+	return provider
+		.generate({ prompt: 'a mine cart', width: 404, height: 220, negative: 'text, watermark' })
+		.then(() => {
+			const prompt = fetchImpl.calls[0].body.messages[0].content;
+			assert.match(prompt, /landscape 404:220 aspect ratio/);
+			assert.match(prompt, /Do not include: text, watermark/, 'no negative field either');
+		})
+		.then(() =>
+			provider.generate({ prompt: 'a symbol', width: 200, height: 200 }).then(() => {
+				// And nothing is said about a square, which is the default anyway.
+				assert.ok(!/aspect ratio/.test(fetchImpl.calls[1].body.messages[0].content));
+			}),
+		);
+});
+
+test('the adapter is chosen from the endpoint, so the two cannot disagree', () => {
+	// A separate `provider` setting could contradict the URL, and the failure when
+	// it does is a request in one vendor's shape sent to another's — an HTTP error
+	// that says nothing about the mismatch.
+	assert.equal(providerFor('https://openrouter.ai/api/v1/chat/completions'), 'openrouter');
+	assert.equal(providerFor('https://ark.ap-southeast.bytepluses.com/api/v3/images/generations'), 'seedream');
+	assert.equal(providerFor(undefined), 'seedream');
 });
 
 group('style guide — the Markdown one the studio already has');

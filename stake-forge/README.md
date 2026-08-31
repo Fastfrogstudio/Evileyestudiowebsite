@@ -702,7 +702,7 @@ the 1-in-20,000,000 frequency in every tier because that frequency is *chosen*
 | `forge art:cutout --from <path> [--out <dir>] [--size <WxH>] [--dry-run]` | Knock the white background out of generated art and trim it to the subject |
 | `forge art:import --spec <yaml> --from <dir> [--game <dir>] [--dry-run]` | Bring in art made elsewhere: match to slots, cut out white, resample, check alpha |
 | `forge anim:brief --spec <yaml> [--sdk <path>] [--out <md>]` | What the animation team needs: skeleton names, animation names, canvas sizes |
-| `forge art:check [--endpoint <url>] [--key <key>] [--model <id>]` | One request to the image provider, reported in full — run before a batch |
+| `forge art:check [--endpoint <url>] [--key <key>] [--model <id>]` | One request to the image provider, reported in full — run before a batch. BytePlus ModelArk and OpenRouter are both supported; the adapter follows the endpoint URL |
 | `forge art:prompts --spec <yaml> [--guide <yaml>] [--sdk <path>] [--out <json>] [--only <kinds>]` | One prompt per asset part, at the exact size this game needs |
 | `forge art:accept --manifest <json> --id <id> --file <png> [--guide <yaml>] [--game <dir>]` | Promote a generated candidate and make it a style anchor |
 | `forge mechanics [--id <id>] [--win-type <t>] [--volatility <v>] [--games] [--combine <ids>] [--art <ids>]` | Browse the researched mechanics library |

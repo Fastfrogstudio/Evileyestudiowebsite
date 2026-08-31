@@ -47,7 +47,7 @@ import { INSPIRATION_RULES } from '../src/lib/inspirationRules.js';
 import { readSoundsUsed, readSoundVocabulary, readSoundSprite } from '../src/lib/sound.js';
 import { loadGameSpec } from '../src/lib/loadSpec.js';
 import { ART_GUIDE_TEMPLATE, loadArtGuide, buildGenerationManifest } from '../src/lib/artGuide.js';
-import { makeProvider, generateJob } from '../src/lib/imageProvider.js';
+import { makeProvider, generateJob, providerFor } from '../src/lib/imageProvider.js';
 import { groupSpineDeliveries, validateSpineDelivery, atlasPageFiles } from '../src/lib/spineImport.js';
 import { buildAnimBrief } from '../src/lib/animBrief.js';
 import { buildArtBrief } from '../src/lib/artBrief.js';
@@ -523,6 +523,9 @@ app.get('/api/games/:id/generate/jobs', (req, res) => {
 			// Whether a provider is configured at all, without leaking the key.
 			ready: Boolean(config.imageEndpoint && config.imageApiKey),
 			model: config.imageModel,
+			// Which adapter the endpoint resolves to, so a key pasted against the
+			// wrong URL is visible before a batch is spent rather than after.
+			provider: providerFor(config.imageEndpoint),
 		});
 	} catch (err) {
 		fail(res, err);

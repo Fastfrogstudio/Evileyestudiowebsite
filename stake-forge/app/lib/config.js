@@ -39,6 +39,16 @@ const DEFAULTS = {
 	// The key is stored here in the same file as the paths, which is a local-only
 	// app on a local-only port — but it IS a secret sitting on disk, so the app
 	// never sends it back to the browser.
+	// Two providers are supported and the adapter is chosen from THIS URL, so
+	// switching is one field:
+	//
+	//   BytePlus ModelArk  https://ark.ap-southeast.bytepluses.com/api/v3/images/generations
+	//                      with imageModel: seedream-5-0-pro
+	//   OpenRouter         https://openrouter.ai/api/v1/chat/completions
+	//                      with an image model, e.g. google/gemini-2.5-flash-image
+	//
+	// OpenRouter generates through its CHAT endpoint, which is why that URL is
+	// /chat/completions rather than something with "image" in it.
 	imageEndpoint: 'https://ark.ap-southeast.bytepluses.com/api/v3/images/generations',
 	imageApiKey: '',
 	imageModel: 'seedream-5-0-pro',

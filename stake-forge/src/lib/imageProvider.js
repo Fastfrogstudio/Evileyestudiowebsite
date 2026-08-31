@@ -188,6 +188,113 @@ export function seedream({ endpoint, apiKey, model, fetchImpl = globalThis.fetch
 	};
 }
 
+/**
+ * The OpenRouter adapter.
+ *
+ * ── Why a second provider, and why this one ─────────────────────────────────
+ * The studio already routes everything through OpenRouter and already has a key
+ * for it. Making them open an account with a second vendor to use this pipeline
+ * would be a worse tool, not a more capable one.
+ *
+ * ── It is the CHAT endpoint, which is stranger than it sounds ───────────────
+ * OpenRouter generates images through `/chat/completions` with
+ * `modalities: ["image", "text"]`, and the picture comes back inside the
+ * assistant's message:
+ *
+ *   choices[0].message.images[0].image_url.url  ->  "data:image/png;base64,..."
+ *
+ * Not `data[0].b64_json`, which is the shape every other image API uses and the
+ * shape the Seedream adapter above reads. Reading the wrong one gets you a
+ * successful request with no image and an error about a missing field.
+ *
+ * ── There is no size parameter, and that is fine HERE ───────────────────────
+ * A chat request cannot ask for 404x220. Normally that would rule the endpoint
+ * out for a pipeline built on exact slot sizes — but art:import now trims the
+ * subject out of whatever came back and centres it on the slot canvas, so the
+ * generation's own dimensions stopped mattering. What still matters is SHAPE, so
+ * the wanted aspect goes into the prompt as words, which is the only lever the
+ * endpoint offers.
+ */
+export function openrouter({
+	endpoint = 'https://openrouter.ai/api/v1/chat/completions',
+	apiKey,
+	model,
+	fetchImpl = globalThis.fetch,
+	referer = 'https://github.com/evileyestudio/stake-forge',
+	title = 'stake-forge',
+}) {
+	if (!apiKey) throw new Error('no image API key configured');
+
+	return {
+		name: 'openrouter',
+		model,
+		async generate(job, { signal } = {}) {
+			// Aspect as words, since there is no field for it. Said only when it is
+			// not square: "square aspect ratio" on something already square is a
+			// token spent for nothing, and on a backdrop it would be a lie.
+			const ratio = job.width / job.height;
+			const shape =
+				Math.abs(ratio - 1) < 0.05
+					? null
+					: `${ratio > 1 ? 'landscape' : 'portrait'} ${job.width}:${job.height} aspect ratio`;
+			const prompt = [job.prompt, shape, job.negative ? `Do not include: ${job.negative}` : null]
+				.filter(Boolean)
+				.join('. ');
+
+			const body = {
+				model,
+				modalities: ['image', 'text'],
+				messages: [{ role: 'user', content: prompt }],
+			};
+			const sent = { ...body, messages: [{ role: 'user', content: `${prompt.slice(0, 400)}…` }] };
+
+			const response = await fetchImpl(endpoint, {
+				method: 'POST',
+				signal,
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${apiKey}`,
+					// OpenRouter requires a referer; the title is what shows in their
+					// dashboard, which is how a surprising bill gets traced to a tool.
+					'http-referer': referer,
+					'x-title': title,
+				},
+				body: JSON.stringify(body),
+			});
+
+			if (!response.ok) {
+				const text = await response.text().catch(() => '');
+				return {
+					ok: false,
+					error: `${response.status} ${response.statusText}${text ? `: ${text.slice(0, 300)}` : ''}`,
+					sent,
+				};
+			}
+
+			const payload = await response.json();
+			const message = payload?.choices?.[0]?.message;
+			const url = message?.images?.[0]?.image_url?.url;
+			if (typeof url !== 'string') {
+				// The most likely cause by far, and worth naming: a text-only model
+				// answers happily and returns prose. Nothing about that is an HTTP
+				// error, so without this the failure reads as a malformed response.
+				const said = typeof message?.content === 'string' ? message.content.slice(0, 200) : '';
+				return {
+					ok: false,
+					error:
+						`no image in the response — "${model}" may be a text-only model. Pick one that ` +
+						`lists "image" among its output modalities.` + (said ? ` It replied: "${said}"` : ''),
+					sent,
+				};
+			}
+
+			const comma = url.indexOf(',');
+			const base64 = url.startsWith('data:') && comma > 0 ? url.slice(comma + 1) : url;
+			return { ok: true, bytes: Buffer.from(base64, 'base64'), sent };
+		},
+	};
+}
+
 /** A provider that writes nothing, for testing the pipeline without spending. */
 export function dryRunProvider() {
 	return {
@@ -198,8 +305,27 @@ export function dryRunProvider() {
 	};
 }
 
+/**
+ * Which adapter to use, from the configured endpoint.
+ *
+ * Chosen by URL rather than by a separate `provider` setting, because the two
+ * would then be able to disagree — and the failure when they do is a request in
+ * one vendor's shape sent to another's, which comes back as an HTTP error that
+ * says nothing about the mismatch.
+ */
+export function providerFor(endpoint) {
+	return /openrouter\.ai/i.test(endpoint ?? '') ? 'openrouter' : 'seedream';
+}
+
 export function makeProvider(config) {
 	if (!config?.imageEndpoint || !config?.imageApiKey) return null;
+	if (providerFor(config.imageEndpoint) === 'openrouter') {
+		return openrouter({
+			endpoint: config.imageEndpoint,
+			apiKey: config.imageApiKey,
+			model: config.imageModel || 'google/gemini-2.5-flash-image',
+		});
+	}
 	return seedream({
 		endpoint: config.imageEndpoint,
 		apiKey: config.imageApiKey,
