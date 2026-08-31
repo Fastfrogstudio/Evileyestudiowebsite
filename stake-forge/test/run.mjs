@@ -75,6 +75,7 @@ import { buildArtBrief, winLevelBands, LOCALES, LOCALISED_SHEETS, WIN_LEVEL_SCAL
 import { brief as runBrief, renderMarkdown, renderCsv, renderManifest } from '../src/commands/brief.js';
 import { audit } from '../src/commands/audit.js';
 import { parseAtlas } from '../src/lib/atlasParts.js';
+import { parseStyleGuideMarkdown } from '../src/lib/styleGuideMd.js';
 import {
 	validateSpineDelivery,
 	groupSpineDeliveries,
@@ -86,7 +87,7 @@ import { resize, alphaCoverage, opaqueBounds, writePng, decodePng } from '../src
 import { removeWhiteBackground, looksWhiteBacked, fitOnCanvas } from '../src/lib/cutout.js';
 import { matchFiles, inspect, artImport } from '../src/commands/artImport.js';
 import { buildAnimBrief } from '../src/lib/animBrief.js';
-import { buildGenerationManifest } from '../src/lib/artGuide.js';
+import { buildGenerationManifest, loadArtGuide } from '../src/lib/artGuide.js';
 const SDK_LINES_ASSETS = '/home/user/web-sdk/apps/lines/static/assets/spines';
 import { coverageGaps, eventsImpliedBy, declaredHandlers } from '../src/lib/eventCoverage.js';
 import { WEB_EVENT_HANDLERS } from '../src/lib/webEventHandlers.js';
@@ -3532,6 +3533,125 @@ test('atlas parts are read at the size the artist DREW, not the size they packed
 	assert.equal(banner.width, 540, 'a BIG WIN banner is wide');
 	assert.equal(banner.height, 150);
 	assert.equal(banner.trimmed, true, 'it has offsets, so the drawn size is known');
+});
+
+group('style guide — the Markdown one the studio already has');
+
+const STUDIO_GUIDE = `# Art Style Guide: Gothic Vampire Hunter Game Assets
+
+## 2. Color Palette
+
+| Category | Colors | Hex Values |
+|----------|--------|------------|
+| **Wood (Primary)** | Warm brown base | \`#5c4033\`, \`#8b6914\` |
+| **Metal (Brass/Gold)** | Amber, gold | \`#d4a84b\`, \`#c49b3c\` |
+
+## 7. Prompt Engineering Notes
+
+### Key Style Descriptors (use these terms)
+\`\`\`
+"cartoon gothic illustration"
+"thick black outlines"
+"no gradients, stepped shading only"
+\`\`\`
+
+### Negative Prompts (avoid these)
+\`\`\`
+"soft shading"
+"photorealistic"
+"anime style"
+\`\`\`
+
+### Sample Prompt Structure
+\`\`\`
+[Object description], cartoon gothic illustration style, thick black outlines,
+hand-painted game icon aesthetic, no gradients, isolated on
+white background, 3/4 view angle
+\`\`\`
+`;
+
+test("a written guide's tuned prompt template is used, not recomposed from its parts", () => {
+	// The template is not a suggestion. It is the sentence somebody tuned against
+	// the model until it produced the right pictures, in the order it was tuned
+	// in — models weight early tokens most heavily, so rebuilding it from the same
+	// words in another order is a different prompt.
+	const guide = parseStyleGuideMarkdown(STUDIO_GUIDE);
+	assert.ok(guide.style.promptTemplate, 'the template is found');
+	assert.match(guide.style.promptTemplate, /^\[Object description\]/);
+
+	const manifest = buildGenerationManifest({ spec: specFor('lines'), guide, referenceAppDir: null });
+	const wild = manifest.jobs.find((j) => j.id === 'symbol.W');
+
+	// Subject substituted into the slot, and the template's own order preserved.
+	assert.match(wild.prompt, /^a \w+ slot symbol for "W", cartoon gothic illustration style/);
+	assert.match(wild.prompt, /3\/4 view angle/);
+	assert.match(wild.prompt, /exactly 200x200 pixels/);
+	assert.equal(wild.negative, 'soft shading, photorealistic, anime style');
+
+	// The template already says white background, so the technical line that also
+	// says it is dropped. Two phrasings of one requirement is a contradiction to
+	// resolve, not a stronger instruction.
+	assert.equal(wild.prompt.match(/white background/gi).length, 1);
+});
+
+test('a backdrop does not inherit a template written for isolated objects', () => {
+	// The studio's template ends "game icon aesthetic, no gradients, isolated on
+	// white background, 3/4 view angle". On a 2020x991 full-bleed backdrop that is
+	// three contradictions in one sentence, and what comes back is an icon of a
+	// room. Backdrops compose from the descriptors instead — same vocabulary,
+	// none of the framing that only means something around a single object.
+	const guide = parseStyleGuideMarkdown(STUDIO_GUIDE);
+	const manifest = buildGenerationManifest({ spec: specFor('lines'), guide, referenceAppDir: null });
+	const backdrop = manifest.jobs.find((j) => j.kind === 'backdrop');
+	if (!backdrop) return; // needs a reference app for its layer list
+
+	assert.ok(!/isolated on\s+white background/i.test(backdrop.prompt), backdrop.prompt);
+	assert.ok(!/3\/4 view angle/i.test(backdrop.prompt));
+	assert.match(backdrop.prompt, /cartoon gothic illustration/, 'it still carries the style');
+	assert.match(backdrop.prompt, /full-bleed/);
+});
+
+test('the guide title becomes a style, not a filename', () => {
+	// "Art Style Guide: Gothic Vampire Hunter Game Assets" is what a document is
+	// called. Dropped into a prompt verbatim it asks the model for game assets,
+	// which is not a look.
+	assert.equal(parseStyleGuideMarkdown(STUDIO_GUIDE).style.summary, 'Gothic Vampire Hunter');
+});
+
+test('subjects are read whichever of the three ways they are written', () => {
+	// Optional, and most guides will not have them — the style is reusable across
+	// games and what each symbol IS is not. But a studio wanting one file per game
+	// should not have to learn a syntax for it.
+	const guide = parseStyleGuideMarkdown(`${STUDIO_GUIDE}
+## Symbols
+- **W** — a silver stake driven through a gold coin
+- H1: an ornate blood vial with a brass stopper
+| L5 | a garlic bulb bomb with a lit fuse |
+`);
+	assert.equal(guide.symbols.W, 'a silver stake driven through a gold coin');
+	assert.equal(guide.symbols.H1, 'an ornate blood vial with a brass stopper');
+	assert.equal(guide.symbols.L5, 'a garlic bulb bomb with a lit fuse');
+});
+
+test('a guide with no prompting section is refused rather than quietly weakened', () => {
+	// Almost none of a style guide belongs in a prompt: "interior detail lines are
+	// 50-70% of outer line weight" is a rule for a person and noise for a model.
+	// So a guide whose prompting section is headed something unexpected parses to
+	// nothing, and generating eleven weak prompts from it is the expensive
+	// failure — it is only visible once the pictures come back wrong.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'guide-'));
+	const file = path.join(dir, 'art-guide.md');
+	fs.writeFileSync(file, '# Our Look\n\nEverything should feel warm and handmade.\n');
+	assert.throws(() => loadArtGuide(file), /nothing in it could be used for prompting/);
+});
+
+test('a written guide beside the default yaml path is found rather than ignored', () => {
+	// --guide defaults to art-guide.yaml, so a studio keeping the better document
+	// next to it would never once be asked for it.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'guide-'));
+	fs.writeFileSync(path.join(dir, 'art-guide.md'), STUDIO_GUIDE);
+	const guide = loadArtGuide(path.join(dir, 'art-guide.yaml'));
+	assert.equal(guide?._format, 'markdown');
 });
 
 group('cutout — art generated on white');

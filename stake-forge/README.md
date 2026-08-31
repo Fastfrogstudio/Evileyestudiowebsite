@@ -536,6 +536,8 @@ what to ask for — and that is the part forge already derives.
 
 ```bash
 forge art:guide                                    # write art-guide.yaml, describe the look
+#   ...or drop your own art-guide.md beside it — a written guide's tuned
+#   prompt template is used as-is rather than recomposed from its parts
 forge art:check                                    # one request, before spending on a batch
 forge art:prompts --spec game-spec.yaml --sdk ../web-sdk --out art-prompts.json
 ```
@@ -695,7 +697,7 @@ the 1-in-20,000,000 frequency in every tier because that frequency is *chosen*
 | `forge math:balance --spec <yaml> [--volatility <p>] [--apply] [--json]` | Pre-flight: is this paytable payable at this RTP, on this board? |
 | `forge math:validate --spec <yaml> --math-sdk <path> [--json]` | Is it shippable? Every rule measured, with the number it was judged on |
 | `forge brief --spec <yaml> [--format md\|csv\|json\|manifest] [--out <path>]` | What to draw — the complete asset spec, before any art exists |
-| `forge art:guide [--out <path>]` | Write art-guide.yaml — the look, once, for every asset in this game |
+| `forge art:guide [--out <path>]` | Write art-guide.yaml — the look, once, for every asset in this game. A written `art-guide.md` is used in preference where one exists |
 | `forge deliver --spec <yaml> [--guide <yaml>] [--sdk <path>] [--out <md>]` | One checklist: every file this game needs and exactly what to call it |
 | `forge art:cutout --from <path> [--out <dir>] [--size <WxH>] [--dry-run]` | Knock the white background out of generated art and trim it to the subject |
 | `forge art:import --spec <yaml> --from <dir> [--game <dir>] [--dry-run]` | Bring in art made elsewhere: match to slots, cut out white, resample, check alpha |

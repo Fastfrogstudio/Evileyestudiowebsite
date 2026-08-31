@@ -1,5 +1,8 @@
 import fs from 'fs-extra';
+import path from 'node:path';
 import YAML from 'yaml';
+
+import { parseStyleGuideMarkdown } from './styleGuideMd.js';
 
 import { spineAssetParts } from './atlasParts.js';
 import { buildArtBrief } from './artBrief.js';
@@ -68,8 +71,40 @@ overrides:
     mood: atmospheric and deep, the board must stay readable on top of it
 `;
 
+/**
+ * Load a style guide, from YAML or from the Markdown one the studio already has.
+ *
+ * Markdown is the better input and is checked for first: a written guide holds a
+ * PROMPT TEMPLATE that has been tuned against the model until it produced the
+ * right pictures, and retyping its parts into YAML throws that tuning away.
+ */
 export function loadArtGuide(file) {
-	if (!fs.existsSync(file)) return null;
+	if (!fs.existsSync(file)) {
+		// `--guide art-guide.yaml` is the default, so a studio keeping a written
+		// guide beside it would never be asked for the better document. Look.
+		const alternative = path.join(
+			path.dirname(file),
+			`${path.basename(file, path.extname(file))}.md`,
+		);
+		if (path.extname(file) !== '.md' && fs.existsSync(alternative)) {
+			return loadArtGuide(alternative);
+		}
+		return null;
+	}
+
+	if (/\.(md|markdown)$/i.test(file)) {
+		const guide = parseStyleGuideMarkdown(fs.readFileSync(file, 'utf8'));
+		if (!guide._found.length) {
+			throw new Error(
+				`${file} is Markdown, but nothing in it could be used for prompting. A guide needs a ` +
+					`fenced block under a heading naming it — "Sample Prompt Structure", "Key Style ` +
+					`Descriptors" or "Negative Prompts". Everything else in a style guide is written ` +
+					`for people and would only crowd the subject out of the prompt.`,
+			);
+		}
+		return guide;
+	}
+
 	const guide = YAML.parse(fs.readFileSync(file, 'utf8')) ?? {};
 	if (!guide.style?.summary) {
 		throw new Error(
@@ -92,12 +127,42 @@ function styleFor(guide, type) {
  * tokens most heavily and the subject is the only part that differs between
  * assets; then style, which is identical across the set and is what makes them
  * look like one game; then the technical constraints.
+ *
+ * ── A supplied template wins, for the assets it was written for ─────────────
+ * A written guide's prompt template is not a suggestion, it is the sentence
+ * somebody tuned against the model until it produced the right pictures, in the
+ * order it was tuned in. Recomposing from its parts would produce a different
+ * prompt that happens to contain the same words. So where a template exists the
+ * subject is substituted into it and the technical constraints are appended —
+ * nothing else is rearranged.
+ *
+ * But these templates are written for ISOLATED OBJECTS, and say so: the studio's
+ * own ends "hand-painted game icon aesthetic, no gradients, isolated on white
+ * background, 3/4 view angle". Applied to a 2020x991 full-bleed backdrop that is
+ * three contradictions in one sentence — an icon aesthetic on a scene, isolated
+ * on white for something that must fill the frame, and a 3/4 object angle for a
+ * room. The generated result is an icon of a room.
+ *
+ * So a backdrop composes from the guide's DESCRIPTORS instead. Same style
+ * vocabulary, none of the framing that only makes sense around a single object.
  */
-function composePrompt({ subject, style, technical }) {
-	const parts = [subject, style.summary, style.rendering];
-	if (style.palette?.length) parts.push(`palette: ${style.palette.join(', ')}`);
-	if (style.mood) parts.push(style.mood);
-	parts.push(...technical);
+function composePrompt({ subject, style, technical, isolated = true }) {
+	let parts;
+	if (style.promptTemplate && isolated) {
+		// The bracketed slot is where the subject goes. Anything the template
+		// already states is not repeated: a prompt that says "white background"
+		// twice is not more likely to get one, and a prompt that says it twice in
+		// two different phrasings is a contradiction to resolve.
+		const filled = style.promptTemplate.replace(/\[[^\]]+\]/, subject);
+		const saysWhite = /white background/i.test(filled);
+		parts = [filled, ...technical.filter((line) => !(saysWhite && /white background/i.test(line)))];
+	} else {
+		parts = [subject, style.summary, style.rendering];
+		if (style.descriptors?.length) parts.push(style.descriptors.join(', '));
+		if (style.palette?.length) parts.push(`palette: ${style.palette.join(', ')}`);
+		if (style.mood) parts.push(style.mood);
+		parts.push(...technical);
+	}
 	const prompt = parts.filter(Boolean).join('. ');
 	return style.avoid?.length ? { prompt, negative: style.avoid.join(', ') } : { prompt };
 }
@@ -236,6 +301,8 @@ export function buildGenerationManifest({ spec, guide, referenceAppDir, assetKey
 							: `an isolated "${part.name.replace(/[_-]+/g, ' ')}" element`),
 					style: screenStyle,
 					technical: technicalFor(backdrop ? 'backdrop' : 'layer', part),
+					// A backdrop is a scene, not an object — see composePrompt.
+					isolated: !backdrop,
 				}),
 				animations: screen.animations ?? [],
 				outputPath: `assets-source/${screen.assetKey}/${part.name}.png`,
