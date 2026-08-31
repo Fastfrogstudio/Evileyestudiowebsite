@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 import path from 'node:path';
 
 import { parseAtlas } from './atlasParts.js';
+import { decodePng, premultipliedSignal } from './image.js';
 
 /**
  * Check a Spine delivery before it reaches the game.
@@ -178,10 +179,39 @@ export function validateSpineDelivery({
 						`atlas were exported from different states of the project.`,
 				);
 			}
+			// Whether the atlas says its page is premultiplied. Spine writes this
+			// when the exporter's "Premultiply alpha" box is ticked.
+			const declaresPma = /^\s*pma\s*:\s*true/im.test(fs.readFileSync(atlasFile, 'utf8'));
+
 			for (const page of atlas.pages) {
 				const pageFile = path.join(path.dirname(atlasFile), page);
 				if (!fs.existsSync(pageFile)) {
 					problems.push(`the atlas names "${page}", which was not delivered beside it`);
+					continue;
+				}
+				// ── the box-around-the-symbol bug ───────────────────────────────
+				// A page exported with premultiplied alpha, in an atlas that does
+				// not declare it, is composited as straight alpha. Soft additive
+				// layers — every glow and flare — then render as their bounding
+				// RECTANGLE: a hard-edged box of colour around the symbol. The rig
+				// is valid, the animation plays, the names match, and nothing
+				// anywhere reports it. The SDK's own pages are straight alpha, so
+				// that is the convention to match.
+				if (!/\.png$/i.test(page) || declaresPma) continue;
+				try {
+					const signal = premultipliedSignal(decodePng(pageFile));
+					if (signal.premultiplied) {
+						problems.push(
+							`"${page}" looks premultiplied (${signal.semiTransparent} soft pixels, not one ` +
+								`with a colour channel above its alpha) but the atlas does not say "pma: true". ` +
+								`Composited as straight alpha, every soft glow in this rig renders as a hard ` +
+								`rectangle around the symbol. Re-export with "Premultiply alpha" OFF, which is ` +
+								`what the SDK's own art uses.`,
+						);
+					}
+				} catch {
+					// Unreadable as a PNG is the atlas's problem to report, not this
+					// check's to guess at.
 				}
 			}
 		}

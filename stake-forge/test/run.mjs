@@ -3729,6 +3729,59 @@ function writeRig(dir, name, { animations, regions = ['body'], attachments = nul
 	return { skeletonFile: path.join(dir, `${name}.json`), atlasFile: path.join(dir, `${name}.atlas`) };
 }
 
+test('a premultiplied page in an atlas that does not declare it is caught', () => {
+	// The bug that gets past every other check. The rig is valid, the animation
+	// plays, the names match, the atlas resolves — and the symbol has a hard gold
+	// rectangle around it on the board, because a soft additive glow composited
+	// as straight alpha renders as its own bounding box.
+	//
+	// Premultiplication is an invariant rather than a guess: every channel has
+	// been multiplied by alpha, so none can exceed it. Straight-alpha art
+	// violates that on every soft pixel — a white glow is (255,255,255) at alpha
+	// 20 — which is what makes the two distinguishable at all.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pma-'));
+	const files = writeRig(dir, 'l5', { animations: ['l5'], regions: ['body'] });
+
+	// A soft edge, straight alpha: bright colour under low alpha.
+	const w = 64;
+	const straight = Buffer.alloc(w * w * 4);
+	for (let i = 0; i < w * w; i += 1) {
+		straight[i * 4] = 255;
+		straight[i * 4 + 1] = 220;
+		straight[i * 4 + 2] = 40;
+		straight[i * 4 + 3] = 10 + (i % 200);
+	}
+	writePng(path.join(dir, 'l5_tex.png'), { width: w, height: w, rgba: straight });
+	assert.deepEqual(
+		validateSpineDelivery({ ...files, requiredAnimations: ['l5'], indirect: true }).problems,
+		[],
+		'straight alpha is what the SDK uses and must pass silently',
+	);
+
+	// The same picture, premultiplied.
+	const pma = Buffer.from(straight);
+	for (let i = 0; i < w * w; i += 1) {
+		const a = pma[i * 4 + 3];
+		for (let c = 0; c < 3; c += 1) pma[i * 4 + c] = Math.round((pma[i * 4 + c] * a) / 255);
+	}
+	writePng(path.join(dir, 'l5_tex.png'), { width: w, height: w, rgba: pma });
+	const flagged = validateSpineDelivery({ ...files, requiredAnimations: ['l5'], indirect: true });
+	assert.equal(flagged.problems.length, 1);
+	assert.match(flagged.problems[0], /looks premultiplied/);
+	assert.match(flagged.problems[0], /hard rectangle/, 'it must say what will be SEEN');
+
+	// And an atlas that declares pma is taken at its word.
+	fs.writeFileSync(
+		files.atlasFile,
+		fs.readFileSync(files.atlasFile, 'utf8').replace('size:64,64', 'size:64,64\npma:true'),
+	);
+	assert.deepEqual(
+		validateSpineDelivery({ ...files, requiredAnimations: ['l5'], indirect: true }).problems,
+		[],
+		'a declared premultiplied page is correct, not a fault',
+	);
+});
+
 test('a SCREEN rig is held to its animation names, because the component calls them literally', () => {
 	// Background.svelte plays "idle" and "dust" as literals in its own source.
 	// Nothing indirects them, so a rig whose tracks are called something else

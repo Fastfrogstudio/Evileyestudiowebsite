@@ -245,3 +245,61 @@ export function crop(image, box) {
 export function writePng(file, image) {
 	fs.writeFileSync(file, encodePng(image.width, image.height, image.rgba));
 }
+
+/**
+ * Does this image look like it carries PREMULTIPLIED alpha?
+ *
+ * ── The failure this catches ────────────────────────────────────────────────
+ * Spine's exporter has a "Premultiply alpha" checkbox, and an atlas records the
+ * answer as `pma: true`. When the page is premultiplied but the atlas does not
+ * say so, the runtime composites it as straight alpha — and the visible result
+ * is not a subtle shift. Soft additive layers, which is what every glow and
+ * flare is, render as their bounding RECTANGLE: a hard-edged box of colour
+ * around the symbol, exactly as wide as the atlas region.
+ *
+ * Nothing reports it. The rig is valid, the animation plays, the names match,
+ * and the symbol has a box around it.
+ *
+ * ── How it is detected ──────────────────────────────────────────────────────
+ * Premultiplication is a mathematical invariant, not a guess: each channel has
+ * been multiplied by alpha, so no channel can exceed it. Straight-alpha art
+ * violates that constantly — a soft white glow is (255,255,255) at alpha 20,
+ * and 255 > 20.
+ *
+ * Only partly-transparent pixels carry information. At alpha 255 the invariant
+ * holds either way, and at alpha 0 premultiplied art is black while straight
+ * alpha keeps whatever colour was there — so fully transparent pixels are
+ * skipped as well, since their colour is meaningless in both conventions.
+ *
+ * Sampled rather than exhaustive: a 2048² page is four million pixels, and the
+ * signal is a population property that a sixteenth of them establishes just as
+ * well.
+ */
+export function premultipliedSignal(image, { step = 4 } = {}) {
+	const { width, height, rgba } = image;
+	let semiTransparent = 0;
+	let violations = 0;
+
+	for (let y = 0; y < height; y += step) {
+		for (let x = 0; x < width; x += step) {
+			const i = (y * width + x) * 4;
+			const a = rgba[i + 3];
+			if (a === 0 || a === 255) continue;
+			semiTransparent += 1;
+			if (rgba[i] > a || rgba[i + 1] > a || rgba[i + 2] > a) violations += 1;
+		}
+	}
+
+	// Below this there is no soft edge to judge — a hard-edged sprite is
+	// identical under both conventions, and calling it either way is a guess.
+	const enough = semiTransparent >= 200;
+	return {
+		semiTransparent,
+		violations,
+		// Straight alpha shows violations in real numbers. Zero of them across
+		// hundreds of soft pixels is what premultiplication looks like; a handful
+		// stays inconclusive rather than being read as proof either way.
+		premultiplied: enough && violations === 0,
+		straight: enough && violations > semiTransparent * 0.02,
+	};
+}
