@@ -28,6 +28,7 @@ import { artGuide, artPrompts } from '../src/commands/artPrompts.js';
 import { artAccept } from '../src/commands/artAccept.js';
 import { artCheck } from '../src/commands/artCheck.js';
 import { artImport } from '../src/commands/artImport.js';
+import { cutout } from '../src/commands/cutout.js';
 import { deliver } from '../src/commands/deliver.js';
 import { buildAnimBrief, renderAnimBrief } from '../src/lib/animBrief.js';
 import { SpecValidationError } from '../src/lib/loadSpec.js';
@@ -278,6 +279,36 @@ program
 				console.log(markdown);
 			}
 			return { ok: true };
+		}),
+	);
+
+program
+	.command('art:cutout')
+	.description('Knock the white background out of generated art, and trim it to the subject')
+	.requiredOption('--from <path>', 'a PNG, or a folder of them')
+	.option('--out <dir>', 'where to write (default: beside the input)')
+	.option('--size <WxH>', 'also centre the subject on a canvas this size, e.g. 200x200')
+	.option('--threshold <n>', 'brightness at or above which a neutral pixel is background', Number)
+	.option('--saturation <n>', 'max channel spread for a pixel to count as neutral', Number)
+	.option('--feather <n>', 'pixels over which the edge fades in', Number)
+	.option('--dry-run', 'report what would happen and write nothing', false)
+	.action(
+		run((opts) => {
+			let size = null;
+			if (opts.size) {
+				const match = /^(\d+)x(\d+)$/i.exec(String(opts.size).trim());
+				if (!match) throw new Error(`--size must look like 200x200 (got "${opts.size}")`);
+				size = { width: Number(match[1]), height: Number(match[2]) };
+			}
+			return cutout({
+				input: path.resolve(opts.from),
+				out: opts.out ? path.resolve(opts.out) : null,
+				size,
+				threshold: opts.threshold,
+				saturation: opts.saturation,
+				feather: opts.feather,
+				dryRun: opts.dryRun,
+			});
 		}),
 	);
 

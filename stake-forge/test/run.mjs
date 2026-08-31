@@ -82,7 +82,8 @@ import {
 	readAtlasRegions,
 } from '../src/lib/spineImport.js';
 import { generationSize, SIZE_LIMITS } from '../src/lib/imageProvider.js';
-import { resize, alphaCoverage, opaqueBounds, writePng } from '../src/lib/image.js';
+import { resize, alphaCoverage, opaqueBounds, writePng, decodePng } from '../src/lib/image.js';
+import { removeWhiteBackground, looksWhiteBacked, fitOnCanvas } from '../src/lib/cutout.js';
 import { matchFiles, inspect, artImport } from '../src/commands/artImport.js';
 import { buildAnimBrief } from '../src/lib/animBrief.js';
 import { buildGenerationManifest } from '../src/lib/artGuide.js';
@@ -3533,6 +3534,118 @@ test('atlas parts are read at the size the artist DREW, not the size they packed
 	assert.equal(banner.trimmed, true, 'it has offsets, so the drawn size is known');
 });
 
+group('cutout — art generated on white');
+
+/** A generated-looking icon: dark body, black outline, near-white specular, off-white ground. */
+function generatedIcon({ size = 512, radius = 120, specular = true } = {}) {
+	const rgba = Buffer.alloc(size * size * 4);
+	const c = size / 2;
+	for (let y = 0; y < size; y += 1) {
+		for (let x = 0; x < size; x += 1) {
+			const i = (y * size + x) * 4;
+			const d = Math.hypot(x - c, y - c);
+			let r;
+			let g;
+			let b;
+			if (d < radius) { r = 0x5c; g = 0x40; b = 0x33; }
+			else if (d < radius + 10) { r = 0x1a; g = 0x14; b = 0x10; }
+			else { r = 252; g = 252; b = 252; }
+			if (specular && d < radius / 3) { r = 0xfa; g = 0xfa; b = 0xf5; }
+			rgba[i] = r; rgba[i + 1] = g; rgba[i + 2] = b; rgba[i + 3] = 255;
+		}
+	}
+	return { width: size, height: size, rgba };
+}
+
+test('a near-white specular INSIDE the subject survives the cutout', () => {
+	// The defect a per-pixel test cannot avoid, and the house style guarantees it
+	// will happen: steel is specified as having "near-white specular points". A
+	// 250,250,245 highlight is bright and neutral, so any rule that judges pixels
+	// one at a time removes it and punches a hole through the middle of the
+	// object. What separates it from background is not how it looks but where it
+	// is — background is reachable from the frame edge, a specular is enclosed.
+	const icon = generatedIcon();
+	const { image, removed } = removeWhiteBackground(icon);
+	const size = icon.width;
+	const centre = ((size / 2) * size + size / 2) * 4;
+
+	assert.equal(image.rgba[centre + 3], 255, 'the specular is part of the subject');
+	assert.equal(image.rgba[3], 0, 'the corner is background');
+	assert.ok(removed > 0.7 && removed < 0.9, `removed ${removed}`);
+});
+
+test('the subject keeps its size — the cut is at the outline, not inside it', () => {
+	const icon = generatedIcon({ radius: 120 });
+	const { image } = removeWhiteBackground(icon);
+	const bounds = opaqueBounds(image);
+	// The drawn disc is 2*(120+10) = 260 across; a 5px feather may take a pixel.
+	assert.ok(Math.abs(bounds.width - 260) <= 3, `expected ~260, got ${bounds.width}`);
+	assert.ok(Math.abs(bounds.height - 260) <= 3, `expected ~260, got ${bounds.height}`);
+});
+
+test('the border decides, so a mostly-pale subject is not mistaken for background', () => {
+	// A bright asset — a white banner, an ice symbol — is mostly pale, so the
+	// PROPORTION of white in the frame says nothing about whether it sits on a
+	// background. The border does: a generated asset is isolated, so its edge is
+	// background all the way round whatever is in the middle.
+	const pale = generatedIcon({ radius: 240, specular: false });
+	for (let i = 0; i < pale.width * pale.height; i += 1) {
+		if (pale.rgba[i * 4 + 3] === 255 && pale.rgba[i * 4] === 0x5c) {
+			pale.rgba[i * 4] = 240; pale.rgba[i * 4 + 1] = 238; pale.rgba[i * 4 + 2] = 235;
+		}
+	}
+	assert.equal(looksWhiteBacked(pale), true, 'its border is still white');
+
+	// And art that already has alpha is left alone — its border is transparent,
+	// not white, so there is nothing to cut.
+	const already = generatedIcon();
+	for (let i = 0; i < already.width * already.height; i += 1) {
+		if (already.rgba[i * 4] > 250) already.rgba[i * 4 + 3] = 0;
+	}
+	assert.equal(looksWhiteBacked(already), false);
+});
+
+test('the subject is centred on the slot canvas, not resampled with its air', () => {
+	// A 1024 generation with the subject floating in the middle resamples to a
+	// symbol that is mostly empty, and eleven symbols framed eleven ways land at
+	// eleven different visual sizes on one reel. Trimming first makes the SUBJECT
+	// the unit.
+	const { image } = removeWhiteBackground(generatedIcon({ size: 512, radius: 60 }));
+	const fitted = fitOnCanvas(image, 200, 200);
+
+	assert.equal(fitted.image.width, 200);
+	assert.equal(fitted.image.height, 200);
+	assert.equal(fitted.image.rgba[3], 0, 'corners stay transparent');
+
+	const bounds = opaqueBounds(fitted.image);
+	// Fills the frame less its margin, and is centred to within a pixel.
+	assert.ok(bounds.width >= 170 && bounds.width <= 178, `subject drawn ${bounds.width}px wide`);
+	assert.ok(Math.abs(bounds.x - (200 - bounds.width - bounds.x)) <= 1, 'centred horizontally');
+});
+
+test('art:import takes a white-background generation all the way to a game asset', () => {
+	// End to end: what a model returns, through to the transparent 200x200 the
+	// slot wants. Before this the importer refused it outright — "every pixel is
+	// opaque … it would tile the board with rectangles" — so generated art and
+	// usable art were separated by a step that lived in a script on a laptop.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cutout-'));
+	const { gameDir, from, specPath, guidePath } = writeImportFixture(dir);
+	writePng(path.join(from, 'h1.png'), generatedIcon({ size: 512, radius: 150 }));
+
+	const result = artImport({
+		specPath, guidePath, sdkDir: null, fromDir: from, gameDir, dryRun: false,
+	});
+	assert.equal(result.refused, 0, 'white-background art is no longer refused');
+	assert.equal(result.imported, 1);
+	assert.equal(result.cutout, 1);
+
+	const written = decodePng(path.join(gameDir, 'assets-source', 'symbols', 'h1.png'));
+	assert.equal(written.width, 200);
+	assert.equal(written.height, 200);
+	const coverage = alphaCoverage(written);
+	assert.ok(coverage > 0.2 && coverage < 0.9, `expected a real cutout, got ${coverage} opaque`);
+});
+
 group('art:import — reaching the game, not just the folder');
 
 /** A spec on disk that passes full validation, for the commands that load one. */
@@ -4006,7 +4119,9 @@ test('a generation manifest carries a real size and a transparency rule per part
 	assert.equal(wild.described, true, 'the guide described this one');
 	assert.match(wild.prompt, /a described wild/, 'the subject leads the prompt');
 	assert.match(wild.prompt, /a test look/, 'and inherits the style');
-	assert.match(wild.prompt, /transparent background/);
+	// White, not transparent — models cannot produce alpha, and asking for it
+	// paints a checkerboard into the art. art:import cuts the white out.
+	assert.match(wild.prompt, /plain pure white background/);
 	assert.match(wild.prompt, /exactly 200x200 pixels/);
 	assert.equal(wild.negative, 'text');
 

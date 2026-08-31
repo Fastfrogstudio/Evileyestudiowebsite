@@ -7,6 +7,7 @@ import { loadGameSpec } from '../lib/loadSpec.js';
 import { getMechanic } from '../lib/mechanics.js';
 import { loadArtGuide, buildGenerationManifest } from '../lib/artGuide.js';
 import { decodePng, resize, alphaCoverage, opaqueBounds, writePng } from '../lib/image.js';
+import { removeWhiteBackground, looksWhiteBacked, fitOnCanvas } from '../lib/cutout.js';
 import {
 	groupSpineDeliveries,
 	validateSpineDelivery,
@@ -286,6 +287,7 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 	const imported = [];
 	const refused = [];
 	const noted = [];
+	const cutout = [];
 
 	// ── the last line of defence for an atlas page ──────────────────────────
 	// Everything above tries to identify a rig's page by READING the atlas, and
@@ -322,13 +324,54 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 			continue;
 		}
 
-		const { problems, notes } = inspect(image, job);
+		// ── art generated on white ──────────────────────────────────────────
+		// Every image model returns an opaque picture, and the studio's own style
+		// guide prompts for "isolated on white background" because asking for
+		// transparency paints a checkerboard into the art. The game needs the
+		// opposite: a symbol is composited over the reel by Spine, so an opaque
+		// one is refused outright.
+		//
+		// That left the generated art and the usable art separated by a step the
+		// tool did not know existed. It does it here, and only where the evidence
+		// is unambiguous — the frame's whole BORDER is white and the image has no
+		// alpha of its own. Art that already carries transparency is untouched.
+		let working = image;
+		let cut = null;
+		if (job.kind !== 'backdrop' && alphaCoverage(image) > 0.995 && looksWhiteBacked(image)) {
+			const result = removeWhiteBackground(image);
+			// A cutout that removes almost everything, or almost nothing, is not a
+			// cutout. Better to refuse with the original message than to import a
+			// destroyed picture that passes every check.
+			if (result.removed > 0.02 && result.removed < 0.98) {
+				working = result.image;
+				cut = result;
+			}
+		}
+
+		const { problems, notes } = inspect(working, job);
 		if (problems.length) {
 			if (looksLikeAPage(file)) {
 				pagesRecovered.push(file);
 				continue;
 			}
 			refused.push({ file, job, reasons: problems });
+			continue;
+		}
+
+		// A cut-out subject is placed on the slot canvas rather than resampled: a
+		// 1024 generation with the subject floating in the middle would resample to
+		// a symbol that is mostly air, and every symbol would land a different
+		// visual size depending on how much room its generation happened to leave.
+		if (cut) {
+			const fitted = fitOnCanvas(working, job.width, job.height);
+			if (!dryRun) {
+				const target = path.join(gameDir, job.outputPath);
+				fs.ensureDirSync(path.dirname(target));
+				writePng(target, fitted.image);
+			}
+			imported.push({ file, job, resizedFrom: image });
+			cutout.push({ file, job, removed: cut.removed, subject: fitted.subject });
+			if (notes.length) noted.push({ file, job, notes });
 			continue;
 		}
 
@@ -465,6 +508,17 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 		for (const problem of entry.problems) console.log(chalk.red(`      ${problem}`));
 		for (const note of entry.notes) console.log(chalk.dim(`      ${note}`));
 	}
+	for (const entry of cutout) {
+		console.log(
+			chalk.cyan('  ·'),
+			`${entry.job.id}: white background removed`,
+			chalk.dim(
+				`(${(entry.removed * 100).toFixed(0)}% of the frame), subject ` +
+					`${entry.subject.width}x${entry.subject.height} centred on ` +
+					`${entry.job.width}x${entry.job.height}`,
+			),
+		);
+	}
 	for (const file of pagesRecovered) {
 		console.log(
 			chalk.cyan('  ·'),
@@ -529,5 +583,6 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 		unmatched: unmatched.length,
 		spine: { checked: spineResults.length, failed: badSpine },
 		wired,
+		cutout: cutout.length,
 	};
 }

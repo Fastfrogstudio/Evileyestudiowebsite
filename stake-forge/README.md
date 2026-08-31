@@ -561,8 +561,8 @@ layers — `bg_base` 2020x991, `bg_cart_add` 404x220, `bg_shovel_add` 130x282,
 single flat painting cannot be animated at all, because there is nothing to move.
 
 That is also what makes generation viable. "An animated mine background" is a bad
-prompt with no usable output. "A mine cart, 404x220, transparent background" is a
-good one, and the parts assemble into something a rig can drive. `art:prompts`
+prompt with no usable output. "A mine cart, 404x220, on a plain white
+background" is a good one, and the parts assemble into something a rig can drive. `art:prompts`
 reads the layer list straight out of the reference app's atlases, so it briefs the
 exact slots the game's Spine skeletons expect — 178 parts for a 5x3 lines game.
 
@@ -587,7 +587,7 @@ makes it work.
 
 ```bash
 forge art:prompts --spec game-spec.yaml --sdk ../web-sdk --out art-prompts.json
-# ...your art tool produces PNGs...
+# ...your art tool produces PNGs, on white...
 forge art:import  --spec game-spec.yaml --from ./delivered --dry-run
 forge anim:brief  --spec game-spec.yaml --sdk ../web-sdk --out animation-brief.md
 ```
@@ -697,7 +697,8 @@ the 1-in-20,000,000 frequency in every tier because that frequency is *chosen*
 | `forge brief --spec <yaml> [--format md\|csv\|json\|manifest] [--out <path>]` | What to draw — the complete asset spec, before any art exists |
 | `forge art:guide [--out <path>]` | Write art-guide.yaml — the look, once, for every asset in this game |
 | `forge deliver --spec <yaml> [--guide <yaml>] [--sdk <path>] [--out <md>]` | One checklist: every file this game needs and exactly what to call it |
-| `forge art:import --spec <yaml> --from <dir> [--game <dir>] [--dry-run]` | Bring in art made elsewhere: match to slots, resample, check alpha |
+| `forge art:cutout --from <path> [--out <dir>] [--size <WxH>] [--dry-run]` | Knock the white background out of generated art and trim it to the subject |
+| `forge art:import --spec <yaml> --from <dir> [--game <dir>] [--dry-run]` | Bring in art made elsewhere: match to slots, cut out white, resample, check alpha |
 | `forge anim:brief --spec <yaml> [--sdk <path>] [--out <md>]` | What the animation team needs: skeleton names, animation names, canvas sizes |
 | `forge art:check [--endpoint <url>] [--key <key>] [--model <id>]` | One request to the image provider, reported in full — run before a batch |
 | `forge art:prompts --spec <yaml> [--guide <yaml>] [--sdk <path>] [--out <json>] [--only <kinds>]` | One prompt per asset part, at the exact size this game needs |

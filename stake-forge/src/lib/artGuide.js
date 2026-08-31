@@ -105,29 +105,46 @@ function composePrompt({ subject, style, technical }) {
 /**
  * Technical constraints per asset kind.
  *
- * `transparent background` is on everything except the full-bleed backdrop,
- * because every one of these is composited over something else by Spine. Getting
- * that wrong is the single most common way a generated asset is unusable — a
- * symbol on an opaque square tiles the reel with rectangles.
+ * ── Why these ask for WHITE, not transparency ───────────────────────────────
+ * The game needs transparency: everything except the full-bleed backdrop is
+ * composited over something else by Spine, and a symbol on an opaque square
+ * tiles the reel with rectangles. So the obvious prompt is "transparent
+ * background" — and it is the wrong one. Image models return an opaque picture
+ * whatever you ask for, and asking for transparency gets you a checkerboard
+ * PAINTED INTO the art, which is worse than a plain ground because it cannot be
+ * removed.
+ *
+ * A plain white ground is the one thing they do reliably, and `art:import` cuts
+ * it out on the way in — flood filled from the frame edge, so a near-white
+ * specular inside the subject survives. The prompt therefore asks for what the
+ * model can actually deliver, and the pipeline supplies the alpha.
+ *
+ * The plain ground has to be stated explicitly rather than left unsaid: an
+ * unprompted background is a scene, and a scene cannot be cut out at all.
  */
 function technicalFor(kind, { width, height }) {
 	const size = `exactly ${width}x${height} pixels`;
+	// Said the same way every time. The cutout keys off a uniform, near-white
+	// border, so "white background" is a technical requirement here rather than
+	// an aesthetic preference, and any drift in how it is phrased shows up as an
+	// asset that cannot be cut out.
+	const isolated = 'isolated on a plain pure white background, no scene, no ground shadow, no vignette';
 	switch (kind) {
 		case 'symbol':
 			return [
 				size,
-				'transparent background',
+				isolated,
 				'single centred object, fully inside the frame with a small even margin',
 				'readable as a silhouette at a third of this size',
 			];
 		case 'backdrop':
 			return [size, 'full-bleed illustration, no transparency, no border', 'nothing important in the centre third, the reels sit there'];
 		case 'layer':
-			return [size, 'transparent background', 'one isolated element, no scene around it, no ground shadow'];
+			return [size, isolated, 'one isolated element, no scene around it'];
 		case 'banner':
-			return [size, 'transparent background', 'centred, with room around it for a number to be drawn on top'];
+			return [size, isolated, 'centred, with room around it for a number to be drawn on top'];
 		default:
-			return [size, 'transparent background'];
+			return [size, isolated];
 	}
 }
 
