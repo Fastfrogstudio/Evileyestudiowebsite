@@ -606,10 +606,20 @@ notices. Then it fixes what can be fixed and refuses what cannot:
   reel with rectangles and looks perfectly fine in a folder. A see-through backdrop
   is flagged the other way.
 
-`anim:brief` is the handoff to whoever rigs the Spine files. The sharp edge is that
-**animation names are literal** — the front end calls `h4` and `h4_static` by
-string, so a rig with the right motion under a different name imports cleanly,
-validates cleanly, and plays nothing.
+`anim:brief` is the handoff to whoever rigs the Spine files, and `forge deliver`
+is the flat checklist of every filename — both PNGs and Spine bundles — because
+the name is what the import matches on.
+
+A Spine delivery is a skeleton, its atlas and the atlas page, validated as a set:
+`art:import` checks that every animation the front end will call is actually
+present. That is the sharp edge — the front end plays `h4` and `h4_static` by
+literal string, so a rig with the right motion under a different name loads
+without error, validates cleanly, and plays nothing on screen.
+
+Path, clipping and bounding-box attachments are excluded from the region check —
+they are geometry rather than art and never appear in the atlas. Checking them
+would report two false failures on a correct file, and a validator that cries wolf
+gets switched off.
 
 ### The gate that reads what the optimiser cannot fix
 
@@ -686,6 +696,7 @@ the 1-in-20,000,000 frequency in every tier because that frequency is *chosen*
 | `forge math:validate --spec <yaml> --math-sdk <path> [--json]` | Is it shippable? Every rule measured, with the number it was judged on |
 | `forge brief --spec <yaml> [--format md\|csv\|json\|manifest] [--out <path>]` | What to draw — the complete asset spec, before any art exists |
 | `forge art:guide [--out <path>]` | Write art-guide.yaml — the look, once, for every asset in this game |
+| `forge deliver --spec <yaml> [--guide <yaml>] [--sdk <path>] [--out <md>]` | One checklist: every file this game needs and exactly what to call it |
 | `forge art:import --spec <yaml> --from <dir> [--game <dir>] [--dry-run]` | Bring in art made elsewhere: match to slots, resample, check alpha |
 | `forge anim:brief --spec <yaml> [--sdk <path>] [--out <md>]` | What the animation team needs: skeleton names, animation names, canvas sizes |
 | `forge art:check [--endpoint <url>] [--key <key>] [--model <id>]` | One request to the image provider, reported in full — run before a batch |

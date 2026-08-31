@@ -6,6 +6,8 @@ import { loadGameSpec } from '../lib/loadSpec.js';
 import { getMechanic } from '../lib/mechanics.js';
 import { loadArtGuide, buildGenerationManifest } from '../lib/artGuide.js';
 import { decodePng, resize, alphaCoverage, opaqueBounds, writePng } from '../lib/image.js';
+import { groupSpineDeliveries, validateSpineDelivery } from '../lib/spineImport.js';
+import { buildAnimBrief } from '../lib/animBrief.js';
 
 /**
  * `forge art:import` — take art made anywhere else and make it work here.
@@ -154,7 +156,22 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 		.filter((e) => e.isFile() && /\.png$/i.test(e.name))
 		.map((e) => e.name);
 
-	const { matched, unmatched, ambiguous } = matchFiles(delivered, jobs);
+	// Atlas PAGES are part of a Spine delivery, not loose art. Listing them as
+	// "matched no slot" is a false alarm that trains people to ignore that list,
+	// which is where the real orphans show up.
+	const atlasPages = new Set();
+	for (const file of fs.readdirSync(fromDir).filter((f) => f.endsWith('.atlas'))) {
+		for (const line of fs.readFileSync(path.join(fromDir, file), 'utf8').split('\n')) {
+			const trimmed = line.trim();
+			if (/^[^:]+\.(png|webp|jpg|jpeg)$/i.test(trimmed)) atlasPages.add(trimmed);
+		}
+	}
+
+	const { matched, unmatched: loose, ambiguous } = matchFiles(
+		delivered.filter((f) => !atlasPages.has(f)),
+		jobs,
+	);
+	const unmatched = loose;
 
 	console.log(chalk.bold(`\nImporting art for ${spec.game.name}\n`));
 	console.log(
@@ -210,6 +227,38 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 		if (notes.length) noted.push({ file, job, notes });
 	}
 
+	// ── Spine deliveries ────────────────────────────────────────────────────
+	// A rigged asset is a skeleton, its atlas and the atlas page — validated as a
+	// set, because a skeleton names regions it does not contain. The check that
+	// matters is the animation NAMES: the front end plays them by literal string,
+	// so a rig with the right motion under a different name loads without error
+	// and plays nothing on screen.
+	const anim = buildAnimBrief({ spec, referenceAppDir });
+	const requiredByName = new Map();
+	for (const entry of anim.entries) {
+		if (!entry.skeletonFile) continue;
+		requiredByName.set(
+			path.basename(entry.skeletonFile, '.json').toLowerCase(),
+			entry.animations.map((a) => a.name),
+		);
+	}
+
+	const spineResults = [];
+	for (const bundle of groupSpineDeliveries(fromDir)) {
+		const required = requiredByName.get(bundle.name.toLowerCase()) ?? [];
+		const result = validateSpineDelivery({
+			skeletonFile: bundle.skeletonFile,
+			atlasFile: bundle.atlasFile,
+			requiredAnimations: required,
+		});
+		// A skeleton nothing asked for is worth saying, not failing on — it may be
+		// a shared asset or something delivered ahead of the spec.
+		if (!required.length) {
+			result.notes.push('nothing in this game asks for a skeleton by this name');
+		}
+		spineResults.push({ ...bundle, ...result, required });
+	}
+
 	const missing = jobs.filter((job) => !matched.some((m) => m.job.id === job.id));
 
 	// ── report ──────────────────────────────────────────────────────────────
@@ -232,6 +281,16 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 		console.log(chalk.red('  ✗'), `${entry.file} -> ${entry.job.id}`);
 		for (const reason of entry.reasons) console.log(chalk.red(`      ${reason}`));
 	}
+	for (const entry of spineResults) {
+		const ok = entry.problems.length === 0;
+		console.log(
+			ok ? chalk.green('  ✓') : chalk.red('  ✗'),
+			`${entry.name}.json`,
+			chalk.dim(`— ${entry.animations.length} animation(s)`),
+		);
+		for (const problem of entry.problems) console.log(chalk.red(`      ${problem}`));
+		for (const note of entry.notes) console.log(chalk.dim(`      ${note}`));
+	}
 	for (const entry of ambiguous) {
 		console.log(
 			chalk.yellow('  ?'),
@@ -249,6 +308,10 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 		`  ${chalk.green(`${imported.length} imported`)}` +
 			(refused.length ? `  ${chalk.red(`${refused.length} refused`)}` : '') +
 			(missing.length ? `  ${chalk.yellow(`${missing.length} still missing`)}` : '') +
+			(spineResults.length
+				? `  ${spineResults.length - spineResults.filter((r) => r.problems.length).length}/` +
+					`${spineResults.length} spine ok`
+				: '') +
 			(dryRun ? chalk.dim('   (dry run — nothing written)') : ''),
 	);
 
@@ -264,11 +327,13 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 	}
 	console.log('');
 
+	const badSpine = spineResults.filter((r) => r.problems.length).length;
 	return {
-		ok: refused.length === 0,
+		ok: refused.length === 0 && badSpine === 0,
 		imported: imported.length,
 		refused: refused.length,
 		missing: missing.length,
 		unmatched: unmatched.length,
+		spine: { checked: spineResults.length, failed: badSpine },
 	};
 }

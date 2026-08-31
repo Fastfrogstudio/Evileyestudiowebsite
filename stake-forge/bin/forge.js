@@ -28,6 +28,7 @@ import { artGuide, artPrompts } from '../src/commands/artPrompts.js';
 import { artAccept } from '../src/commands/artAccept.js';
 import { artCheck } from '../src/commands/artCheck.js';
 import { artImport } from '../src/commands/artImport.js';
+import { deliver } from '../src/commands/deliver.js';
 import { buildAnimBrief, renderAnimBrief } from '../src/lib/animBrief.js';
 import { SpecValidationError } from '../src/lib/loadSpec.js';
 
@@ -223,6 +224,26 @@ program
 	.option('--out <path>', 'where to write it', 'art-guide.yaml')
 	.option('--force', 'overwrite an existing guide', false)
 	.action(run((opts) => artGuide({ out: path.resolve(opts.out), force: opts.force })));
+
+program
+	.command('deliver')
+	.description('One checklist: every file this game needs and exactly what to call it')
+	.requiredOption('--spec <path>', 'path to game-spec.yaml')
+	.option('--guide <path>', 'path to art-guide.yaml', 'art-guide.yaml')
+	.option('--sdk <path>', 'a web-sdk checkout, to read the reference assets from')
+	.option('--out <path>', 'write the checklist as markdown')
+	.option('--json', 'machine-readable output', false)
+	.action(
+		run((opts) =>
+			deliver({
+				specPath: path.resolve(opts.spec),
+				guidePath: path.resolve(opts.guide),
+				sdkDir: opts.sdk ? path.resolve(opts.sdk) : null,
+				out: opts.out ? path.resolve(opts.out) : null,
+				json: opts.json,
+			}),
+		),
+	);
 
 program
 	.command('anim:brief')

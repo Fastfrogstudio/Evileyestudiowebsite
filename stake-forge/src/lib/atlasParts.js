@@ -49,6 +49,14 @@ export function parseAtlas(file) {
 	const parts = [];
 	let page = null;
 	let current = null;
+	// A page declaration is a bare line at the START of the file or immediately
+	// after a blank one; regions follow each other with no blank between. Without
+	// tracking that, "any bare line ending in .png is a page" looks reasonable and
+	// is wrong: symbols.atlas contains a REGION named `heart_shadow.png`, which
+	// that rule swallows as a second page. The region then vanishes from the part
+	// list — so the art brief never asks for it — and the atlas is reported as
+	// naming a page nobody delivered. One typo'd export name, two silent failures.
+	let atBoundary = true;
 
 	const flush = () => {
 		if (current?.name) parts.push(current);
@@ -59,6 +67,7 @@ export function parseAtlas(file) {
 		const line = raw.replace(/\s+$/, '');
 		if (!line.trim()) {
 			flush();
+			atBoundary = true;
 			continue;
 		}
 
@@ -67,15 +76,17 @@ export function parseAtlas(file) {
 			// A bare line is either the page image or a region name. The page is the
 			// first one after a blank, and it is the only one with a file extension.
 			flush();
-			if (/\.(png|webp|jpg|jpeg)$/i.test(line.trim())) {
+			if (atBoundary && /\.(png|webp|jpg|jpeg)$/i.test(line.trim())) {
 				page = line.trim();
 			} else {
 				current = { name: line.trim(), page };
 			}
+			atBoundary = false;
 			continue;
 		}
 
 		const [, key, value] = kv;
+		atBoundary = false;
 		if (!current) continue; // a page-level key such as size/filter/scale
 
 		if (key === 'bounds') {
