@@ -482,12 +482,30 @@ app.get('/api/games/:id/review', (req, res) => {
 app.get('/review-file/:id/:from/:name', (req, res) => {
 	try {
 		const config = loadConfig();
-		// basename on both, so neither can climb out of the workspace.
-		const from = path.basename(req.params.from);
+		const root = gameDir(config.workspace, req.params.id);
+
+		// ── why not path.basename on the folder ─────────────────────────────
+		// It used to be, for traversal safety, and it silently broke every nested
+		// folder: "assets-source/symbols" became "symbols", so the review listed
+		// eleven files and served 404 for all of them — a grid of broken images
+		// with nothing saying why. The Review tab's own folder box invites a
+		// nested path, so refusing one is not an option.
+		//
+		// Containment is checked properly instead: normalise, then verify the
+		// resolved path is still inside the game folder. That is the real
+		// question, and unlike basename it cannot be right by accident or wrong
+		// by surprise.
 		const name = path.basename(req.params.name);
-		const file = path.join(gameDir(config.workspace, req.params.id), from, name);
+		const from = path.normalize(req.params.from).replace(/^(\.\.(\/|\\|$))+/, '');
+		const file = path.resolve(root, from, name);
+		const inside = file === root || file.startsWith(root + path.sep);
+		if (!inside) return res.status(400).end();
+
 		if (!fs.existsSync(file)) return res.status(404).end();
-		res.sendFile(file);
+		// Read and send rather than sendFile: send() applies its own path policy
+		// and rejects a dotted or symlinked path with a bare 404 that gives no
+		// hint the file is right there.
+		res.type(path.extname(file)).send(fs.readFileSync(file));
 	} catch (err) {
 		fail(res, err);
 	}
