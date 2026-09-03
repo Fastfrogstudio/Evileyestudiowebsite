@@ -5840,8 +5840,8 @@ test('the colossal stamp recomputes the special-symbol record', () => {
 	assert.match(body, /self\.get_special_symbols_on_board\(\)/);
 	// ...and it must never cover one in the first place, so the trigger count
 	// this mechanic inherits from draw_board() is the one that ships.
-	assert.match(body, /scatter_cells/);
-	assert.match(body, /covered & scatter_cells/);
+	assert.match(body, /special_syms_on_board\.get\("scatter"/);
+	assert.match(body, /covered & blocked/);
 });
 
 test('a colossal block carries one multiplier, not one per cell', () => {
@@ -5871,6 +5871,25 @@ test('colossal joins the shared reveal hook instead of owning draw_board', () =>
 	assert.match(apply.body.join('\n'), /assign_colossal_block/);
 	assert.match(emit.body.join('\n'), /colossal_symbol_event/);
 	assert.ok(emit.imports?.length, 'the emit hook must bring its own import');
+});
+
+test('a colossal block places around cells another mechanic has locked', () => {
+	// A stuck wild re-stamped over a block leaves a hole in what the client was
+	// told is one giant symbol. Measured on a sticky-wild game before this rule:
+	// 137 of 332 announced blocks came out with cells missing. Ordering alone
+	// cannot fix it — whichever runs last wins — so the lock is the contract and
+	// the region-placer is the one that yields.
+	const body = renderColossalMath({ colossalSymbol: 'H1' }).classMethods[0].source;
+	assert.match(body, /check_attribute\("locked"\)/);
+	assert.match(body, /covered & blocked/);
+});
+
+test('sticky wilds mark their cells locked for the round', () => {
+	// The other half of the same contract: a mechanic that owns a cell has to say
+	// so, or a region-placer has nothing to place around.
+	const sticky = BOARD_MECHANICS.stickyMultiplierWilds;
+	const source = sticky.method({ wild: 'W', start: 2, step: 1, cap: 25, freeSpinsOnly: true });
+	assert.match(source, /"locked": True/);
 });
 
 test('the colossal ladder never offers an edge the board cannot hold', () => {

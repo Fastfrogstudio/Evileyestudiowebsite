@@ -237,12 +237,13 @@ if (mathSdk) {
 	const exe = path.join(mathSdk, 'games', '0_0_e2e_colossal', 'game_executables.py');
 	const source = fs.existsSync(exe) ? fs.readFileSync(exe, 'utf8') : '';
 	const safe =
-		/covered & scatter_cells/.test(source) &&
+		/covered & blocked/.test(source) &&
+		/check_attribute\("locked"\)/.test(source) &&
 		/COLOSSAL_ANCHOR_LEFT = True/.test(source) &&
 		/get_special_symbols_on_board\(\)/.test(source);
 	results.push({ label: 'colossal: invariants generated', ok: safe, output: source.slice(0, 400) });
 	console.log(
-		`${safe ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'} colossal: scatter-safe, reel-0 anchored, record recomputed`,
+		`${safe ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'} colossal: scatter-safe, lock-aware, reel-0 anchored, record recomputed`,
 	);
 }
 

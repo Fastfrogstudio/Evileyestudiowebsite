@@ -1257,6 +1257,7 @@ function applyRecipes(gameDir, spec) {
 	const results = [];
 	const mechanic = spec._mechanic ?? getMechanic(spec.game.mechanic);
 
+	const deferredBoardHooks = [];
 	for (const symbol of spec.symbols) {
 		for (const tag of symbol.behaviors) {
 			const recipe = getRecipe(tag);
@@ -1298,7 +1299,10 @@ function applyRecipes(gameDir, spec) {
 			applyModuleFunctions(gameDir, emitted.moduleFunctions ?? []);
 			applyClassMethods(gameDir, emitted.classMethods ?? []);
 			applyOverridePatches(gameDir, emitted.overridePatches ?? []);
-			applyBoardHooks(gameDir, emitted.boardHooks ?? []);
+			// Board hooks are DEFERRED, not applied here. A recipe that places a
+			// region has to see what the cell-level mechanics have already locked,
+			// and those are wired later — so recipe hooks go in after them.
+			deferredBoardHooks.push(...(emitted.boardHooks ?? []));
 			applyGamestatePatches(
 				gameDir,
 				emitted.gamestatePatches ?? [],
@@ -1323,7 +1327,7 @@ function applyRecipes(gameDir, spec) {
 		for (const r of restored) results.push(r);
 	}
 
-	return results;
+	return { results, boardHooks: deferredBoardHooks };
 }
 
 /**
@@ -1406,12 +1410,15 @@ export function mathScaffold({ specPath, mathSdkDir, force }) {
 	// key exists. Without it the simulation dies with KeyError on the first round.
 	ensureCapReelKey(gameDir);
 
-	const recipeResults = applyRecipes(gameDir, spec);
+	const { results: recipeResults, boardHooks: recipeBoardHooks } = applyRecipes(gameDir, spec);
 	const multiplierEdits = applyMultiplierStrategy(gameDir, spec);
 	const gridEdits = applyGridMultipliers(gameDir, spec, mechanic);
 	const globalMultEdits = applyGlobalMultiplierGrowth(gameDir, spec);
 	const resetEdits = applyFreeSpinReset(gameDir, spec);
 	const boardEdits = applyBoardMechanics(gameDir, spec, mechanic);
+	// After the cell-level mechanics, so a region-placing recipe can see what
+	// they have locked.
+	applyBoardHooks(gameDir, recipeBoardHooks);
 	const roleEdits = applyCollectorPayer(gameDir, spec);
 	for (const r of recipeResults) {
 		if (r.action === 'generated') {

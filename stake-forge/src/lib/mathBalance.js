@@ -396,7 +396,18 @@ export function featureLoad(spec) {
 		for (const tag of symbol.behaviors ?? []) {
 			if (tag === 'expanding') carried.push({ id: `${symbol.name}:expanding`, kind: 'wild injection' });
 			if (tag === 'sticky') carried.push({ id: `${symbol.name}:sticky`, kind: 'accumulation' });
+			// A colossal block does not inject wilds or grow a multiplier — it
+			// GUARANTEES a matching run. On a 5x3 lines board a 3x3 block covers
+			// nine of fifteen cells with one symbol, which is a hit the strips did
+			// not have to produce.
+			if (tag === 'colossal') carried.push({ id: `${symbol.name}:colossal`, kind: 'symbol density' });
 		}
+	}
+	// The board-mechanic form of sticky wilds is spec.game.stickyMultiplierWilds
+	// rather than a behaviors tag, and was going uncounted — so a game carrying
+	// the single most enriching mechanic in the library read as carrying nothing.
+	if (spec.game?.stickyMultiplierWilds) {
+		carried.push({ id: 'stickyMultiplierWilds', kind: 'accumulation' });
 	}
 
 	// Multiplier growth: each is a separate multiplicative axis on the same win.
