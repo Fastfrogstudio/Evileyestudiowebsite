@@ -104,7 +104,10 @@ export function summarise(rows, { wincap, cost = 1 } = {}) {
 		rtp,
 		hitRate: winWeight ? totalWeight / winWeight : Infinity,
 		winFraction: winWeight / totalWeight,
-		maxPayout: Math.max(...rows.map((r) => r.payout)) / PAYOUT_SCALE,
+		// Spreading a production lookup table into Math.max() exceeds the call stack
+		// at a few hundred thousand rows, and a real run is 500,000. The table is
+		// already sorted by payout, so the largest row is simply the last one.
+		maxPayout: (sorted[sorted.length - 1]?.payout ?? 0) / PAYOUT_SCALE,
 		wincapHitRate: capWeight ? totalWeight / capWeight : null,
 		median: percentile(0.5) / PAYOUT_SCALE,
 		p99: percentile(0.99) / PAYOUT_SCALE,

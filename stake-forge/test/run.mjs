@@ -17,6 +17,7 @@ import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 
 import { DEFAULT_BATCH, chooseBatchSize } from '../src/commands/mathRun.js';
+import { summarise } from '../src/commands/mathReport.js';
 import {
 	replaceAssignment,
 	readAssignment,
@@ -54,7 +55,6 @@ import { renderSymbolTile, topPayoutOf } from '../src/lib/placeholderArt.js';
 import { applyWebRecipe } from '../src/lib/webRecipePatch.js';
 import { renderExpandingMath } from '../src/lib/recipes/expanding.js';
 import { buildConfigFromMath } from '../src/commands/mathSync.js';
-import { summarise } from '../src/commands/mathReport.js';
 import { auditSound, readSoundVocabulary, readSoundsUsed, readSoundSprite } from '../src/lib/sound.js';
 import { planOptimisation, renderOptimisationPy, splitRtp, VOLATILITY_PROFILES, VOLATILITY_IDS } from '../src/lib/optimisation.js';
 import { planSprite, spriteJson, buildFilterGraph, looksLooping, readSoundSources, SPRITE_FORMATS, CLIP_GAP_MS } from '../src/lib/soundSprite.js';
@@ -5773,6 +5773,17 @@ test('a batch that does not divide the round count is avoided', () => {
 test('a run smaller than the budget is left in one batch', () => {
 	assert.equal(chooseBatchSize(1000), 1000);
 	assert.equal(chooseBatchSize(10), 10);
+});
+
+test('the RTP report survives a production-sized lookup table', () => {
+	// Spreading the table into Math.max() overflows the call stack somewhere
+	// north of 100,000 rows. A real run is 500,000, so this only ever failed
+	// against production output — after 73 minutes of simulation.
+	const rows = Array.from({ length: 400000 }, (_, i) => ({ weight: 1, payout: i }));
+	const summary = summarise(rows, { wincap: 5000 });
+	assert.equal(summary.rounds, 400000);
+	assert.equal(summary.maxPayout, 399999 / 100, 'the largest payout must still be found');
+	assert.ok(Number.isFinite(summary.p999));
 });
 
 // ── report ──────────────────────────────────────────────────────────────────
