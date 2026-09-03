@@ -218,7 +218,7 @@ export function staleAgainst(rawFile, publishedFile) {
 	return null;
 }
 
-export async function inspectMathPublish({ gameDir, gameId }) {
+export async function inspectMathPublish({ gameDir, gameId, onProgress = null }) {
 	const publish = path.join(gameDir, 'library', 'publish_files');
 	const problems = [];
 	const files = [];
@@ -401,6 +401,16 @@ export async function inspectMathPublish({ gameDir, gameId }) {
 		const bookPayouts = new Map();
 		let round = 0;
 		let readError = null;
+		// ── say something during a check that takes minutes ──────────────────
+		// Measured throughput is about 5 MB/s of compressed books, because every
+		// round is decompressed and parsed. On this tool's own two-mode sample
+		// that is 9 seconds; on a real production game — 8 modes and 3.6 GB, from
+		// a shipped title — it is closer to twelve minutes. Silent for twelve
+		// minutes is indistinguishable from hung, and a user who kills it never
+		// finds out their bundle was fine.
+		const totalBytes = fs.statSync(booksFile).size;
+		let seenBytes = 0;
+		let nextReport = 0;
 		try {
 			await new Promise((resolve, reject) => {
 				const source = fs.createReadStream(booksFile).pipe(zlib.createZstdDecompress());
@@ -430,6 +440,20 @@ export async function inspectMathPublish({ gameDir, gameId }) {
 				};
 
 				source.on('data', (chunk) => {
+					seenBytes += chunk.length;
+					if (onProgress && seenBytes >= nextReport) {
+						// By decompressed bytes against the compressed size, so the
+						// percentage overshoots rather than stalling near the end — a
+						// progress bar that sticks at 90% reads as hung too.
+						onProgress({
+							mode: mode.name,
+							file: mode.events,
+							rounds: round,
+							bytes: seenBytes,
+							totalBytes,
+						});
+						nextReport = seenBytes + 64 * 1024 * 1024;
+					}
 					carry += chunk.toString('utf8');
 					let cut = carry.indexOf('\n');
 					while (cut !== -1) {
@@ -556,7 +580,28 @@ export async function packageGame({ specPath, sdkDir, mathSdkDir, outDir, skipBu
 
 	// ── math ──────────────────────────────────────────────────────────────────
 	const mathGameDir = path.join(mathSdkDir, 'games', gameId);
-	const inspection = await inspectMathPublish({ gameDir: mathGameDir, gameId });
+	// A terminal can have a line rewritten; a captured stream cannot.
+	const interactive = Boolean(process.stdout.isTTY);
+	const inspection = await inspectMathPublish({
+		gameDir: mathGameDir,
+		gameId,
+		// Rounds read, not a percentage: the compressed size says nothing about how
+		// many rounds are inside, and a number that only goes up is honest where a
+		// percentage derived from the wrong denominator is not.
+		//
+		// Rewritten in place on a terminal, appended as ordinary lines when it is
+		// not. The app's Build tab captures this stream and renders it line by
+		// line, so a carriage return there produces one enormous line that grows —
+		// which is worse than no progress at all.
+		onProgress: interactive
+			? ({ mode, rounds }) => {
+					process.stdout.write(`\r  reading ${mode} — ${rounds.toLocaleString()} rounds checked`);
+				}
+			: ({ mode, rounds }) => {
+					if (rounds) console.log(`  reading ${mode} — ${rounds.toLocaleString()} rounds checked`);
+				},
+	});
+	if (interactive) process.stdout.write(`\r${' '.repeat(58)}\r`);
 
 	const mathOut = path.join(target, 'math');
 	fs.removeSync(mathOut);
