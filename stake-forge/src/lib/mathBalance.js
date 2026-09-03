@@ -657,6 +657,35 @@ export function balanceSpec(spec, { volatility, spins = 6000 } = {}) {
 		// force_wincap re-rolls until a round pays EXACTLY the cap, so a game
 		// that cannot produce one does not error, it runs forever.
 		maxWin: analyseMaxWin(spec),
+		// ── is the cap far enough above an ordinary feature? ────────────────
+		// Max-win frequency is supposed to be CHOSEN: hit_rate = max_win ÷ the
+		// RTP allocated to the wincap distribution. That only holds while
+		// ordinary rounds cannot reach the cap on their own. Once the feature
+		// pays enough that a good free-spin round tops out, capping rounds
+		// arrive outside the forced distribution and the measured frequency
+		// runs ahead of the target.
+		//
+		// Measured, on this tool's own volatility ladder against a 5,000x cap:
+		//
+		//   tier        avg feature win   cap ÷ avg   max-win frequency
+		//   high                  186x       26.9x    on target
+		//   very_high             372x       13.5x    on target
+		//   extreme               574x        8.7x    1-in-3.4M against 1-in-20M
+		//
+		// So it is not a judgement, it is a measurement: extreme volatility on a
+		// small cap is a game whose max win is not rare, whatever the spec says.
+		capMargin: (() => {
+			const profile = VOLATILITY_PROFILES[target.volatility];
+			if (!profile) return null;
+			const cap = Math.max(
+				...Object.values(spec.game.betModes).map((m) => Number(m.maxWin) || 0),
+			);
+			// What one feature round pays on average: the share of RTP it carries,
+			// spread over how rarely it arrives.
+			const averageFeature = profile.freegameShare * spec.game.rtp * profile.freegameHitRate;
+			if (!(averageFeature > 0) || !(cap > 0)) return null;
+			return { cap, averageFeature, ratio: cap / averageFeature };
+		})(),
 		tumbles,
 		cascade,
 		cascadeSafe: cascadeRisk.length === 0,

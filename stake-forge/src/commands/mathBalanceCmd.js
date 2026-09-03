@@ -98,6 +98,26 @@ export async function mathBalance({ specPath, volatility, apply = false, json = 
 		}
 	}
 
+	// ── is the cap rare, or just the ceiling? ───────────────────────────────
+	const cm = report.capMargin;
+	if (cm && cm.ratio < 20) {
+		console.log('');
+		console.log(
+			`  ! max win is only ${fmt(cm.ratio)}x an average feature round ` +
+				`(${Math.round(cm.averageFeature).toLocaleString()}x at this volatility).`,
+		);
+		console.log(
+			`    Max-win frequency is meant to be CHOSEN — maxWin ÷ the RTP allocated to the wincap ` +
+				`distribution. That holds only while ordinary rounds cannot reach the cap by ` +
+				`themselves. Below about 15x, good feature rounds top out on their own and the cap ` +
+				`pays more often than asked: measured 1-in-3.4M against a 1-in-20M target at 8.7x.`,
+		);
+		console.log(
+			`    Raise the max win, or drop to a lower volatility profile — this pairing makes the ` +
+				`cap the feature's ceiling rather than a rare event.`,
+		);
+	}
+
 	console.log('');
 	console.log('  Modelled on the base board only — no multipliers, no cascades, no free spins.');
 	console.log('  The simulation is the ground truth; this is the pre-flight check.');
