@@ -86,6 +86,23 @@ export function loadGameSpec(specPath) {
 		// game.maxWin is therefore the value, and a mode may still override it
 		// where that is genuinely intended (a hold-and-win side game with its
 		// own smaller ceiling).
+		// The one lever that actually moves feature variety. Bounded to what the
+		// shipped samples measure on a free-game strip (2.4%-6.4%), widened a
+		// little at both ends — a value outside that is not a tuning choice, it is
+		// a different game, and at 0 the feature has no wilds at all.
+		if (spec.game.featureWildDensity !== undefined) {
+			const density = Number(spec.game.featureWildDensity);
+			if (!Number.isFinite(density) || density < 0 || density > 0.13) {
+				errors.push(
+					`game.featureWildDensity must be a fraction between 0 and 0.13 ` +
+						`(got "${spec.game.featureWildDensity}"). The shipped samples measure ` +
+						`2.4%-6.4% on the free-game strip, so 0.024-0.064 is the band a real ` +
+						`game sits in. Lower thins the feature, which is what raises how much ` +
+						`of it the optimiser actually serves.`,
+				);
+			}
+		}
+
 		if (spec.game.maxWin !== undefined) {
 			const cap = Number(spec.game.maxWin);
 			if (!Number.isFinite(cap) || cap <= 0) {

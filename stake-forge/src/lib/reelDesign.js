@@ -443,15 +443,34 @@ const SCATTER_STRIP_PROFILES = {
 	FRWCAP: { wildPct: 0, wildStack: 1, rows: 251, gametype: 'freegame', cap: true, scatterPct: 0.008 },
 };
 
-/** The profile for one strip, on the mechanic that will actually read it. */
-export function stripProfileFor(mechanic, stripId) {
+/**
+ * The profile for one strip, on the mechanic that will actually read it.
+ *
+ * `spec.game.featureWildDensity` overrides the free-game strip's wild fraction.
+ * It is exposed because it is the DOMINANT driver of feature saturation — the
+ * thing math:balance names first — and it was previously unreachable from a
+ * spec, so the one lever that actually moves feature variety could only be
+ * changed by editing the tool. Round length (freeSpins.awardedSpins) is the
+ * other, and that was already a spec field.
+ *
+ * The shipped samples measure 2.4%–6.4% on FR0, so a value in that band is
+ * doing what a real game does; the cap strips run 7%–13% and are left alone,
+ * because a max-win board needs whole reels of wilds and thinning them is how
+ * force_wincap stops terminating.
+ */
+export function stripProfileFor(mechanic, stripId, { spec } = {}) {
 	const table =
 		mechanic?.winType === 'cluster'
 			? CLUSTER_STRIP_PROFILES
 			: mechanic?.winType === 'scatter'
 				? SCATTER_STRIP_PROFILES
 				: STRIP_PROFILES;
-	return table[stripId] ?? STRIP_PROFILES[stripId];
+	const profile = table[stripId] ?? STRIP_PROFILES[stripId];
+	if (!profile) return profile;
+
+	const override = spec?.game?.featureWildDensity;
+	if (override === undefined || profile.gametype !== 'freegame' || profile.cap) return profile;
+	return { ...profile, wildPct: Number(override) };
 }
 
 /**
@@ -570,7 +589,7 @@ function seededRng(key) {
  */
 export function stripColumns(spec, stripId, { alpha, withScatters = false } = {}) {
 	const mechanic = spec._mechanic ?? (spec.game?.mechanic ? getMechanic(spec.game.mechanic) : null);
-	const profile = stripProfileFor(mechanic, stripId);
+	const profile = stripProfileFor(mechanic, stripId, { spec });
 	if (!profile) throw new Error(`unknown strip "${stripId}"`);
 	const rng = seededRng(`${spec.game.name}:${stripId}`);
 	const columns = designStrip(spec, { profile, rng, alpha });
@@ -642,7 +661,7 @@ export function placeScatters(spec, columns, { profile, stripId, rng, scatterDen
 
 export function renderDesignedReelCsv(spec, { stripId = 'BR0', scatterDensity, alpha } = {}) {
 	const mechanic = spec._mechanic ?? (spec.game?.mechanic ? getMechanic(spec.game.mechanic) : null);
-	const profile = stripProfileFor(mechanic, stripId);
+	const profile = stripProfileFor(mechanic, stripId, { spec });
 	if (!profile) throw new Error(`unknown strip "${stripId}" — expected one of ${Object.keys(STRIP_PROFILES).join(', ')}`);
 
 	const rng = seededRng(`${spec.game.name}:${stripId}`);

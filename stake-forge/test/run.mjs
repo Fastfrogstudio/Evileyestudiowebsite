@@ -5899,6 +5899,31 @@ test('the colossal ladder never offers an edge the board cannot hold', () => {
 	assert.deepEqual(out.requiredConditions, ['colossal_size']);
 });
 
+test('the free-game wild density is reachable from a spec', () => {
+	// It is the dominant driver of feature saturation — the lever math:balance
+	// names first — and it used to live only in the tool, so the one setting that
+	// actually moves feature variety could not be changed by a game.
+	const mechanic = { winType: 'lines' };
+	const base = stripProfileFor(mechanic, 'FR0');
+	const thinned = stripProfileFor(mechanic, 'FR0', {
+		spec: { game: { featureWildDensity: 0.035 } },
+	});
+	assert.equal(thinned.wildPct, 0.035);
+	assert.notEqual(base.wildPct, thinned.wildPct, 'the default must not already be the override');
+
+	// The cap strips are left alone: a max-win board needs whole reels of wilds,
+	// and thinning them is how force_wincap stops terminating.
+	for (const strip of ['WCAP', 'FRWCAP']) {
+		const capped = stripProfileFor(mechanic, strip, {
+			spec: { game: { featureWildDensity: 0.001 } },
+		});
+		assert.equal(capped.wildPct, stripProfileFor(mechanic, strip).wildPct);
+	}
+	// ...and so is the base strip, which is not the feature.
+	const br0 = stripProfileFor(mechanic, 'BR0', { spec: { game: { featureWildDensity: 0.001 } } });
+	assert.equal(br0.wildPct, stripProfileFor(mechanic, 'BR0').wildPct);
+});
+
 // ── report ──────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(60)}`);
 if (failures.length) {
