@@ -899,7 +899,7 @@ export const MECHANIC_LIBRARY = {
 			{ id: 'tumble', why: 'Both own disposal with opposite instructions. Fine as separate phases.' },
 		],
 		trademark: null,
-		recipe: 'prize',
+		recipe: 'sticky',
 	},
 	money_symbol: {
 		id: 'money_symbol',
@@ -922,7 +922,7 @@ export const MECHANIC_LIBRARY = {
 		combinesWith: ['hold_and_win', 'collector_symbol', 'payer_symbol', 'freespins', 'prize_tiers'],
 		conflictsWith: [],
 		trademark: null,
-		recipe: 'prize',
+		recipe: 'sticky',
 	},
 	collector_symbol: {
 		id: 'collector_symbol',
@@ -1187,7 +1187,7 @@ export const MECHANIC_LIBRARY = {
 		name: 'Colossal symbol',
 		family: 'symbol',
 		rule: 'A symbol occupying an NxN block, counting as N separate symbols in each cell it covers.',
-		status: 'built',
+		status: 'roadmap',
 		difficulty: 'T3',
 		winTypes: ['ways', 'lines'],
 		volatility: ['high'],
@@ -1198,11 +1198,20 @@ export const MECHANIC_LIBRARY = {
 			screens: [],
 		},
 		frontend: { bookEvents: ['colossalSymbol'], components: [] },
-		math: { sample: null, notes: 'Generated today by the `colossal` recipe.' },
+		math: {
+			sample: null,
+			notes:
+				'NOT GENERATED — there is no `colossal` recipe, only an entry in behaviorRecipes ' +
+				'with status "documented". Neither SDK ships a colossal-symbol game and no doc ' +
+				'describes one, so there is no verified pattern to adapt: the post-draw board ' +
+				'rewrite would be written from engine primitives and proven by execution. This ' +
+				'entry claimed "built" and named a recipe that does not exist, which is how it ' +
+				'reached a spec discussion as a buildable option.',
+		},
 		combinesWith: ['ways_pays', 'freespins'],
 		conflictsWith: [{ id: 'cluster_pays', why: 'A block symbol spanning several cells breaks the orthogonal group counting cluster pays depends on.' }],
 		trademark: null,
-		recipe: 'colossal',
+		recipe: null,
 	},
 	split_symbol: {
 		id: 'split_symbol',

@@ -1,6 +1,6 @@
 # Mechanics library — what is in it, and where each came from
 
-Generated from `src/lib/mechanicsLibrary.js` by `forge mechanics --doc`. **24 of 56** work today (18 generate code, 6 from a spec setting); 1 adaptable from a shipped math-sdk sample; 26 would have to be built; 5 blocked. 29 reference games indexed.
+Generated from `src/lib/mechanicsLibrary.js` by `forge mechanics --doc`. **23 of 56** work today (17 generate code, 6 from a spec setting); 1 adaptable from a shipped math-sdk sample; 27 would have to be built; 5 blocked. 29 reference games indexed.
 
 **Status** — `built` generates code today · `config` works from a spec setting · `sample` adaptable from a shipped math-sdk sample · `roadmap` would be built from primitives · `blocked` engine limit or licence.
 
@@ -75,7 +75,7 @@ Everything here is a plain-language **rule** plus attribution. No studio's asset
 | **Nudging reel**<br>`nudging_reel` | `roadmap` T2 | ways, lines | Razor Shark (Push Gaming) | A partially visible stack nudges up or down until it is fully in view, often granting a respin. |
 | **Symbol upgrade**<br>`symbol_upgrade` | `roadmap` T1 | lines, ways, cluster | Jack and the Beanstalk (NetEnt) | Low-paying symbols are promoted to high-paying ones, permanently for the round or for one spin. |
 | **Symbol conversion**<br>`symbol_transform` | `roadmap` T1 | cluster, scatter, lines, ways | Reactoonz (Play'n GO); Mental (Nolimit City) | Every instance of one symbol type becomes another, manufacturing a win that was not there. |
-| **Colossal symbol**<br>`colossal_symbol` | `built` T3 | ways, lines | — | A symbol occupying an NxN block, counting as N separate symbols in each cell it covers. |
+| **Colossal symbol**<br>`colossal_symbol` | `roadmap` T3 | ways, lines | — | A symbol occupying an NxN block, counting as N separate symbols in each cell it covers. |
 | **Split symbol**<br>`split_symbol` | `roadmap` T2 | ways | — | A symbol splits every other symbol it touches into two, doubling the effective ways count per split reel. A very cheap route to enormous ways counts without variable reel heights. |
 | **Paying scatter**<br>`paying_scatter` | `config` T0 | lines, ways, cluster, scatter | — | The trigger scatter also awards an instant prize when it lands in sufficient numbers. |
 | **Blocker cells**<br>`blocker_cell` | `roadmap` T1 | cluster, scatter | — | Inert cells that pay nothing and are removable only by an adjacent win, opening space as the round goes. |

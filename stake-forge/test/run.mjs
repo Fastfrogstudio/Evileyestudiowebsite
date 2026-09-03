@@ -5786,6 +5786,30 @@ test('the RTP report survives a production-sized lookup table', () => {
 	assert.ok(Number.isFinite(summary.p999));
 });
 
+test('no mechanic claims to be built unless its recipe can generate it', () => {
+	// The two registries are written by hand and drifted: colossal_symbol claimed
+	// status "built" and named a `colossal` recipe that does not exist, while
+	// behaviorRecipes had it as "documented — no verified pattern to generate
+	// from". A wrong status here reaches a customer as a buildable option.
+	const generable = new Set(['verified', 'builtin']);
+	for (const [id, entry] of Object.entries(MECHANIC_LIBRARY)) {
+		if (entry.status !== 'built') continue;
+		const recipe = entry.recipe ? BEHAVIOR_RECIPES[entry.recipe] : null;
+		if (entry.recipe) {
+			assert.ok(recipe, `${id} names recipe "${entry.recipe}", which does not exist`);
+			assert.ok(
+				generable.has(recipe.status),
+				`${id} is "built" but recipe "${entry.recipe}" is "${recipe.status}"`,
+			);
+		} else {
+			assert.ok(
+				entry.generator || entry.math?.sample,
+				`${id} is "built" with no recipe, no generator and no sample to adapt`,
+			);
+		}
+	}
+});
+
 // ── report ──────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(60)}`);
 if (failures.length) {
