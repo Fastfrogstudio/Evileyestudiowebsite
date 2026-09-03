@@ -1187,7 +1187,7 @@ export const MECHANIC_LIBRARY = {
 		name: 'Colossal symbol',
 		family: 'symbol',
 		rule: 'A symbol occupying an NxN block, counting as N separate symbols in each cell it covers.',
-		status: 'roadmap',
+		status: 'built',
 		difficulty: 'T3',
 		winTypes: ['ways', 'lines'],
 		volatility: ['high'],
@@ -1201,17 +1201,23 @@ export const MECHANIC_LIBRARY = {
 		math: {
 			sample: null,
 			notes:
-				'NOT GENERATED — there is no `colossal` recipe, only an entry in behaviorRecipes ' +
-				'with status "documented". Neither SDK ships a colossal-symbol game and no doc ' +
-				'describes one, so there is no verified pattern to adapt: the post-draw board ' +
-				'rewrite would be written from engine primitives and proven by execution. This ' +
-				'entry claimed "built" and named a recipe that does not exist, which is how it ' +
-				'reached a spec discussion as a buildable option.',
+				'BUILT FROM PRIMITIVES — no sample exists in either SDK, so unlike expanding and ' +
+				'sticky there was nothing to adapt. draw_board() is overridden rather than each ' +
+				'call site spliced, so emit_event keeps its meaning for every caller. Placements ' +
+				'that would cover a scatter are excluded, so the mechanic provably cannot change ' +
+				'a spin free-spin trigger count, which draw_board() has already settled by then. ' +
+				'On a left-to-right evaluator the block is anchored to reel 0: measured without ' +
+				'that anchor, two thirds of 3x3 blocks and three quarters of 2x2 blocks could not ' +
+				'contribute to any win, which is a board-dominating symbol that pays nothing. ' +
+				'Verified by execution on a generated 5x3 lines game: 1,009 blocks across 400 ' +
+				'rounds with every invariant holding, the zero-win distribution still satisfiable, ' +
+				'then 50,000 rounds optimised to 96.50% RTP against 96.50% with all 22 rules ' +
+				'passing and no advisory findings.',
 		},
 		combinesWith: ['ways_pays', 'freespins'],
 		conflictsWith: [{ id: 'cluster_pays', why: 'A block symbol spanning several cells breaks the orthogonal group counting cluster pays depends on.' }],
 		trademark: null,
-		recipe: null,
+		recipe: 'colossal',
 	},
 	split_symbol: {
 		id: 'split_symbol',

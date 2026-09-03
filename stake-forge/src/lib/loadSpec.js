@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { MECHANIC_IDS, getMechanic, GRID_GROWTH_MODES, GLOBAL_MULT_GROWTH_MODES } from './mechanics.js';
 import { normaliseSymbol, assignOrders, sortSymbols, reachableWinSizes } from './taxonomy.js';
-import { validateBehaviors } from './behaviorRecipes.js';
+import { validateBehaviors, validateBehaviorCombinations } from './behaviorRecipes.js';
 import { validateScreens } from './screens.js';
 import { BOARD_MECHANICS } from './boardMechanics.js';
 import { VOLATILITY_IDS } from './optimisation.js';
@@ -451,6 +451,7 @@ export function loadGameSpec(specPath) {
 					betModes: spec?.game?.betModes,
 				});
 			}
+			validateBehaviorCombinations(symbols, { errors });
 		}
 
 		// Some sample apps reference a symbol by name in their own components, so

@@ -17,6 +17,7 @@ import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 
 import { DEFAULT_BATCH, chooseBatchSize } from '../src/commands/mathRun.js';
+import { renderColossalMath } from '../src/lib/recipes/colossal.js';
 import { summarise } from '../src/commands/mathReport.js';
 import {
 	replaceAssignment,
@@ -5808,6 +5809,71 @@ test('no mechanic claims to be built unless its recipe can generate it', () => {
 			);
 		}
 	}
+});
+
+// ── colossal ────────────────────────────────────────────────────────────────
+
+test('a colossal block on a left-to-right evaluator is anchored to reel 0', () => {
+	// Lines and ways score from reel 0, so a block that misses it cannot pay.
+	// Measured unanchored on a 5x3 lines game: two thirds of 3x3 blocks and three
+	// quarters of 2x2 blocks were cosmetic.
+	for (const winType of ['lines', 'ways']) {
+		const out = renderColossalMath({ colossalSymbol: 'H1', winType });
+		assert.match(out.classMethods[0].constants.join('\n'), /COLOSSAL_ANCHOR_LEFT = True/);
+	}
+	// Position carries no meaning where adjacency does, so there it roams.
+	for (const winType of ['cluster', 'scatter']) {
+		const out = renderColossalMath({ colossalSymbol: 'H1', winType });
+		assert.match(out.classMethods[0].constants.join('\n'), /COLOSSAL_ANCHOR_LEFT = False/);
+	}
+	// Paying both ways means reel 0 is no longer privileged.
+	const both = renderColossalMath({ colossalSymbol: 'H1', winType: 'lines', paysBothWays: true });
+	assert.match(both.classMethods[0].constants.join('\n'), /COLOSSAL_ANCHOR_LEFT = False/);
+});
+
+test('the colossal stamp recomputes the special-symbol record', () => {
+	// create_board_reelstrips() builds that record WHILE drawing. Stamping cells
+	// behind it leaves it stale, and a stale record means a covered scatter still
+	// counts toward the free-spin trigger.
+	const out = renderColossalMath({ colossalSymbol: 'H1' });
+	const body = out.classMethods[0].source;
+	assert.match(body, /self\.get_special_symbols_on_board\(\)/);
+	// ...and it must never cover one in the first place, so the trigger count
+	// this mechanic inherits from draw_board() is the one that ships.
+	assert.match(body, /scatter_cells/);
+	assert.match(body, /covered & scatter_cells/);
+});
+
+test('a colossal block carries one multiplier, not one per cell', () => {
+	// Symbol uses __slots__ and create_symbol() runs the special-symbol functions,
+	// so nine cells would roll nine multipliers — and apply_added_symbol_mult()
+	// SUMS them on a winning line. Nine small symbols, not one big one.
+	const body = renderColossalMath({ colossalSymbol: 'W' }).classMethods[0].source;
+	assert.match(body, /anchor\.defn\.special_flags/);
+	assert.match(body, /cell\.assign_attribute\(dict\(shared\)\)/);
+});
+
+test('colossal hooks draw_board rather than splicing each call site', () => {
+	// Replacing every `self.draw_board()` line puts the reveal in a different
+	// place per method and collides with any other recipe splicing the same line.
+	const out = renderColossalMath({ colossalSymbol: 'H1' });
+	const patch = out.overridePatches.find((p) => p.id === 'colossal:draw_board');
+	assert.ok(patch, 'must override draw_board');
+	assert.match(patch.pythonMethod, /super\(\)\.draw_board\(emit_event=False/);
+	// The block must land BEFORE the reveal, or the client is sent a board that
+	// does not match the one the evaluator scored.
+	const stamp = patch.pythonMethod.indexOf('assign_colossal_block');
+	const reveal = patch.pythonMethod.indexOf('reveal_event');
+	assert.ok(stamp > -1 && reveal > stamp, 'the stamp must precede the reveal');
+	// An engine override needs the imports the call it replaces was using.
+	assert.ok(patch.imports?.length, 'draw_board override must bring its imports');
+});
+
+test('the colossal ladder never offers an edge the board cannot hold', () => {
+	// A 3x3 needs three reels AND three rows on each of them.
+	const out = renderColossalMath({ colossalSymbol: 'H1', size: 3 });
+	assert.equal(out.maxColossalSize, 3);
+	assert.deepEqual(out.requiredConditions, ['colossal_size']);
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

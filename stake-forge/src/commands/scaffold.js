@@ -97,7 +97,11 @@ function applyRecipes(appDir, spec) {
 				results.push({ tag, symbol: symbol.name, action: 'not-generated', recipe });
 				continue;
 			}
-			const emitted = recipe.emitWeb({ wildSymbol: symbol.name, gameName: spec.game.name });
+			const emitted = recipe.emitWeb({
+				wildSymbol: symbol.name,
+				colossalSymbol: symbol.name,
+				gameName: spec.game.name,
+			});
 			applyWebRecipe(appDir, emitted);
 			results.push({ tag, symbol: symbol.name, action: 'generated', recipe });
 		}

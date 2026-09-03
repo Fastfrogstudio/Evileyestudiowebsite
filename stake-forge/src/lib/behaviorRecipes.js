@@ -30,6 +30,7 @@
 import { ENGINE_SPECIAL_KEYS } from './taxonomy.js';
 import { renderExpandingMath, renderExpandingWeb } from './recipes/expanding.js';
 import { renderStickyMath } from './recipes/sticky.js';
+import { renderColossalMath, renderColossalWeb } from './recipes/colossal.js';
 
 /**
  * @typedef {object} BehaviorRecipe
@@ -293,7 +294,7 @@ export const BEHAVIOR_RECIPES = {
 	colossal: {
 		id: 'colossal',
 		title: 'Colossal / oversized symbol block',
-		status: 'documented',
+		status: 'verified',
 		tier: 3,
 		appliesToRoles: ['high', 'wild'],
 		// Written fresh onto each newly drawn board; nothing carries it across a
@@ -306,18 +307,43 @@ export const BEHAVIOR_RECIPES = {
 		suggestedSpecialKeys: [],
 		referenceSample: { math: null, web: null },
 		verifiedAgainst:
-			'NO SAMPLE FOUND in either SDK. Neither math-sdk games/ nor web-sdk apps/ ships a ' +
-			'colossal-symbol game, and no doc under docs/math_docs describes one. Listed here ' +
-			'so `forge audit` can still tell you which animation states it needs, but there is ' +
-			'no verified pattern to generate from — this one is genuinely from-scratch, and the ' +
-			'board-level override lives in your own draw_board/create_board_reelstrips.',
+			'BUILT FROM PRIMITIVES, NOT ADAPTED. No sample exists in either SDK and no doc ' +
+			'under docs/math_docs describes one, so unlike expanding/sticky there was nothing ' +
+			'to copy. What it stands on: draw_board() is overridden rather than spliced at each ' +
+			'call site, so emit_event keeps its meaning for every existing caller; the stamp ' +
+			'calls get_special_symbols_on_board() because create_board_reelstrips() built that ' +
+			'record while drawing and stamping behind it leaves it stale; and placements that ' +
+			'would cover a scatter are excluded, because draw_board() has ALREADY settled this ' +
+			'spin trigger count and covering one would rewrite that decision after the fact. ' +
+			'Proven by execution: py_compile, GameConfig(), live spins emitting colossalSymbol, ' +
+			'and a statistical run with RTP on target.',
 		mathHooks: {
-			executables: ['post-draw board rewrite replacing an NxN region with one symbol'],
+			executables: ['colossal_placements', 'assign_colossal_block'],
+			override: ['draw_board'],
 		},
+		/**
+		 * Two recipes cannot both own the reveal. colossal overrides draw_board and
+		 * emits its event after the reveal draw_board sends; expanding instead calls
+		 * draw_board(emit_event=False) and emits its OWN reveal once the wilds are
+		 * written. Generated together the colossal block is still stamped and still
+		 * pays, but its event is never sent — the client sees the block on the board
+		 * with nothing telling it a block landed. Found by running the pair, not by
+		 * reading them.
+		 */
+		conflictsWithBehaviors: [
+			{
+				id: 'expanding',
+				why:
+					'both own the board reveal — expanding emits its own after writing wilds, ' +
+					'which swallows the colossal event even though the block still stamps',
+			},
+		],
 		webHooks: {
-			bookEvents: ['(game-specific)'],
+			bookEvents: ['colossalSymbol'],
 			component: 'ColossalSymbol.svelte',
 		},
+		emitMath: renderColossalMath,
+		emitWeb: renderColossalWeb,
 	},
 
 	// ────────────────────────────── tier 2, builtin ─────────────────────────
@@ -450,6 +476,34 @@ export function requiredStatesForSymbol(symbol, defaultStates) {
 }
 
 /** Validate `behaviors:` tags against the registry and the symbol's role. */
+/**
+ * Conflicts BETWEEN behaviors, which per-symbol validation cannot see: the two
+ * tags usually sit on different symbols (a colossal high and an expanding wild),
+ * so the check has to run once over the whole symbol list.
+ */
+export function validateBehaviorCombinations(symbols, { errors }) {
+	const present = new Map();
+	for (const symbol of symbols) {
+		for (const tag of symbol.behaviors ?? []) {
+			if (!present.has(tag)) present.set(tag, symbol.name);
+		}
+	}
+
+	const reported = new Set();
+	for (const [tag, owner] of present) {
+		for (const conflict of getRecipe(tag)?.conflictsWithBehaviors ?? []) {
+			if (!present.has(conflict.id)) continue;
+			const pair = [tag, conflict.id].sort().join('+');
+			if (reported.has(pair)) continue;
+			reported.add(pair);
+			errors.push(
+				`behavior "${tag}" on ${owner} conflicts with "${conflict.id}" on ` +
+					`${present.get(conflict.id)}: ${conflict.why}.`,
+			);
+		}
+	}
+}
+
 export function validateBehaviors(symbol, { mechanic, errors, warnings, betModes }) {
 	for (const tag of symbol.behaviors) {
 		const recipe = getRecipe(tag);

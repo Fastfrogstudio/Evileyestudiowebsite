@@ -154,6 +154,22 @@ function patchGameConfig(gameDir, spec, mechanic, { recipes }) {
 						: '"landing_wilds": {0: 100, 1: 20, 2: 5},',
 				);
 			}
+			if (key === 'colossal_size') {
+				// 0 means no block this spin. The ladder never offers an edge the
+				// board cannot hold: a 3x3 needs three reels AND three rows on each
+				// of them, so a 5x3 fits 2 and 3 while a 5x2 fits only 2.
+				const max = Math.min(
+					recipe.emitted?.maxColossalSize ?? 3,
+					spec.game.reels.count,
+					Math.min(...spec.game.reels.rows),
+				);
+				const weights = ['0: 100'];
+				// Weighted so the bigger block is the rarer one — a 3x3 covers 60%
+				// of a 5x3 board, and at even weights it stops being an event.
+				if (max >= 2) weights.push('2: 22');
+				if (max >= 3) weights.push('3: 6');
+				conditionKeys.push(`"colossal_size": {${weights.join(', ')}},`);
+			}
 			if (key === 'prize_values') {
 				// Weighted prize ladder for a hold-and-win round, shaped after
 				// 0_0_expwilds' superspin distribution: small values common, the top
@@ -383,6 +399,12 @@ function applyOverridePatches(gameDir, patches) {
 			// mapping attached. reset_superspin is called by the game loop
 			// directly rather than dispatched by symbol.
 			source = replaceOrInsertMethod(source, 'GameStateOverride', patch.pythonMethod, patch.probe).source;
+			// A method that overrides an ENGINE method usually needs whatever the
+			// engine call it replaces was importing — draw_board's reveal_event,
+			// for one — so a patch may bring its own imports.
+			for (const imp of patch.imports ?? []) {
+				source = ensureImport(source, imp.module, imp.names).source;
+			}
 			continue;
 		}
 
@@ -1166,6 +1188,11 @@ function applyRecipes(gameDir, spec) {
 				superspinModes: Object.entries(spec.game.betModes)
 					.filter(([, mode]) => mode.superspin)
 					.map(([name]) => name),
+				colossalSymbol: symbol.name,
+				size: spec.game.colossal?.size,
+				gameTypes: spec.game.colossal?.gameTypes ?? mechanic.gameTypes,
+				winType: mechanic.winType,
+				paysBothWays: Boolean(spec.game.paysBothWays),
 			});
 
 			for (const file of emitted.files ?? []) {
@@ -1294,7 +1321,12 @@ export function mathScaffold({ specPath, mathSdkDir, force }) {
 		if (r.action === 'generated') {
 			console.log(
 				chalk.green('✓'),
-				`behavior "${r.tag}" on ${r.symbol}: generated from ${r.recipe.referenceSample.math}`,
+				// A recipe built from primitives has no sample to name, and printing
+				// "generated from null" reads like a bug in the tool rather than a
+				// true statement about where the code came from.
+				r.recipe.referenceSample.math
+					? `behavior "${r.tag}" on ${r.symbol}: generated from ${r.recipe.referenceSample.math}`
+					: `behavior "${r.tag}" on ${r.symbol}: generated from engine primitives (no sample exists)`,
 			);
 		} else if (r.action === 'builtin') {
 			console.log(chalk.cyan('·'), `behavior "${r.tag}": built-in (tier 2), config only`);
