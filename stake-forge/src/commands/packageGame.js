@@ -218,7 +218,7 @@ export function staleAgainst(rawFile, publishedFile) {
 	return null;
 }
 
-export function inspectMathPublish({ gameDir, gameId }) {
+export async function inspectMathPublish({ gameDir, gameId }) {
 	const publish = path.join(gameDir, 'library', 'publish_files');
 	const problems = [];
 	const files = [];
@@ -384,41 +384,75 @@ export function inspectMathPublish({ gameDir, gameId }) {
 		// only one here that reads inside the compressed books.
 		const booksFile = path.join(publish, mode.events ?? '');
 		if (!fs.existsSync(booksFile)) continue;
-		let books;
+
+		// ── read the books as a STREAM, not as a string ─────────────────────
+		// zstdDecompressSync(...).toString() worked on every test game and fails
+		// on every real one. A 40MB compressed bonus mode expands past V8's
+		// maximum string length (about 512MB), and the error it throws —
+		// "Cannot create a string longer than 0x1fffffe8 characters" — was
+		// reported as the FILE being undecompressable: "the RGS reads it as
+		// zStandard, so if this fails here it fails there". Exactly backwards.
+		// The file is fine; the check could not hold it.
+		//
+		// A bundle blocked from upload by its own verifier, with a message
+		// blaming the file, is the worst failure this command has. So the books
+		// are decompressed through a stream and consumed a line at a time, which
+		// is also how the RGS reads them.
+		const bookPayouts = new Map();
+		let round = 0;
+		let readError = null;
 		try {
-			books = zlib.zstdDecompressSync(fs.readFileSync(booksFile)).toString();
+			await new Promise((resolve, reject) => {
+				const source = fs.createReadStream(booksFile).pipe(zlib.createZstdDecompress());
+				let carry = '';
+				const consume = (line) => {
+					if (!line.trim()) return;
+					round += 1;
+					let parsed;
+					try {
+						parsed = JSON.parse(line);
+					} catch {
+						problems.push(`${mode.events} round ${round} is not valid JSON — the RGS reads jsonl`);
+						return;
+					}
+					// "The three JSON key fields: id, events, payoutMultipler are
+					// required for every round returned."
+					for (const key of ['id', 'events', 'payoutMultiplier']) {
+						if (!(key in parsed)) {
+							problems.push(
+								`${mode.events} round ${round} has no "${key}" — the RGS requires id, events ` +
+									`and payoutMultiplier on every round`,
+							);
+							return;
+						}
+					}
+					bookPayouts.set(parsed.id, parsed.payoutMultiplier);
+				};
+
+				source.on('data', (chunk) => {
+					carry += chunk.toString('utf8');
+					let cut = carry.indexOf('\n');
+					while (cut !== -1) {
+						consume(carry.slice(0, cut));
+						carry = carry.slice(cut + 1);
+						cut = carry.indexOf('\n');
+					}
+				});
+				source.on('end', () => {
+					consume(carry);
+					resolve();
+				});
+				source.on('error', reject);
+			});
 		} catch (err) {
+			readError = err;
+		}
+		if (readError) {
 			problems.push(
-				`${mode.events} could not be decompressed (${err.message}). The RGS reads it as ` +
+				`${mode.events} could not be decompressed (${readError.message}). The RGS reads it as ` +
 					`zStandard, so if this fails here it fails there.`,
 			);
 			continue;
-		}
-
-		const bookPayouts = new Map();
-		let round = 0;
-		for (const line of books.split('\n')) {
-			if (!line.trim()) continue;
-			round += 1;
-			let parsed;
-			try {
-				parsed = JSON.parse(line);
-			} catch {
-				problems.push(`${mode.events} round ${round} is not valid JSON — the RGS reads jsonl`);
-				break;
-			}
-			// "The three JSON key fields: id, events, payoutMultipler are required
-			// for every round returned."
-			for (const key of ['id', 'events', 'payoutMultiplier']) {
-				if (!(key in parsed)) {
-					problems.push(
-						`${mode.events} round ${round} has no "${key}" — the RGS requires id, events ` +
-							`and payoutMultiplier on every round`,
-					);
-					break;
-				}
-			}
-			bookPayouts.set(parsed.id, parsed.payoutMultiplier);
 		}
 
 		let mismatched = 0;
@@ -522,7 +556,7 @@ export async function packageGame({ specPath, sdkDir, mathSdkDir, outDir, skipBu
 
 	// ── math ──────────────────────────────────────────────────────────────────
 	const mathGameDir = path.join(mathSdkDir, 'games', gameId);
-	const inspection = inspectMathPublish({ gameDir: mathGameDir, gameId });
+	const inspection = await inspectMathPublish({ gameDir: mathGameDir, gameId });
 
 	const mathOut = path.join(target, 'math');
 	fs.removeSync(mathOut);

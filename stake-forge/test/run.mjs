@@ -1741,7 +1741,7 @@ function writeBooks(file, n, { payoutFor = (i) => i * 10 } = {}) {
 	fs.writeFileSync(file, zlib.zstdCompressSync(Buffer.from(`${lines}\n`)));
 }
 
-function withPublishDir(setup, fn) {
+async function withPublishDir(setup, fn) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-pkg-'));
 	try {
 		const publish = path.join(root, 'library', 'publish_files');
@@ -1765,14 +1765,14 @@ function withPublishDir(setup, fn) {
 		writeJson(path.join(publish, 'index.json'), {
 			modes: [{ name: 'base', cost: 1, events: 'books_base.jsonl.zst', weights: 'lookUpTable_base_0.csv' }],
 		});
-		setup({ root, publish, tables, configs, rows });
-		return fn({ root, publish, tables, configs });
+		await setup({ root, publish, tables, configs, rows });
+		return await fn({ root, publish, tables, configs });
 	} finally {
 		fs.rmSync(root, { recursive: true, force: true });
 	}
 }
 
-test('a CSV that disagrees with the books on a payout is caught', () => {
+test('a CSV that disagrees with the books on a payout is caught', async () => {
 	// The single check that decides an upload. data_format.md: "We require the
 	// payoutMuliplier value in the third column to exactly match those provided in
 	// the game-logic file. These values are extracted and hashed to ensure
@@ -1780,15 +1780,15 @@ test('a CSV that disagrees with the books on a payout is caught', () => {
 	//
 	// Nothing local would otherwise tell you: every file is present, well-formed
 	// and internally consistent, and the bundle is rejected on upload.
-	withPublishDir(
+	await withPublishDir(
 		({ publish }) => {
 			// One round pays something the table does not claim.
 			writeBooks(path.join(publish, 'books_base.jsonl.zst'), 100, {
 				payoutFor: (i) => (i === 9 ? 9999 : i * 10),
 			});
 		},
-		({ root }) => {
-			const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+		async ({ root }) => {
+			const result = await inspectMathPublish({ gameDir: root, gameId: 'x' });
 			assert.equal(result.ok, false);
 			assert.ok(
 				result.problems.some((p) => /HASHES the third column/.test(p)),
@@ -1798,10 +1798,10 @@ test('a CSV that disagrees with the books on a payout is caught', () => {
 	);
 });
 
-test('a books round missing a required RGS key is caught', () => {
+test('a books round missing a required RGS key is caught', async () => {
 	// "The three JSON key fields: id, events, payoutMultipler are required for
 	// every round returned."
-	withPublishDir(
+	await withPublishDir(
 		({ publish }) => {
 			const lines = Array.from({ length: 100 }, (_, i) =>
 				JSON.stringify(i === 3 ? { id: i, payoutMultiplier: i * 10 } : { id: i, payoutMultiplier: i * 10, events: [] }),
@@ -1811,8 +1811,8 @@ test('a books round missing a required RGS key is caught', () => {
 				zlib.zstdCompressSync(Buffer.from(`${lines}\n`)),
 			);
 		},
-		({ root }) => {
-			const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+		async ({ root }) => {
+			const result = await inspectMathPublish({ gameDir: root, gameId: 'x' });
 			assert.ok(
 				result.problems.some((p) => /has no "events"/.test(p)),
 				`expected the missing key to be named, got: ${JSON.stringify(result.problems)}`,
@@ -1821,18 +1821,18 @@ test('a books round missing a required RGS key is caught', () => {
 	);
 });
 
-test('a lookup table with a non-integer payout is caught', () => {
+test('a lookup table with a non-integer payout is caught', async () => {
 	// "rows of uint64 values" — the RGS reads these as unsigned integers to avoid
 	// misinterpreting values due to rounding or floating-point errors.
-	withPublishDir(
+	await withPublishDir(
 		({ publish }) => {
 			const rows = Array.from({ length: 100 }, (_, i) =>
 				i === 5 ? `${i},7,1.5` : `${i},7,${i * 10}`,
 			).join('\n');
 			fs.writeFileSync(path.join(publish, 'lookUpTable_base_0.csv'), `${rows}\n`);
 		},
-		({ root }) => {
-			const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+		async ({ root }) => {
+			const result = await inspectMathPublish({ gameDir: root, gameId: 'x' });
 			assert.ok(
 				result.problems.some((p) => /three unsigned integers/.test(p)),
 				`expected the malformed row to be named, got: ${JSON.stringify(result.problems)}`,
@@ -1841,84 +1841,84 @@ test('a lookup table with a non-integer payout is caught', () => {
 	);
 });
 
-test('a complete publish folder passes', () => {
-	withPublishDir(() => {}, ({ root }) => {
-		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+test('a complete publish folder passes', async () => {
+	await withPublishDir(() => {}, async ({ root }) => {
+		const result = await inspectMathPublish({ gameDir: root, gameId: 'x' });
 		assert.deepEqual(result.problems, []);
 		assert.equal(result.ok, true);
 		assert.equal(result.optimised, true);
 	});
 });
 
-test('missing compressed books is caught, and named as the compression flag', () => {
+test('missing compressed books is caught, and named as the compression flag', async () => {
 	// index.json names books_<mode>.jsonl.zst, which only exist when the
 	// simulation ran with compression. Without it the index points at nothing.
-	withPublishDir(({ publish }) => {
+	await withPublishDir(({ publish }) => {
 		fs.rmSync(path.join(publish, 'books_base.jsonl.zst'));
-	}, ({ root }) => {
-		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+	}, async ({ root }) => {
+		const result = await inspectMathPublish({ gameDir: root, gameId: 'x' });
 		assert.equal(result.ok, false);
 		assert.match(result.problems.join('\n'), /books_base\.jsonl\.zst is missing/);
 		assert.match(result.problems.join('\n'), /math:run --compress/);
 	});
 });
 
-test('un-optimised lookup tables are caught', () => {
+test('un-optimised lookup tables are caught', async () => {
 	// publish_files' table is a byte-for-byte COPY of the raw one until the
 	// optimiser runs, so its presence proves nothing. Uploading it publishes
 	// whatever RTP the raw simulation happened to have.
-	withPublishDir(({ publish, tables }) => {
+	await withPublishDir(({ publish, tables }) => {
 		fs.copyFileSync(path.join(tables, 'lookUpTable_base.csv'), path.join(publish, 'lookUpTable_base_0.csv'));
-	}, ({ root }) => {
-		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+	}, async ({ root }) => {
+		const result = await inspectMathPublish({ gameDir: root, gameId: 'x' });
 		assert.equal(result.ok, false);
 		assert.match(result.problems.join('\n'), /RAW simulation, not the optimised/);
 	});
 });
 
-test('an optimisation against a DIFFERENT run is caught', () => {
+test('an optimisation against a DIFFERENT run is caught', async () => {
 	// The nastiest one: the table differs from the raw table, so it looks
 	// optimised, but its simulation ids no longer match the books beside it.
-	withPublishDir(({ publish, rows }) => {
+	await withPublishDir(({ publish, rows }) => {
 		fs.writeFileSync(path.join(publish, 'lookUpTable_base_0.csv'), rows(40, 7));
-	}, ({ root }) => {
-		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+	}, async ({ root }) => {
+		const result = await inspectMathPublish({ gameDir: root, gameId: 'x' });
 		assert.equal(result.ok, false);
 		assert.match(result.problems.join('\n'), /40 rows against the simulation's 100/);
 	});
 });
 
-test('an empty sha256 in config.json is caught', () => {
+test('an empty sha256 in config.json is caught', async () => {
 	// The SDK only WARNS when it cannot hash the compressed books, and writes "".
-	withPublishDir(({ configs }) => {
+	await withPublishDir(({ configs }) => {
 		writeJson(path.join(configs, 'config.json'), {
 			bookShelfConfig: [{ name: 'base', booksFile: { file: 'books_base.jsonl.zst', sha256: '' } }],
 		});
-	}, ({ root }) => {
-		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+	}, async ({ root }) => {
+		const result = await inspectMathPublish({ gameDir: root, gameId: 'x' });
 		assert.equal(result.ok, false);
 		assert.match(result.problems.join('\n'), /EMPTY sha256/);
 	});
 });
 
-test('a sha256 that no longer matches the file is caught', () => {
+test('a sha256 that no longer matches the file is caught', async () => {
 	// The books were rebuilt after the config was written.
-	withPublishDir(({ configs }) => {
+	await withPublishDir(({ configs }) => {
 		writeJson(path.join(configs, 'config.json'), {
 			bookShelfConfig: [{ name: 'base', booksFile: { file: 'books_base.jsonl.zst', sha256: 'deadbeef' } }],
 		});
-	}, ({ root }) => {
-		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+	}, async ({ root }) => {
+		const result = await inspectMathPublish({ gameDir: root, gameId: 'x' });
 		assert.equal(result.ok, false);
 		assert.match(result.problems.join('\n'), /does not match the file in publish_files/);
 	});
 });
 
-test('a missing index.json stops immediately — the RGS reads it first', () => {
-	withPublishDir(({ publish }) => {
+test('a missing index.json stops immediately — the RGS reads it first', async () => {
+	await withPublishDir(({ publish }) => {
 		fs.rmSync(path.join(publish, 'index.json'));
-	}, ({ root }) => {
-		const result = inspectMathPublish({ gameDir: root, gameId: 'x' });
+	}, async ({ root }) => {
+		const result = await inspectMathPublish({ gameDir: root, gameId: 'x' });
 		assert.equal(result.ok, false);
 		assert.match(result.problems.join('\n'), /index\.json is missing/);
 	});
