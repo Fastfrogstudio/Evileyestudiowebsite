@@ -346,6 +346,17 @@ export function loadGameSpec(specPath) {
 		errors.push(
 			`game.volatility must be one of: ${VOLATILITY_IDS.join(', ')} (got "${spec.game.volatility}")`,
 		);
+	} else if (!spec?.game?.volatility) {
+		// Volatility decides how the RTP divides between base game and feature,
+		// how often each pays, and how far the optimiser reaches for the top of
+		// the range. It is the single biggest shape decision in a spec, and
+		// leaving it out silently produces a medium game — which is a reasonable
+		// default and a terrible thing to arrive at by accident.
+		warnings.push(
+			`game.volatility is not set, so this builds as "medium". It is the biggest single ` +
+				`shape decision in the spec — how much of the RTP the base game keeps, how often it ` +
+				`pays, and how top-heavy the wins are. Set it explicitly: ${VOLATILITY_IDS.join(', ')}.`,
+		);
 	}
 
 	// ── symbols ─────────────────────────────────────────────────────────────

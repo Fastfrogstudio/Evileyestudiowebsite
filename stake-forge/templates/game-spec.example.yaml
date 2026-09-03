@@ -16,6 +16,22 @@ game:
   workingName: "Le Bandit"
   rtp: 0.965
 
+  # How the RTP is spread — the biggest single shape decision in this file.
+  # It sets how much of the return the base game keeps, how often it pays, and
+  # how top-heavy the wins are.
+  #
+  #   low        pays often, pays small        base game keeps ~77% of RTP
+  #   medium     the shape most slots have     ~60%
+  #   high       long dry spells, big features ~43%
+  #   very_high  most of the money is in the feature   ~29%
+  #   extreme    the base game barely pays     ~14%, and the rest arrives 1 in ~700
+  #
+  # Above `high` the volatility comes from DISPERSION, not from paying less
+  # often: Stake's approval criteria hold the base hit rate between 1-in-2 and
+  # 1-in-10, so every tier stays inside that band and concentrates the money
+  # instead of withholding it.
+  volatility: medium
+
   # Which base mechanic to start from. Each maps to a real sample in BOTH SDKs,
   # so you inherit a working spin/reveal/win/freespin flow on both sides:
   #   lines   -> math games/0_0_lines    web apps/lines

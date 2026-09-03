@@ -467,7 +467,13 @@ export function stripProfileFor(mechanic, stripId) {
  * and wins are frequent and small; an EXTREME one wants a steep curve so the top
  * symbols are genuinely rare and the tail is long.
  */
-export const VOLATILITY_ALPHA = { low: 0.4, medium: 0.7, high: 1.0 };
+export const VOLATILITY_ALPHA = {
+	low: 0.4,
+	medium: 0.7,
+	high: 1.0,
+	very_high: 1.2,
+	extreme: 1.4,
+};
 
 export function symbolFrequencies(spec, { volatility, alpha: alphaOverride } = {}) {
 	const profileId = volatility ?? spec.game.volatility ?? 'medium';

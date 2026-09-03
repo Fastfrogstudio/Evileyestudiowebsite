@@ -313,11 +313,31 @@ sample games here, both bet modes land on their target RTP to two decimal places
 
 ```yaml
 game:
-  volatility: high   # low | medium | high
+  volatility: high   # low | medium | high | very_high | extreme
 ```
 
 It decides how the RTP divides between base game and feature and what hit rates to aim for, and it
-generates `game_optimization.py`. That file is yours once written — `math:optimise` will not
+generates `game_optimization.py`.
+
+| tier | base game keeps | base hit rate | feature | spread |
+|---|---|---|---|---|
+| `low` | 80% of RTP | 1 in 2.5 | 1 in 120 | 0.5 |
+| `medium` | 62% | 1 in 3.5 | 1 in 200 | 1 |
+| `high` | 45% | 1 in 5 | 1 in 350 | 2 |
+| `very_high` | 30% | 1 in 6.5 | 1 in 550 | 3.2 |
+| `extreme` | 15% | 1 in 8 | 1 in 700 | 5 |
+
+**Above `high`, volatility stops coming from rarity.** The obvious lever — pay less often — is
+closed off by Stake's own criteria, which hold the base hit rate between 1-in-2 and 1-in-10;
+`math:validate` fails a drier game with *"players read a 1-in-20 game as broken"*. So the top of
+the ladder is built from DISPERSION instead: the same number of paying rounds, with the money
+concentrated in far fewer of them. At `extreme` a player still hits something once in eight spins
+and almost none of those hits are worth anything, because 85% of the return is sitting in a feature
+that arrives once in 700.
+
+Max-win frequency is deliberately not one of these levers. It is derived from the cap to land on
+1-in-20,000,000 whatever the profile, so a tier cannot quietly trade Stake's max-win rule for a
+steeper curve. That file is yours once written — `math:optimise` will not
 overwrite it without `--force`, because tuning those targets by hand is exactly the work the step
 exists to enable. Its header says which parts are asserted fact and which are opinions from the
 profile.

@@ -67,7 +67,7 @@ import { balanceSpec, baseGameTarget, calibrateAlpha, scalePaytable, EV_TOLERANC
 import { validateMode, topShareOfRtp, RULE_PROVENANCE, featureVariety, FEATURE_VARIETY } from '../src/lib/mathValidate.js';
 import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS, featureLoad, FEATURE_LOAD_LIMIT, stickySaturation, STICKY_SATURATION_LIMIT } from '../src/lib/mathBalance.js';
 import { BOARD_MECHANICS, boardMechanicFor } from '../src/lib/boardMechanics.js';
-import { stripProfileFor, placeScatters } from '../src/lib/reelDesign.js';
+import { stripProfileFor, placeScatters, VOLATILITY_ALPHA } from '../src/lib/reelDesign.js';
 import { MECHANIC_LIBRARY, MECHANIC_IDS, libraryStats, checkCombination, artRequirementsFor, mechanicsForWinType, getMechanicEntry, STATUS_ORDER } from '../src/lib/mechanicsLibrary.js';
 import { renderMechanicsDoc } from '../src/lib/mechanicsDoc.js';
 import { REFERENCE_GAMES, gamesUsing, gamesByMaxWin } from '../src/lib/referenceGames.js';
@@ -3777,6 +3777,66 @@ test('a written guide beside the default yaml path is found rather than ignored'
 	fs.writeFileSync(path.join(dir, 'art-guide.md'), STUDIO_GUIDE);
 	const guide = loadArtGuide(path.join(dir, 'art-guide.yaml'));
 	assert.equal(guide?._format, 'markdown');
+});
+
+group('volatility — a ladder that stays inside the rules');
+
+const LADDER = ['low', 'medium', 'high', 'very_high', 'extreme'];
+
+test('every tier keeps the base hit rate inside the band Stake accepts', () => {
+	// The ceiling that shapes the whole ladder. math:validate fails a base mode
+	// outside 1-in-2 to 1-in-10 — "too dry; players read a 1-in-20 game as
+	// broken" — so a tier cannot buy volatility by paying less often. The top of
+	// the ladder stops at 8 rather than 10 because a MEASURED hit rate drifts
+	// from its target, and a tier that only passes when the simulation is kind
+	// is not a tier that passes.
+	for (const id of VOLATILITY_IDS) {
+		const hr = VOLATILITY_PROFILES[id].baseHitRate;
+		assert.ok(hr >= 2, `${id} base hit rate ${hr} is below the floor of 2`);
+		assert.ok(hr <= 8, `${id} base hit rate ${hr} leaves no headroom below the gate at 10`);
+	}
+});
+
+test('the ladder is strictly ordered on every lever it turns', () => {
+	// Each rung has to be more volatile than the one below it on all four levers
+	// at once. A ladder that raises the spread while flattening the split is not
+	// a ladder, it is two settings that happen to be adjacent in an object.
+	for (let i = 1; i < LADDER.length; i += 1) {
+		const below = VOLATILITY_PROFILES[LADDER[i - 1]];
+		const rung = VOLATILITY_PROFILES[LADDER[i]];
+		const why = `${LADDER[i]} vs ${LADDER[i - 1]}`;
+		assert.ok(rung.freegameShare > below.freegameShare, `${why}: freegameShare`);
+		assert.ok(rung.baseHitRate > below.baseHitRate, `${why}: baseHitRate`);
+		assert.ok(rung.freegameHitRate > below.freegameHitRate, `${why}: freegameHitRate`);
+		assert.ok(rung.scaleSpread > below.scaleSpread, `${why}: scaleSpread`);
+		assert.ok(
+			VOLATILITY_ALPHA[LADDER[i]] > VOLATILITY_ALPHA[LADDER[i - 1]],
+			`${why}: reel-weighting alpha`,
+		);
+	}
+});
+
+test('every tier has a strip alpha and a shape band, not just a profile', () => {
+	// Three separate objects in three files have to agree on the tier list. Miss
+	// one and the failure is silent: a tier with no alpha falls back to 0.7 and
+	// designs medium reel strips under an extreme label, and a tier with no band
+	// is reported against medium's shape and warns for being exactly what it is.
+	for (const id of VOLATILITY_IDS) {
+		assert.ok(VOLATILITY_ALPHA[id] !== undefined, `${id} has no VOLATILITY_ALPHA entry`);
+	}
+	assert.deepEqual(VOLATILITY_IDS, LADDER, 'the ladder and the profile list must not drift');
+});
+
+test('the base game keeps less of the RTP at every rung', () => {
+	// What the tiers mean in the one number a designer actually feels: how much
+	// of the return never reaches the base game. Volatility above `high` comes
+	// from moving money into the feature, not from withholding it.
+	const shares = LADDER.map((id) => 1 - VOLATILITY_PROFILES[id].freegameShare);
+	for (let i = 1; i < shares.length; i += 1) {
+		assert.ok(shares[i] < shares[i - 1], `${LADDER[i]} keeps more base RTP than ${LADDER[i - 1]}`);
+	}
+	assert.ok(shares[0] >= 0.75, 'low should leave most of the RTP in the base game');
+	assert.ok(shares.at(-1) <= 0.2, 'extreme should leave almost none of it there');
 });
 
 group('cutout — art generated on white');

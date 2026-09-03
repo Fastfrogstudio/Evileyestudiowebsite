@@ -51,11 +51,36 @@ import { betModeCriteria } from './mathGenerators.js';
  * (0_0_lines runs a 0.599/0.367 base/free split at hr 3.5 and 200), not
  * measurements of anything. They exist so a new game starts somewhere sane and
  * has one knob to turn, not so anyone treats them as correct.
+ *
+ * ── The ceiling that shapes the whole ladder ────────────────────────────────
+ * The obvious way to make a game more volatile is to make it pay less often,
+ * and above `high` that route is CLOSED. Stake's approval criteria put the base
+ * hit rate between 1-in-2 and 1-in-10, and `math:validate` fails a game outside
+ * it — "too dry; players read a 1-in-20 game as broken". So there is nowhere to
+ * go past about 1-in-8 without failing the gate.
+ *
+ * Volatility above `high` therefore has to come from DISPERSION rather than
+ * rarity: the same number of paying rounds, but with the money concentrated in
+ * far fewer of them. The three levers that do that are
+ *
+ *   freegameShare      how much of the RTP the base game never sees
+ *   freegameHitRate    how rarely the feature that holds it arrives
+ *   scaleSpread        how far the optimiser reaches for the top of the range
+ *
+ * At `extreme` the base game returns 15% of RTP and the other 85% arrives once
+ * in ~700 spins. A player still hits something once in eight rounds; almost
+ * none of those hits are worth anything. That is what extreme volatility
+ * actually feels like, and it is reachable inside Stake's rule where a drier
+ * base game is not.
+ *
+ * `wincapRtpAllocation` is deliberately NOT part of this. Max-win frequency is
+ * derived from the cap itself to land on 1-in-20,000,000 whatever the profile,
+ * so a tier cannot quietly trade Stake's max-win rule for a steeper curve.
  */
 export const VOLATILITY_PROFILES = {
 	low: {
 		label: 'Low — pays often, pays small',
-		freegameShare: 0.25,
+		freegameShare: 0.2,
 		baseHitRate: 2.5,
 		freegameHitRate: 120,
 		/** Multiplier applied to the win ranges the scaling curve targets. */
@@ -71,9 +96,26 @@ export const VOLATILITY_PROFILES = {
 	high: {
 		label: 'High — long dry spells, big features',
 		freegameShare: 0.55,
-		baseHitRate: 5.5,
+		baseHitRate: 5,
 		freegameHitRate: 350,
 		scaleSpread: 2,
+	},
+	very_high: {
+		label: 'Very high — most of the money is in the feature',
+		freegameShare: 0.7,
+		baseHitRate: 6.5,
+		freegameHitRate: 550,
+		scaleSpread: 3.2,
+	},
+	extreme: {
+		label: 'Extreme — the base game barely pays; everything rides on the feature',
+		// 85/15 to the feature, arriving once in ~700 spins. The base hit rate
+		// stops at 8: the gate fails at 10 and a measured rate drifts from its
+		// target, so the last two are left as headroom rather than spent.
+		freegameShare: 0.85,
+		baseHitRate: 8,
+		freegameHitRate: 700,
+		scaleSpread: 5,
 	},
 };
 

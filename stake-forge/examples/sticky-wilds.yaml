@@ -49,6 +49,7 @@ game:
   gameId: 0_0_stickywild
   workingName: Sticky Wild
   rtp: 0.965
+  volatility: medium
   mechanic: lines
   stickyMultiplierWilds:
     start: 2

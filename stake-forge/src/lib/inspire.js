@@ -77,6 +77,38 @@ function deepMerge(target, source) {
  *   as a note on the draft, never looked up
  * @param {string} [input.raw] the original text, for the boundary check
  */
+/**
+ * Volatility, read from how somebody describes the game.
+ *
+ * Ordered most specific first and matched in that order, because the phrases
+ * overlap: "very high volatility" contains "high volatility", and a
+ * first-match-wins scan over a list sorted the other way answers `high` to a
+ * sentence that plainly says otherwise.
+ *
+ * A description that says nothing about volatility leaves the field alone
+ * rather than guessing — `medium` is then the default, and it is the default
+ * because it was not mentioned, not because anyone chose it.
+ */
+const VOLATILITY_PHRASES = [
+	{ id: 'extreme', pattern: /\b(extreme|insane|brutal|max(imum)?)[- ]?(volatilit|varian|swing)/i },
+	{ id: 'extreme', pattern: /\bvolatilit\w*\s+(is\s+)?(extreme|insane|brutal)/i },
+	{ id: 'very_high', pattern: /\b(very|super|ultra|extremely)[- ]?high[- ]?(volatilit|varian)/i },
+	{ id: 'very_high', pattern: /\bvolatilit\w*\s+(is\s+)?(very|super|ultra)\s+high/i },
+	{ id: 'high', pattern: /\bhigh[- ]?(volatilit|varian|swing)/i },
+	{ id: 'high', pattern: /\bvolatilit\w*\s+(is\s+)?high\b/i },
+	{ id: 'low', pattern: /\blow[- ]?(volatilit|varian)/i },
+	{ id: 'low', pattern: /\bvolatilit\w*\s+(is\s+)?low\b/i },
+	{ id: 'medium', pattern: /\b(medium|moderate|balanced)[- ]?(volatilit|varian)/i },
+];
+
+/** The tier a description asks for, or null when it does not mention one. */
+export function volatilityFrom(text) {
+	for (const entry of VOLATILITY_PHRASES) {
+		if (entry.pattern.test(text)) return entry.id;
+	}
+	return null;
+}
+
 export function analyseInspiration(input) {
 	assertNoExtractedMaterial(input.raw ?? JSON.stringify(input), input);
 
@@ -87,6 +119,10 @@ export function analyseInspiration(input) {
 
 	const draft = baseDraft(input);
 	const lines = [];
+	// Read across the whole description rather than per feature line: volatility
+	// is a property of the game, and people state it in a sentence of its own.
+	const askedVolatility = volatilityFrom(features.join(' \n '));
+	if (askedVolatility) draft.game.volatility = askedVolatility;
 	const winTypeVotes = new Map();
 	const unmatched = [];
 	const extracted = [];

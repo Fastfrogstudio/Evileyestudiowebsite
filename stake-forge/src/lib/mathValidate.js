@@ -72,6 +72,11 @@ const VOLATILITY_BANDS = {
 	low: { min: 0, max: 0.5 },
 	medium: { min: 0.2, max: 0.8 },
 	high: { min: 0.4, max: 1 },
+	// Above `high` the bands only have a floor worth stating. The top 1% of
+	// rounds carrying nearly all the RTP is the DEFINITION of these tiers, not a
+	// symptom of anything, so the ceiling stays at 1 and the floor does the work.
+	very_high: { min: 0.6, max: 1 },
+	extreme: { min: 0.75, max: 1 },
 };
 
 /** The win bands a game should have no holes in, as fractions of the cap. */
