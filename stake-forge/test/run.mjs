@@ -3779,6 +3779,86 @@ test('a written guide beside the default yaml path is found rather than ignored'
 	assert.equal(guide?._format, 'markdown');
 });
 
+group('max win — one knob per game');
+
+/** A spec object with a given cap arrangement, written where loadGameSpec can read it. */
+function specWithCap(dir, { gameMaxWin = undefined, modeCaps = {} } = {}) {
+	const spec = specFor('lines');
+	delete spec._mechanic;
+	spec.symbols = spec.symbols.map((s) => (s.paytable ? { ...s, paytable: { 3: 5, '4-5': 20 } } : s));
+	spec.game = { ...spec.game };
+	if (gameMaxWin !== undefined) spec.game.maxWin = gameMaxWin;
+	spec.game.betModes = {
+		base: { cost: 1, rtp: 0.965, feature: true, buyBonus: false, ...(modeCaps.base ?? {}) },
+		bonus: { cost: 100, rtp: 0.965, feature: false, buyBonus: true, ...(modeCaps.bonus ?? {}) },
+	};
+	const file = path.join(dir, 'game-spec.yaml');
+	fs.writeFileSync(file, YAML.stringify(spec));
+	return file;
+}
+
+test('game.maxWin sets the cap for every bet mode', () => {
+	// The cap is a property of the GAME: it sets self.wincap, the reel strips the
+	// designer builds, and the RTP the optimiser allocates to reaching it. One
+	// copy per bet mode makes "change the max win" three edits that can silently
+	// disagree, and two modes with different caps is not a richer game — it is a
+	// game where one of them is wrong.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-'));
+	const spec = loadGameSpec(specWithCap(dir, { gameMaxWin: 100000 }));
+	assert.equal(spec.game.betModes.base.maxWin, 100000);
+	assert.equal(spec.game.betModes.bonus.maxWin, 100000);
+});
+
+test('a mode may still override it, and disagreeing modes without one are flagged', () => {
+	// A hold-and-win side game with its own smaller ceiling is a real case, so
+	// the inheritance is a default rather than a lock.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-'));
+	const overridden = loadGameSpec(
+		specWithCap(dir, { gameMaxWin: 100000, modeCaps: { bonus: { maxWin: 2000 } } }),
+	);
+	assert.equal(overridden.game.betModes.base.maxWin, 100000);
+	assert.equal(overridden.game.betModes.bonus.maxWin, 2000);
+
+	// But modes that disagree with NO game-level cap is the accident, not the
+	// intent, and it is exactly the state a spec drifts into by hand-editing.
+	const drifted = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-'));
+	const spec = loadGameSpec(
+		specWithCap(drifted, { modeCaps: { base: { maxWin: 5000 }, bonus: { maxWin: 100000 } } }),
+	);
+	assert.ok(
+		spec._warnings.some((w) => /different max wins/.test(w)),
+		`expected a disagreement warning, got: ${spec._warnings.join(' | ')}`,
+	);
+});
+
+test('an unreachable cap is caught by arithmetic, not by an overnight simulation', () => {
+	// The failure mode this exists for: force_wincap re-rolls until a round pays
+	// EXACTLY the cap. A game that cannot produce one does not error — it runs
+	// forever, and a simulation that looks hung is hung. analyseMaxWin answers it
+	// in milliseconds, and until now nothing called it.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-'));
+	const spec = loadGameSpec(specWithCap(dir, { gameMaxWin: 50_000_000 }));
+	const verdict = analyseMaxWin(spec);
+	assert.equal(verdict.reachable, false);
+	assert.ok(verdict.ceiling > 0, 'it still reports what the board CAN reach');
+	assert.ok(verdict.headroom < 1);
+});
+
+test('raising the cap moves the RTP allocated to reaching it, holding 1-in-20,000,000', () => {
+	// The cap is not just a number in a config: hit_rate = max_win / rtp_allocated,
+	// so choosing the cap IS choosing the allocation. This is what makes max win a
+	// knob that adjusts the maths rather than a label on top of it — and why the
+	// frequency stays put while the cap moves across an order of magnitude.
+	for (const cap of [5000, 10000, 25000, 50000, 100000]) {
+		const allocated = wincapRtpAllocation(cap);
+		const frequency = cap / allocated;
+		assert.ok(
+			Math.abs(frequency - 20_000_000) / 20_000_000 < 0.01,
+			`${cap}x allocates ${allocated}, giving 1-in-${Math.round(frequency)} rather than 1-in-20,000,000`,
+		);
+	}
+});
+
 group('volatility — a ladder that stays inside the rules');
 
 const LADDER = ['low', 'medium', 'high', 'very_high', 'extreme'];

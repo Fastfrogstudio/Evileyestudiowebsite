@@ -75,6 +75,44 @@ export function loadGameSpec(specPath) {
 	if (!spec?.game?.betModes || !Object.keys(spec.game.betModes).length) {
 		errors.push('game.betModes must define at least one mode');
 	} else {
+		// ── one max win per GAME ────────────────────────────────────────────
+		// The cap is a property of the game, not of a bet mode: it sets
+		// self.wincap, the reel strips the designer builds, and the RTP the
+		// optimiser allocates to reaching it. Every mode having its own copy
+		// means changing "the max win" is three edits that can silently
+		// disagree — and two modes with different caps is not a richer game, it
+		// is a game where one mode's cap is wrong.
+		//
+		// game.maxWin is therefore the value, and a mode may still override it
+		// where that is genuinely intended (a hold-and-win side game with its
+		// own smaller ceiling).
+		if (spec.game.maxWin !== undefined) {
+			const cap = Number(spec.game.maxWin);
+			if (!Number.isFinite(cap) || cap <= 0) {
+				errors.push(`game.maxWin must be a positive number (got "${spec.game.maxWin}")`);
+			} else {
+				for (const mode of Object.values(spec.game.betModes)) {
+					if (mode && mode.maxWin === undefined) mode.maxWin = cap;
+				}
+			}
+		} else {
+			const caps = [
+				...new Set(
+					Object.values(spec.game.betModes)
+						.map((mode) => Number(mode?.maxWin))
+						.filter((n) => Number.isFinite(n) && n > 0),
+				),
+			];
+			if (caps.length > 1) {
+				warnings.push(
+					`bet modes declare different max wins (${caps.map((c) => `${c.toLocaleString()}x`).join(', ')}). ` +
+						`Set game.maxWin once instead — the cap drives the reel strips, the wincap ` +
+						`distribution and the RTP allocated to reaching it, so modes that disagree are ` +
+						`three different games sharing a spec.`,
+				);
+			}
+		}
+
 		for (const [name, mode] of Object.entries(spec.game.betModes)) {
 			// A hold-and-win round is its own game with its own loop, reel strip
 			// and criteria. A bonus buy is a purchased spin of the base game that

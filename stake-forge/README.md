@@ -342,6 +342,31 @@ overwrite it without `--force`, because tuning those targets by hand is exactly 
 exists to enable. Its header says which parts are asserted fact and which are opinions from the
 profile.
 
+**Max win is one number per game**, and it is a real knob rather than a label:
+
+```yaml
+game:
+  maxWin: 25000   # every bet mode inherits this unless it sets its own
+```
+
+Changing it regenerates the reel strips, sets `self.wincap`, and moves the RTP allocated to the
+wincap distribution — because `hit_rate = max_win / rtp_allocated`, so choosing the cap *is*
+choosing how often it pays. The frequency stays at 1-in-20,000,000 from 5,000x to 100,000x; what
+changes is the allocation that buys it.
+
+`math:balance` reports whether the cap is reachable before anything simulates:
+
+```
+✓ max win 5,000x is reachable — board ceiling 200,000x, 40x headroom.
+! max win 100,000x against a 200,000x ceiling — 2x headroom.
+✗ MAX WIN UNREACHABLE — 500,000x declared, but the best board this paytable and
+  multiplier set can produce is 200,000x.
+```
+
+That last one matters more than it looks. `force_wincap` re-rolls until a round pays *exactly* the
+cap, so a game that cannot produce one does not fail — it runs forever, and an overnight simulation
+that looks hung is hung.
+
 **A hold-and-win mode** is a bet mode, not a modifier:
 
 ```yaml

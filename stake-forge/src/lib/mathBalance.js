@@ -34,7 +34,7 @@
  * The simulation remains the ground truth; this is the pre-flight check.
  */
 
-import { stripColumns, VOLATILITY_ALPHA, STRIP_PROFILES, stripProfileFor } from './reelDesign.js';
+import { stripColumns, VOLATILITY_ALPHA, STRIP_PROFILES, stripProfileFor, analyseMaxWin } from './reelDesign.js';
 import { estimateStripEv } from './rtpModel.js';
 import { VOLATILITY_PROFILES, wincapRtpAllocation, splitRtp } from './optimisation.js';
 import { getMechanic } from './mechanics.js';
@@ -649,6 +649,14 @@ export function balanceSpec(spec, { volatility, spins = 6000 } = {}) {
 		ratio,
 		inBand,
 		paytableScale,
+		// ── can this game reach the cap it declares? ──────────────────────
+		// Arithmetic, answerable in milliseconds, and previously computed by a
+		// function nothing called. It belongs here because this is the step
+		// whose whole job is catching in a second what otherwise fails after an
+		// overnight simulation — and an unreachable cap does not fail loudly.
+		// force_wincap re-rolls until a round pays EXACTLY the cap, so a game
+		// that cannot produce one does not error, it runs forever.
+		maxWin: analyseMaxWin(spec),
 		tumbles,
 		cascade,
 		cascadeSafe: cascadeRisk.length === 0,

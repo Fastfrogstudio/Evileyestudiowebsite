@@ -65,6 +65,39 @@ export async function mathBalance({ specPath, volatility, apply = false, json = 
 
 	// Modelled without multipliers or features, and said so rather than left to
 	// be inferred: a reader who takes this for the game's RTP will be wrong.
+	// ── the cap ─────────────────────────────────────────────────────────────
+	// Reported whatever the verdict, because "it reaches the cap easily" is as
+	// worth knowing as the opposite when someone is choosing a max win.
+	const mw = report.maxWin;
+	if (mw && mw.target > 0) {
+		console.log('');
+		const cap = `${mw.target.toLocaleString()}x`;
+		const ceiling = `${Math.round(mw.ceiling).toLocaleString()}x`;
+		if (!mw.reachable) {
+			console.log(
+				`  ✗ MAX WIN UNREACHABLE — ${cap} declared, but the best board this paytable and ` +
+					`multiplier set can produce is ${ceiling}.`,
+			);
+			console.log(
+				`    force_wincap re-rolls until a round pays exactly the cap, so this does not fail — ` +
+					`it runs forever. Raise the paytable, raise the multiplier cap, or lower the max win.`,
+			);
+		} else if (mw.headroom < 4) {
+			console.log(
+				`  ! max win ${cap} against a ${ceiling} ceiling — ${fmt(mw.headroom)}x headroom.`,
+			);
+			console.log(
+				`    Reachable, but only on a near-perfect board. The forced max-win rounds will take ` +
+					`a long time to find, and a long simulation that looks hung usually is not.`,
+			);
+		} else {
+			console.log(
+				`  ✓ max win ${cap} is reachable — board ceiling ${ceiling}, ${fmt(mw.headroom)}x headroom` +
+					`${mw.cascades ? ', and this mechanic accumulates across cascades on top of that' : ''}.`,
+			);
+		}
+	}
+
 	console.log('');
 	console.log('  Modelled on the base board only — no multipliers, no cascades, no free spins.');
 	console.log('  The simulation is the ground truth; this is the pre-flight check.');
