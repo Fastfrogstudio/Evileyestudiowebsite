@@ -5853,20 +5853,24 @@ test('a colossal block carries one multiplier, not one per cell', () => {
 	assert.match(body, /cell\.assign_attribute\(dict\(shared\)\)/);
 });
 
-test('colossal hooks draw_board rather than splicing each call site', () => {
-	// Replacing every `self.draw_board()` line puts the reveal in a different
-	// place per method and collides with any other recipe splicing the same line.
+test('colossal joins the shared reveal hook instead of owning draw_board', () => {
+	// draw_board emits the reveal at its end, so a mechanic spliced after a
+	// `self.draw_board()` call rewrites a board the client has already been sent.
+	// Measured on a generated sticky-multiplier-wild game before the hook existed:
+	// 3,930 of 8,312 multiplier wins were not explained by the revealed board.
+	// One override defers the reveal; every board-writing mechanic appends to it.
 	const out = renderColossalMath({ colossalSymbol: 'H1' });
-	const patch = out.overridePatches.find((p) => p.id === 'colossal:draw_board');
-	assert.ok(patch, 'must override draw_board');
-	assert.match(patch.pythonMethod, /super\(\)\.draw_board\(emit_event=False/);
-	// The block must land BEFORE the reveal, or the client is sent a board that
-	// does not match the one the evaluator scored.
-	const stamp = patch.pythonMethod.indexOf('assign_colossal_block');
-	const reveal = patch.pythonMethod.indexOf('reveal_event');
-	assert.ok(stamp > -1 && reveal > stamp, 'the stamp must precede the reveal');
-	// An engine override needs the imports the call it replaces was using.
-	assert.ok(patch.imports?.length, 'draw_board override must bring its imports');
+	assert.ok(
+		!out.overridePatches.some((p) => p.probe === 'draw_board'),
+		'no recipe may own the reveal — that is the shared hook',
+	);
+	const apply = out.boardHooks.find((h) => h.method === 'apply_board_mechanics');
+	const emit = out.boardHooks.find((h) => h.method === 'emit_board_mechanic_events');
+	assert.ok(apply, 'the stamp goes in before the reveal');
+	assert.ok(emit, 'the announcement goes out after it');
+	assert.match(apply.body.join('\n'), /assign_colossal_block/);
+	assert.match(emit.body.join('\n'), /colossal_symbol_event/);
+	assert.ok(emit.imports?.length, 'the emit hook must bring its own import');
 });
 
 test('the colossal ladder never offers an edge the board cannot hold', () => {

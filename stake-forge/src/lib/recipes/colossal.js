@@ -175,27 +175,18 @@ def colossal_symbol_event(gamestate) -> None:
 `;
 
 	/**
-	 * Hooking draw_board itself rather than splicing every call site.
+	 * The stamp and its announcement go into the shared deferred-reveal hook
+	 * rather than into an override of draw_board owned by this recipe.
 	 *
-	 * The alternative — replacing each `self.draw_board()` line the way the
-	 * expanding recipe does — puts the reveal in a different place per method and
-	 * fights any other recipe that splices around the same line. Overriding the
-	 * engine method keeps `emit_event` meaning exactly what it meant, so every
-	 * existing caller is unaffected and the ordering is decided in one place.
+	 * draw_board emits the reveal at its end, so anything written after a
+	 * `self.draw_board()` call rewrites a board the client has already been sent.
+	 * The scaffolder generates ONE draw_board override that defers the reveal
+	 * until apply_board_mechanics() has run, and every board-writing mechanic —
+	 * this one, sticky wilds, the cascade ladder — appends into it. Owning that
+	 * override here instead would mean two mechanics fighting over where the
+	 * reveal goes, which is the bug the hook exists to remove.
 	 */
-	const drawBoardOverride = `    def draw_board(self, emit_event: bool = True, trigger_symbol: str = "scatter") -> None:
-        """Draw the board, then stamp the colossal block BEFORE anything is emitted.
 
-        The block has to land before the reveal or the client is sent a board
-        that does not match the one the win evaluator scored.
-        """
-        super().draw_board(emit_event=False, trigger_symbol=trigger_symbol)
-        self.assign_colossal_block()
-        if emit_event:
-            reveal_event(self)
-            if self.colossal_block is not None:
-                colossal_symbol_event(self)
-`;
 
 	return {
 		moduleFunctions: [
@@ -222,19 +213,27 @@ def colossal_symbol_event(gamestate) -> None:
 
 		overridePatches: [
 			{
-				id: 'colossal:draw_board',
-				anchor: 'method',
-				probe: 'draw_board',
-				pythonMethod: drawBoardOverride,
-				imports: [
-					{ module: 'src.events.events', names: ['reveal_event'] },
-					{ module: 'game_events', names: ['colossal_symbol_event'] },
-				],
-			},
-			{
 				id: 'colossal:reset_book',
 				anchor: 'reset_book',
 				pythonBody: '        self.colossal_block = None',
+			},
+		],
+
+		/** Into the shared hook: stamp before the reveal, announce after it. */
+		boardHooks: [
+			{
+				id: 'colossal:apply',
+				method: 'apply_board_mechanics',
+				body: ['        self.assign_colossal_block()'],
+			},
+			{
+				id: 'colossal:emit',
+				method: 'emit_board_mechanic_events',
+				body: [
+					'        if self.colossal_block is not None:',
+					'            colossal_symbol_event(self)',
+				],
+				imports: [{ module: 'game_events', names: ['colossal_symbol_event'] }],
 			},
 		],
 
