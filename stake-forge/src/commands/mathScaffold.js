@@ -3,6 +3,7 @@ import path from 'node:path';
 import chalk from 'chalk';
 
 import { loadGameSpec } from '../lib/loadSpec.js';
+import { renderWinLevelOverride } from '../lib/winLevels.js';
 import { renderDesignedReelCsv, multiplierLadder, renderLadder } from '../lib/reelDesign.js';
 import { balanceSpec } from '../lib/mathBalance.js';
 import { LIFETIMES_SURVIVING_CASCADE } from '../lib/behaviorRecipes.js';
@@ -226,8 +227,31 @@ function patchGameConfig(gameDir, spec, mechanic, { recipes }) {
 		}
 	}
 
+	// The win-level ladder has to be regenerated whenever maxWin moves: the SDK's
+	// table is anchored to its own 5,000x default, so at any other cap its top
+	// bands either never fire or swallow the whole tail. See src/lib/winLevels.js.
+	const cap = maxWinFor(spec);
+	if (cap) {
+		source = replaceOrInsertMethod(
+			source,
+			'GameConfig',
+			renderWinLevelOverride(cap),
+			'get_win_level',
+		).source;
+		applied.push('get_win_level');
+	}
+
 	fs.writeFileSync(configPath, source, 'utf8');
 	return { applied, skipped, inserted };
+}
+
+/** The cap the ladder is built around: game-level, else the largest mode's. */
+function maxWinFor(spec) {
+	if (spec.game.maxWin) return Number(spec.game.maxWin);
+	const perMode = Object.values(spec.game.betModes ?? {})
+		.map((mode) => Number(mode?.maxWin))
+		.filter((n) => Number.isFinite(n) && n > 0);
+	return perMode.length ? Math.max(...perMode) : null;
 }
 
 /**

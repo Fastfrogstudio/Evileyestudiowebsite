@@ -36,6 +36,7 @@
  * studio's job and the whole reason the tool exists.
  */
 
+import { winLevelBands as generatedBands, featureWinLevelBands as featureBands } from './winLevels.js';
 import { getMechanic } from './mechanics.js';
 import { defaultAnimationStates, typeRequiredStates } from './taxonomy.js';
 import { requiredStatesForSymbol, getRecipe } from './behaviorRecipes.js';
@@ -94,48 +95,56 @@ export const SYMBOL_SIZE = { width: 200, height: 200 };
 /**
  * Which win-level banners this game needs, and what each actually fires at.
  *
- * ── Corrected against the engine, having first invented these ───────────────
- * The first version of this banded the levels as FRACTIONS of the cap, on the
- * reasonable-sounding assumption that raising the max win would slide every
- * banner up with it. Config.get_win_level() (src/config/config.py:56) says
- * otherwise: the bands are FIXED absolute multiples of the bet, and only level
- * 9's upper bound and level 10's lower bound track `wincap`. So on a 100,000x
- * game a "big win" still fires at 15x, exactly as it does on a 500x game.
+ * ── Corrected twice, and the second correction reverses the first ────────────
+ * The first version banded these as FRACTIONS of the cap. That was wrong against
+ * the STOCK engine: Config.get_win_level() bands on fixed multiples of the bet,
+ * and only level 9's ceiling and level 10's floor track wincap — so the note
+ * here used to say a "big win" fires at 15x on a 500x game and a 100,000x game
+ * alike.
  *
- * And there are TWO scales, which matters more:
+ * That fixed table is anchored to the SDK's own 5,000x default, and it stops
+ * working at any other cap. Measured on a 20,000x game over 400,000 weighted
+ * rounds: level 9 spanned 100x-20,000x — 278 rounds from 100x to 6,062x all
+ * getting one banner — and level 10 needed an exact max-win round, so the top
+ * celebration never played. The escalation flattened where it should peak.
+ *
+ * So stake-forge now GENERATES a get_win_level override per game (see
+ * src/lib/winLevels.js) and the banners do scale with the cap after all. This
+ * function reads from that same generator, because a brief describing bands the
+ * shipped game does not use is worse than no brief.
+ *
+ * There are still TWO scales, which matters as much as the numbers:
  *
  *   standard    used for setWin — a single win during a spin
  *   endFeature  used for freeSpinEnd — the total of a whole feature
  *
- * The same banner art is played for level 7 in both cases, but level 7 means
- * 30x-50x during a spin and 100x-500x at feature end. An artist told only "super
- * win" cannot know that; an artist told both bands can pitch the animation to
- * cover them.
- *
- * The one place the cap really does change the art brief is level 9, which
- * stretches from its fixed floor all the way to the cap. On a 100,000x game that
- * band runs 100x to 100,000x on the standard scale — a thousandfold range behind
- * one banner. Worth knowing before designing it.
+ * The same banner art plays for level 7 in both cases, but a whole free-spin
+ * round pays far more than one spin — on a measured 20,000x game the base median
+ * round pays 0x against a bought-feature median near 30x — so the feature ladder
+ * starts higher. An artist told only "super win" cannot know that; an artist
+ * told both bands can pitch the animation to cover them.
+ */
+/**
+ * What each scale measures. The BANDS are no longer written here: they are
+ * generated per game from its max win by src/lib/winLevels.js, and the brief has
+ * to state the thresholds the shipped game actually uses. Two copies drifting
+ * would have the art team building banners for bands the game does not have.
  */
 export const WIN_LEVEL_SCALES = {
-	standard: {
-		use: 'a single win during a spin (setWin)',
-		bands: { 6: [15, 30], 7: [30, 50], 8: [50, 100], 9: [100, null], 10: [null, Infinity] },
-	},
-	endFeature: {
-		use: 'the total of a whole free-spin round (freeSpinEnd)',
-		bands: { 6: [50, 100], 7: [100, 500], 8: [500, 2000], 9: [2000, null], 10: [null, Infinity] },
-	},
+	standard: { use: 'a single win during a spin (setWin)' },
+	endFeature: { use: 'the total of a whole free-spin round (freeSpinEnd)' },
 };
 
 export function winLevelBands(maxWin) {
-	// `null` in the table above means "the cap" — substituted here so the brief
-	// states real numbers rather than a symbol the reader has to resolve.
-	const resolve = ([from, to]) => [from === null ? maxWin : from, to === null ? maxWin : to];
+	// Read from the same generator the game's own get_win_level override is built
+	// from, so the brief always states the thresholds that shipped.
+	const standard = generatedBands(maxWin);
+	const feature = featureBands(maxWin);
+	const resolve = ([from, to]) => [from, to === null ? Infinity : to];
 
 	return BANNER_WIN_LEVELS.map((level) => {
-		const [stdFrom, stdTo] = resolve(WIN_LEVEL_SCALES.standard.bands[level]);
-		const [feFrom, feTo] = resolve(WIN_LEVEL_SCALES.endFeature.bands[level]);
+		const [stdFrom, stdTo] = resolve(standard[level - 1]);
+		const [feFrom, feTo] = resolve(feature[level - 1]);
 		return {
 			level,
 			alias: WIN_LEVEL_ALIASES[level],

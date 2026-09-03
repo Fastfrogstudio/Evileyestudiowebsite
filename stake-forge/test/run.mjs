@@ -70,6 +70,13 @@ import { validateMode, topShareOfRtp, RULE_PROVENANCE, featureVariety, FEATURE_V
 import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS, featureLoad, FEATURE_LOAD_LIMIT, stickySaturation, STICKY_SATURATION_LIMIT } from '../src/lib/mathBalance.js';
 import { BOARD_MECHANICS, boardMechanicFor } from '../src/lib/boardMechanics.js';
 import { stripProfileFor, placeScatters, VOLATILITY_ALPHA } from '../src/lib/reelDesign.js';
+import {
+	bannerThresholds,
+	winLevelBands as generatedWinLevelBands,
+	featureWinLevelBands,
+	renderWinLevelOverride,
+	BANNER_FLOOR,
+} from '../src/lib/winLevels.js';
 import { MECHANIC_LIBRARY, MECHANIC_IDS, libraryStats, checkCombination, artRequirementsFor, mechanicsForWinType, getMechanicEntry, STATUS_ORDER } from '../src/lib/mechanicsLibrary.js';
 import { renderMechanicsDoc } from '../src/lib/mechanicsDoc.js';
 import { REFERENCE_GAMES, gamesUsing, gamesByMaxWin } from '../src/lib/referenceGames.js';
@@ -4842,34 +4849,44 @@ test('every required state names the animation and says who asked for it', () =>
 	}
 });
 
-test('the win banners are the engine\'s fixed bands, not fractions of the cap', () => {
-	// Corrected after inventing them. Config.get_win_level() bands on FIXED
-	// multiples of the bet; only level 9's ceiling and level 10's floor track
-	// wincap. A "big win" fires at 15x on a 500x game and on a 100,000x game
-	// alike, which is exactly the sort of thing an art brief must not get wrong.
-	const small = winLevelBands(500);
+test('the brief states the bands the generated game actually uses', () => {
+	// This test used to assert the OPPOSITE — that banners are the engine's fixed
+	// multiples of the bet, corrected into place after an earlier version invented
+	// fractions of the cap. That was true of the stock Config.get_win_level(),
+	// whose table is anchored to the SDK's own 5,000x default. We now override
+	// that method per game, because at 20,000x the stock level 9 spans 100x to
+	// 20,000x and level 10 needs an exact max-win round: measured over 400,000
+	// weighted rounds, 278 rounds from 100x to 6,062x all shared one banner and
+	// the top banner never fired at all.
+	//
+	// So the banners DO move with the cap now — and the brief must read from the
+	// same generator the game does, or the art team builds for bands that do not
+	// ship.
+	for (const cap of [500, 20000, 100000]) {
+		const brief = winLevelBands(cap);
+		const generated = generatedWinLevelBands(cap);
+		for (const band of brief) {
+			assert.equal(band.standard.from, generated[band.level - 1][0], `level ${band.level} @ ${cap}`);
+		}
+		// The stake-relative rungs below the banners still do not move.
+		assert.equal(generatedWinLevelBands(cap)[1][0], 0.1);
+	}
+	// ...and the top banner is reachable without a max-win round, which the stock
+	// table's was not.
 	const huge = winLevelBands(100000);
-	assert.equal(small[0].standard.from, 15);
-	assert.equal(huge[0].standard.from, 15, 'level 6 must not move with the cap');
-	assert.equal(small[0].standard.to, 30);
-
-	// ...and the two that DO move.
-	assert.equal(huge.find((b) => b.level === 9).standard.to, 100000);
-	assert.equal(huge.find((b) => b.level === 10).standard.from, 100000);
-	assert.equal(small.find((b) => b.level === 9).standard.to, 500);
+	assert.ok(huge.find((b) => b.level === 10).standard.from < 100000);
 });
 
 test('the two win-level scales are both reported, because they differ', () => {
-	// The same banner art plays for level 7 on both scales, but level 7 means
-	// 30x-50x during a spin and 100x-500x at feature end. An artist told only
-	// "super win" cannot know that.
+	// The same banner art plays for level 7 on both scales, but a level 7 during a
+	// spin and a level 7 at feature end are different amounts of money. An artist
+	// told only "super win" cannot know that.
 	const bands = winLevelBands(10000);
 	const seven = bands.find((b) => b.level === 7);
-	assert.equal(seven.standard.from, 30);
-	assert.equal(seven.endFeature.from, 100);
+	assert.ok(seven.endFeature.from > seven.standard.from, 'a feature total is not one spin');
 	assert.notEqual(seven.standard.to, seven.endFeature.to);
-	assert.equal(WIN_LEVEL_SCALES.standard.bands[6][0], 15);
-	assert.equal(WIN_LEVEL_SCALES.endFeature.bands[6][0], 50);
+	assert.ok(WIN_LEVEL_SCALES.standard.use.includes('spin'));
+	assert.ok(WIN_LEVEL_SCALES.endFeature.use.includes('free-spin round'));
 });
 
 test('the localisation cost lands on three sheets, not forty', () => {
@@ -5922,6 +5939,82 @@ test('the free-game wild density is reachable from a spec', () => {
 	// ...and so is the base strip, which is not the feature.
 	const br0 = stripProfileFor(mechanic, 'BR0', { spec: { game: { featureWildDensity: 0.001 } } });
 	assert.equal(br0.wildPct, stripProfileFor(mechanic, 'BR0').wildPct);
+});
+
+// ── win levels ──────────────────────────────────────────────────────────────
+
+test('the banner ladder scales with max win and always ascends', () => {
+	// get_win_level() returns the FIRST band that matches, so a table that is not
+	// strictly ascending is a live bug — one rung silently swallows the next.
+	for (const cap of [500, 1000, 5000, 20000, 100000, 250000]) {
+		const th = bannerThresholds(cap);
+		assert.equal(th.length, 5);
+		for (let i = 1; i < th.length; i += 1) {
+			assert.ok(th[i] > th[i - 1], `cap ${cap}: rung ${i} (${th[i]}) must exceed ${th[i - 1]}`);
+		}
+		assert.ok(th[0] >= BANNER_FLOOR, `cap ${cap}: banners must start above the absolute ladder`);
+	}
+});
+
+test('BOTH generated ladders ascend, not just the banner rungs', () => {
+	// The first ascending test only checked bannerThresholds, and the feature
+	// ladder is assembled from a scaled absolute run PLUS a differently-floored
+	// banner run — so the two halves can meet out of order without either half
+	// being wrong on its own. get_win_level() returns the first matching band, so
+	// that would silently swallow a whole tier.
+	for (const cap of [500, 1000, 5000, 20000, 100000]) {
+		for (const [name, bands] of [
+			['spin', generatedWinLevelBands(cap)],
+			['feature', featureWinLevelBands(cap)],
+		]) {
+			for (let i = 1; i < bands.length; i += 1) {
+				assert.ok(
+					bands[i][0] >= bands[i - 1][0],
+					`${name} ladder @ ${cap}: level ${i + 1} starts at ${bands[i][0]}, below level ${i} at ${bands[i - 1][0]}`,
+				);
+			}
+			// ...and each band must start exactly where the last one ended.
+			for (let i = 1; i < bands.length; i += 1) {
+				assert.equal(bands[i][0], bands[i - 1][1], `${name} @ ${cap}: gap before level ${i + 1}`);
+			}
+		}
+	}
+});
+
+test('the top banner is reachable without a max-win round', () => {
+	// At the cap exactly it fires only on a 1-in-20,000,000 round, which is a
+	// celebration nobody ever sees. Measured on the SDK's own table at 20,000x:
+	// level 9 spanned 100x-20,000x and level 10 never fired at all.
+	for (const cap of [5000, 20000, 100000]) {
+		const top = bannerThresholds(cap)[4];
+		assert.ok(top < cap, `cap ${cap}: top banner ${top} must sit below the cap`);
+		assert.ok(top > cap / 10, `cap ${cap}: top banner ${top} must still mean something`);
+	}
+});
+
+test('the stake-relative rungs do NOT scale with max win', () => {
+	// "Did I get my stake back" is a question about the stake. 0.1x, 1x, 2x, 5x
+	// mean the same thing whatever the cap is, so scaling them would be wrong.
+	const small = generatedWinLevelBands(1000).slice(0, 5);
+	const large = generatedWinLevelBands(100000).slice(0, 5);
+	assert.deepEqual(small, large);
+});
+
+test('the generated ladder covers the range with no gap or overlap', () => {
+	const bands = generatedWinLevelBands(20000);
+	assert.equal(bands.length, 10);
+	assert.equal(bands[0][0], 0);
+	assert.equal(bands[9][1], null, 'the top band must be open-ended');
+	for (let i = 1; i < bands.length; i += 1) {
+		assert.equal(bands[i][0], bands[i - 1][1], `band ${i + 1} must start where band ${i} ends`);
+	}
+});
+
+test('the override falls back rather than guessing at an unknown key', () => {
+	const py = renderWinLevelOverride(20000);
+	assert.match(py, /def get_win_level/);
+	assert.match(py, /super\(\)\.get_win_level/, 'an unrecognised winlevel_key must defer to the SDK');
+	assert.match(py, /float\("inf"\)/);
 });
 
 // ── report ──────────────────────────────────────────────────────────────────
