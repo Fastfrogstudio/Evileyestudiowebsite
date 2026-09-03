@@ -134,3 +134,35 @@ ${render(feature)}
         return len(levels)
 `;
 }
+
+/**
+ * ── Why the bands are NOT fitted to the measured distribution ────────────────
+ *
+ * The obvious next step is to place each banner at a percentile of the game's
+ * own winning rounds, so every tier fires at a designed rate whatever shape the
+ * game has. It was built and measured, and it is worse. On the 20,000x game:
+ *
+ *   fitted   level 6 15x-19.4x  1 in 355   <- rarer than level 7
+ *            level 7 19.4x-100x 1 in 150
+ *            level 9, 10                   never
+ *   shipped  level 6 15x-64x    1 in 109
+ *            level 7 64x-270x   1 in 296
+ *            level 10 5000x+    1 in 200,000
+ *
+ * Percentile-fitting puts levels 6-8 at 5.7x/21x/72x on this game, which is
+ * BELOW the 15x where the absolute rungs stop — so either the banners collide
+ * with "did I get my stake back", or clamping them to 15x squashes level 6 into
+ * a 4x-wide band that fires less often than the tier above it.
+ *
+ * The residue this was trying to fix — levels 8 and 9 firing only 1-in-66,667
+ * and 1-in-133,333 in base play — is not a ladder problem. It is the game's win
+ * distribution: 87% of base wins pay under the stake, p99 is 16x, p99.9 is 150x,
+ * and then there is a thin tail to ~6,300x. There is nothing between 270x and
+ * the tail to celebrate, and no banding hides that. The stock table hid it by
+ * making one band cover everything above 100x, which is why its level 9 fired
+ * MORE often than its level 8 — an escalation that got commoner as it climbed.
+ *
+ * Thickening that middle is a MATHS change, not a presentation one: it means
+ * moving RTP out of frequent small wins into rarer large ones, which lowers the
+ * hit rate. That is a deliberate volatility decision and belongs in the spec.
+ */
