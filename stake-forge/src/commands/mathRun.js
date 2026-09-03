@@ -23,7 +23,35 @@ import { mathGameId } from './mathScaffold.js';
  *   lookup_tables/                    per-round payouts, which the RTP report reads
  *   publish_files/                    what actually gets uploaded
  */
-export function mathRun({ specPath, mathSdkDir, sims, python: pythonOverride, compress, onLine }) {
+/**
+ * Peak resident memory during a run is one batch of simulated rounds held in
+ * Python before it is flushed to a temp file. Measured on a feature-heavy bonus
+ * mode — every round buys the free game — at 248 KB per round.
+ *
+ * The SDK's own default batch of 50,000 is therefore ~12 GB, which the kernel
+ * kills on a 16 GB machine. It survives short runs only because base-game rounds
+ * (mostly one spin, mostly losing) are an order of magnitude cheaper than feature
+ * rounds, so the mode that OOMs is never the one you test with.
+ */
+const BYTES_PER_ROUND = 256 * 1024;
+const BATCH_BUDGET_BYTES = 1.25 * 1024 ** 3;
+export const DEFAULT_BATCH = Math.floor(BATCH_BUDGET_BYTES / BYTES_PER_ROUND);
+
+/**
+ * The SDK derives its batch count with `round(num_sims / batch)` and then divides
+ * the rounds back out, so a batch that does not divide the round count silently
+ * simulates slightly more or fewer rounds than asked for. Prefer an exact divisor
+ * at or just below the budget.
+ */
+export function chooseBatchSize(sims, cap = DEFAULT_BATCH) {
+	if (sims <= cap) return Math.max(10, sims);
+	for (let n = cap; n >= Math.floor(cap / 2); n--) {
+		if (sims % n === 0) return n;
+	}
+	return cap;
+}
+
+export function mathRun({ specPath, mathSdkDir, sims, python: pythonOverride, compress, batch, onLine }) {
 	const spec = loadGameSpec(specPath);
 	const gameId = mathGameId(spec);
 	const gameDir = path.join(mathSdkDir, 'games', gameId);
@@ -45,6 +73,10 @@ export function mathRun({ specPath, mathSdkDir, sims, python: pythonOverride, co
 	log(chalk.bold(`\nSimulating "${spec.game.name}" — ${sims} rounds × ${modes.length} bet mode(s)\n`));
 	log(chalk.dim(`  python: ${python}`));
 	log(chalk.dim(`  game:   games/${gameId}\n`));
+	const batchSize = batch ? Math.max(10, batch) : chooseBatchSize(sims);
+	if (batchSize < sims) {
+		log(chalk.dim(`  batch:  ${batchSize} rounds at a time (${Math.ceil(sims / batchSize)} batches per mode)\n`));
+	}
 
 	const script = `
 import sys, json, time, traceback
@@ -64,7 +96,7 @@ try:
         gamestate,
         config,
         ${JSON.stringify(numSims)},
-        ${Math.max(10, Math.min(sims, 50000))},
+        ${batchSize},
         1,
         ${compress ? 'True' : 'False'},
         False,
@@ -77,10 +109,22 @@ print("STAKE_FORGE_JSON:" + json.dumps(out))
 `;
 
 	return new Promise((resolve) => {
+		// Detached so the multiprocessing workers land in their own process group:
+		// killing only the process we spawned leaves those workers orphaned, and an
+		// orphan holding the stdout pipe open turns a crash into a silent hang.
 		const child = spawn(python, ['-u', '-c', script], {
 			cwd: mathSdkDir,
 			env: { ...process.env, PYTHONUNBUFFERED: '1' },
+			detached: true,
 		});
+
+		const killGroup = () => {
+			try {
+				process.kill(-child.pid, 'SIGKILL');
+			} catch {
+				child.kill('SIGKILL');
+			}
+		};
 
 		let result = null;
 		let aborted = null;
@@ -112,7 +156,7 @@ print("STAKE_FORGE_JSON:" + json.dumps(out))
 						aborted =
 							`the "${repeatCriteria ?? 'unknown'}" distribution re-rolled ${count[1]} times ` +
 							'without ever satisfying its criteria.';
-						child.kill('SIGKILL');
+						killGroup();
 						continue;
 					}
 
@@ -133,7 +177,36 @@ print("STAKE_FORGE_JSON:" + json.dumps(out))
 			resolve({ ok: false });
 		});
 
-		child.on('close', () => {
+		/**
+		 * A run can end three ways: cleanly, by our own abort, or by the kernel
+		 * killing python for using too much memory. Only the first two used to be
+		 * handled — an OOM kill left node waiting on a stdout pipe that an orphaned
+		 * multiprocessing worker was still holding open, so a dead run looked like a
+		 * running one, indefinitely. Settle on whichever of exit/close arrives, and
+		 * give the other a short grace period rather than waiting on it forever.
+		 */
+		let exited = null;
+		let settled = false;
+		let grace = null;
+
+		const finish = () => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(grace);
+			done();
+		};
+
+		child.on('exit', (code, signal) => {
+			exited = { code, signal };
+			grace = setTimeout(() => {
+				killGroup();
+				finish();
+			}, 2000);
+			grace.unref?.();
+		});
+		child.on('close', finish);
+
+		function done() {
 			if (aborted) {
 				log(chalk.red(`\n✗ Stopped: ${aborted}`));
 				log(
@@ -149,6 +222,21 @@ print("STAKE_FORGE_JSON:" + json.dumps(out))
 			}
 
 			if (!result) {
+				if (exited?.signal === 'SIGKILL' || exited?.code === 137) {
+					const error =
+						'the simulator was killed by the operating system for using too much memory.';
+					log(chalk.red(`\n✗ Stopped: ${error}`));
+					log(
+						chalk.dim(
+							`\n  Peak memory is one batch of rounds held before it is written out, and\n` +
+								`  feature-heavy modes cost far more per round than base-game ones. This run\n` +
+								`  used a batch of ${batchSize}.\n\n` +
+								'  Re-run with a smaller --batch (halving it halves the memory) — the round\n' +
+								'  count and the maths are unchanged, it just writes out more often.\n',
+						),
+					);
+					return resolve({ ok: false, error });
+				}
 				log(chalk.red('\nSimulation produced no result.'));
 				return resolve({ ok: false });
 			}
@@ -178,6 +266,6 @@ print("STAKE_FORGE_JSON:" + json.dumps(out))
 			log(chalk.dim('  — replaces the placeholder config and reel strips with these\n'));
 
 			resolve({ ok: true, seconds: result.seconds, gameDir, library });
-		});
+		}
 	});
 }

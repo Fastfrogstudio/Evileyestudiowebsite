@@ -164,12 +164,14 @@ program
 	.option('--sims <n>', 'rounds to simulate per bet mode', (v) => Number(v), 1000)
 	.option('--python <path>', 'python interpreter to use')
 	.option('--compress', 'write compressed books (needed for a real upload)', false)
+	.option('--batch <n>', 'rounds held in memory before writing out (default: sized to ~1.25GB)', (v) => Number(v))
 	.action(
 		run(async (opts) =>
 			mathRun({
 				specPath: path.resolve(opts.spec),
 				mathSdkDir: path.resolve(opts.mathSdk),
 				sims: opts.sims,
+				batch: opts.batch,
 				python: opts.python,
 				compress: opts.compress,
 			}),

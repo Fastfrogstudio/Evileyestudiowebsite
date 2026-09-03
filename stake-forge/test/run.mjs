@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 
+import { DEFAULT_BATCH, chooseBatchSize } from '../src/commands/mathRun.js';
 import {
 	replaceAssignment,
 	readAssignment,
@@ -5746,6 +5747,32 @@ test('the collector/payer ordering is recorded as fixed, not configurable', () =
 	assert.match(collector.math.notes, /ORDER IS FIXED/);
 	assert.match(collector.math.notes, /ZEROED/, 'swept cells must not double-pay');
 	assert.equal(MECHANIC_LIBRARY.payer_symbol.status, 'built');
+});
+
+// ── simulation batching ─────────────────────────────────────────────────────
+
+test('the simulation batch is sized to memory, not to the round count', () => {
+	// Peak RSS is one batch of rounds held in Python before it is flushed. At the
+	// 248 KB/round measured on a feature-heavy bonus mode, the SDK's own default
+	// of 50,000 is ~12 GB — which is what the kernel killed at production scale.
+	assert.ok(DEFAULT_BATCH < 50000, 'must be well under the SDK default that OOMs');
+	assert.ok(DEFAULT_BATCH * 256 * 1024 <= 1.5 * 1024 ** 3, 'a batch must fit in ~1.5GB');
+});
+
+test('a batch that does not divide the round count is avoided', () => {
+	// The SDK computes round(sims / batch) batches and then divides the rounds
+	// back out, so an indivisible batch silently simulates a different number of
+	// rounds than was asked for.
+	for (const sims of [500000, 1000000, 20000, 250000]) {
+		const batch = chooseBatchSize(sims);
+		assert.equal(sims % batch, 0, `${sims} / ${batch} left a remainder`);
+		assert.ok(batch <= DEFAULT_BATCH, `${batch} exceeds the memory budget`);
+	}
+});
+
+test('a run smaller than the budget is left in one batch', () => {
+	assert.equal(chooseBatchSize(1000), 1000);
+	assert.equal(chooseBatchSize(10), 10);
 });
 
 // ── report ──────────────────────────────────────────────────────────────────
