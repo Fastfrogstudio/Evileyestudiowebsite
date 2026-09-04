@@ -17,19 +17,28 @@ export function replaceExportConst(source, name, newValueSource) {
 	const valueStart = startIdx + headerMatch[0].length;
 	const openChar = source[valueStart];
 	const closeChar = openChar === '{' ? '}' : openChar === '[' ? ']' : null;
-	if (!closeChar) return { source, replaced: false };
 
-	let depth = 0;
 	let i = valueStart;
-	for (; i < source.length; i++) {
-		if (source[i] === openChar) depth++;
-		else if (source[i] === closeChar) {
-			depth--;
-			if (depth === 0) {
-				i++; // move past the closing bracket
-				break;
+	if (closeChar) {
+		let depth = 0;
+		for (; i < source.length; i++) {
+			if (source[i] === openChar) depth++;
+			else if (source[i] === closeChar) {
+				depth--;
+				if (depth === 0) {
+					i++; // move past the closing bracket
+					break;
+				}
 			}
 		}
+	} else {
+		// A SCALAR value — `export const SYMBOL_SIZE = 120;`. This used to bail
+		// out and report the patch as missed, which is how a scaffold could
+		// silently leave a constant at the sample's value while claiming to have
+		// configured the app. Read to the terminating semicolon instead.
+		const end = source.indexOf(';', valueStart);
+		if (end === -1) return { source, replaced: false };
+		i = end;
 	}
 
 	// consume optional trailing " as const" and the terminating ";"

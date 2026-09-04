@@ -71,6 +71,7 @@ import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS, featureLoad, FEATURE_
 import { BOARD_MECHANICS, boardMechanicFor } from '../src/lib/boardMechanics.js';
 import { mergeSymbolInfoMap } from '../src/commands/importAssets.js';
 import { syncBooks } from '../src/commands/mathSync.js';
+import { symbolSizeFor, DEFAULT_SYMBOL_SIZE } from '../src/lib/layout.js';
 import { stripProfileFor, placeScatters, VOLATILITY_ALPHA } from '../src/lib/reelDesign.js';
 import {
 	bannerThresholds,
@@ -6113,6 +6114,44 @@ test('syncBooks reads COMPRESSED books, which is what a real run produces', () =
 	// paying rounds are preferred, so the preview is not all blanks
 	assert.match(written, /payoutMultiplier: 250/);
 	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ── layout ──────────────────────────────────────────────────────────────────
+
+test('the board is sized against the SDK stages, and portrait is what binds', () => {
+	// utils-layout scales a fixed LOGICAL stage to fit the canvas, so a board's
+	// size only means anything as a fraction of those stages — and they are not
+	// the same shape. Portrait is 800 wide against desktop's 1422, so it runs out
+	// of width first and decides the ceiling.
+	const spec = { game: { reels: { count: 5, rows: [3, 3, 3, 3, 3] } } };
+	const { size, coverage, overflows } = symbolSizeFor(spec);
+	assert.equal(size, DEFAULT_SYMBOL_SIZE);
+	assert.ok(!overflows, 'the default must fit every stage');
+	assert.ok(coverage.portrait.width > coverage.desktop.width, 'portrait is the tight one');
+	// The sample's 120 leaves desktop at 42%, which reads as a board floating in
+	// a lot of nothing; the default fills more without crowding portrait.
+	assert.ok(coverage.desktop.width > 0.45, `desktop coverage ${coverage.desktop.width}`);
+	assert.ok(coverage.portrait.width < 0.95, `portrait must keep a margin, got ${coverage.portrait.width}`);
+});
+
+test('a symbol size that would overflow the narrowest stage is flagged', () => {
+	// Past 100% the board is clipped, not merely tight — and it would be clipped
+	// only in portrait, which is the layout a desktop screenshot never shows.
+	const spec = { game: { reels: { count: 5, rows: [3, 3, 3, 3, 3] }, symbolSize: 200 } };
+	const out = symbolSizeFor(spec);
+	assert.equal(out.size, 200);
+	assert.ok(out.overflows, '5 x 200 = 1000 is wider than the 800 portrait stage');
+});
+
+test('a scalar export can be patched, not just objects and arrays', () => {
+	// replaceExportConst only walked {...} and [...], so `export const
+	// SYMBOL_SIZE = 120;` silently reported as missed and the scaffold left the
+	// sample's value in place while claiming to have configured the app.
+	const src = 'export const SYMBOL_SIZE = 120;\nexport const OTHER = 7;\n';
+	const out = replaceExportConst(src, 'SYMBOL_SIZE', '140');
+	assert.ok(out.replaced);
+	assert.match(out.source, /export const SYMBOL_SIZE = 140;/);
+	assert.match(out.source, /export const OTHER = 7;/, 'the next const must survive');
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

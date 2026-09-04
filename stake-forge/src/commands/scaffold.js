@@ -8,6 +8,7 @@ import { WEB_EVENT_HANDLERS } from '../lib/webEventHandlers.js';
 import { loadGameSpec } from '../lib/loadSpec.js';
 import { renderConfigTs, buildSymbolInfoMap, buildInitialBoard } from '../lib/generators.js';
 import { readSpriteFrames } from '../lib/spriteFrames.js';
+import { symbolSizeFor } from '../lib/layout.js';
 import { highSymbolNames } from '../lib/taxonomy.js';
 import { tsStringify } from '../lib/tsSerialize.js';
 import { replaceExportConst } from '../lib/patchExport.js';
@@ -77,6 +78,10 @@ function patchConstantsTs(appDir, spec) {
 	patch('SYMBOL_INFO_MAP', tsStringify(buildSymbolInfoMap(spec, { availableFrames: frames.keys() })));
 	patch('HIGH_SYMBOLS', tsStringify(highSymbolNames(spec.symbols)));
 	patch('INITIAL_BOARD', tsStringify(buildInitialBoard(spec)));
+	// How big the board is drawn, as a fraction of the SDK's logical stages.
+	// The sample's 120 leaves a 5-reel board at 42% of the desktop stage; see
+	// src/lib/layout.js for why the default is what it is.
+	patch('SYMBOL_SIZE', String(symbolSizeFor(spec).size));
 
 	fs.writeFileSync(constantsPath, source, 'utf8');
 	return missed;
