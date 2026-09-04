@@ -70,6 +70,7 @@ import { validateMode, topShareOfRtp, RULE_PROVENANCE, featureVariety, FEATURE_V
 import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS, featureLoad, FEATURE_LOAD_LIMIT, stickySaturation, STICKY_SATURATION_LIMIT } from '../src/lib/mathBalance.js';
 import { BOARD_MECHANICS, boardMechanicFor } from '../src/lib/boardMechanics.js';
 import { mergeSymbolInfoMap } from '../src/commands/importAssets.js';
+import { syncBooks } from '../src/commands/mathSync.js';
 import { stripProfileFor, placeScatters, VOLATILITY_ALPHA } from '../src/lib/reelDesign.js';
 import {
 	bannerThresholds,
@@ -6077,6 +6078,41 @@ test('a partial art delivery keeps every symbol in SYMBOL_INFO_MAP', () => {
 	for (const name of spec) {
 		assert.ok(merged[name]?.static, `${name} must still have a static reference`);
 	}
+});
+
+test('syncBooks reads COMPRESSED books, which is what a real run produces', () => {
+	// --compress writes books_<mode>.jsonl.zst into publish_files and leaves
+	// library/books empty. syncBooks only knew about the uncompressed file, so on
+	// every real game it found nothing, said so, and left the SAMPLE's story data
+	// in place: 20 MB of someone else's rounds that the preview then announced as
+	// "your maths", and that storybook could not parse fast enough to render.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-sync-'));
+	const library = path.join(dir, 'library');
+	const appDir = path.join(dir, 'app');
+	fs.mkdirSync(path.join(library, 'publish_files'), { recursive: true });
+	fs.mkdirSync(path.join(appDir, 'src', 'stories', 'data'), { recursive: true });
+	// the story file must already exist — syncBooks only replaces what the sample has
+	const target = path.join(appDir, 'src', 'stories', 'data', 'base_books.ts');
+	fs.writeFileSync(target, 'export default [];\n');
+
+	const rounds = [
+		{ id: 1, payoutMultiplier: 0, events: [{ index: 0, type: 'reveal' }] },
+		{ id: 2, payoutMultiplier: 250, events: [{ index: 0, type: 'reveal' }] },
+		{ id: 3, payoutMultiplier: 100, events: [{ index: 0, type: 'reveal' }] },
+	];
+	const jsonl = rounds.map((r) => JSON.stringify(r)).join('\n') + '\n';
+	fs.writeFileSync(
+		path.join(library, 'publish_files', 'books_base.jsonl.zst'),
+		zlib.zstdCompressSync(Buffer.from(jsonl, 'utf8')),
+	);
+
+	const synced = syncBooks({ library, appDir, betModes: ['base'] });
+	assert.equal(synced.length, 1, 'a compressed book file must be found');
+	const written = fs.readFileSync(target, 'utf8');
+	assert.match(written, /books_base\.jsonl\.zst/, 'the header must name the real source');
+	// paying rounds are preferred, so the preview is not all blanks
+	assert.match(written, /payoutMultiplier: 250/);
+	fs.rmSync(dir, { recursive: true, force: true });
 });
 
 // ── report ──────────────────────────────────────────────────────────────────
