@@ -8,6 +8,8 @@ import { requiredStatesForSymbol } from '../lib/behaviorRecipes.js';
 import { SCREEN_SLOTS } from '../lib/screens.js';
 import { tsStringify, RawExpr } from '../lib/tsSerialize.js';
 import { replaceExportConst } from '../lib/patchExport.js';
+import { buildSymbolInfoMap } from '../lib/generators.js';
+import { readSpriteFrames } from '../lib/spriteFrames.js';
 
 function copyOnce(seen, srcDir, destDir, filename) {
 	if (!filename || seen.has(filename)) return;
@@ -185,7 +187,24 @@ export function importAssets({ manifestPath, sdkDir, gameName, specPath }) {
 	const constantsPath = path.join(appDir, 'src', 'game', 'constants.ts');
 	const constantsSource = fs.readFileSync(constantsPath, 'utf8');
 
-	const { map, unmapped } = buildRealSymbolInfoMap(spineEntries, spriteSymbolEntries, spec);
+	/**
+	 * Merge onto the FULL symbol map, do not replace it.
+	 *
+	 * buildRealSymbolInfoMap only knows about symbols that have art, and this used
+	 * to swap the whole constant for it — so a partial delivery deleted every
+	 * symbol still awaiting art. Symbol.svelte then reads `.static` off undefined
+	 * for any board cell holding one of them, and since every board holds several,
+	 * the preview renders nothing at all.
+	 *
+	 * That is exactly backwards: a studio is in the partial state for months, and
+	 * the preview is the thing that tells them whether the art they just finished
+	 * looks right. Delivered symbols point at real art; the rest keep the
+	 * placeholder references the scaffold gave them.
+	 */
+	const { frames } = readSpriteFrames(appDir);
+	const placeholders = buildSymbolInfoMap(spec, { availableFrames: frames.keys() });
+	const { map: realMap, unmapped } = buildRealSymbolInfoMap(spineEntries, spriteSymbolEntries, spec);
+	const map = mergeSymbolInfoMap(placeholders, realMap);
 	const { source: withMap, replaced } = replaceExportConst(
 		constantsSource,
 		'SYMBOL_INFO_MAP',
@@ -217,6 +236,16 @@ export function importAssets({ manifestPath, sdkDir, gameName, specPath }) {
  * behaviors — so an expanding wild gets expand_in/expand_loop/expand_out wired
  * alongside the usual states, instead of the fixed five the v1 tool assumed.
  */
+/**
+ * Delivered art wins; everything else keeps the reference it already had.
+ *
+ * Exported because the invariant is worth a test of its own: every symbol the
+ * spec declares must survive an import, however little art has arrived.
+ */
+export function mergeSymbolInfoMap(placeholders, delivered) {
+	return { ...placeholders, ...delivered };
+}
+
 function buildRealSymbolInfoMap(spineEntries, spriteSymbolEntries, spec) {
 	const map = {};
 	const unmapped = [];

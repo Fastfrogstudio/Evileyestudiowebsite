@@ -69,6 +69,7 @@ import { balanceSpec, baseGameTarget, calibrateAlpha, scalePaytable, EV_TOLERANC
 import { validateMode, topShareOfRtp, RULE_PROVENANCE, featureVariety, FEATURE_VARIETY } from '../src/lib/mathValidate.js';
 import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS, featureLoad, FEATURE_LOAD_LIMIT, stickySaturation, STICKY_SATURATION_LIMIT } from '../src/lib/mathBalance.js';
 import { BOARD_MECHANICS, boardMechanicFor } from '../src/lib/boardMechanics.js';
+import { mergeSymbolInfoMap } from '../src/commands/importAssets.js';
 import { stripProfileFor, placeScatters, VOLATILITY_ALPHA } from '../src/lib/reelDesign.js';
 import {
 	bannerThresholds,
@@ -6052,6 +6053,30 @@ test('symbols are fitted to the slot, not scaled by the canvas they arrived on',
 	const resampledWidths = deliveries.map(({ w }) => w * (canvas / 1000));
 	const wasSpread = Math.max(...resampledWidths) / Math.min(...resampledWidths);
 	assert.ok(wasSpread > 1.5, `the bug this fixes must still be demonstrable, got ${wasSpread.toFixed(2)}`);
+});
+
+test('a partial art delivery keeps every symbol in SYMBOL_INFO_MAP', () => {
+	// assets:import used to REPLACE the map with only the symbols that had art.
+	// Symbol.svelte then reads `.static` off undefined for any board cell holding
+	// one of the rest, and every board holds several — so delivering five of
+	// eleven symbols made the preview render nothing at all. That is exactly
+	// backwards: a studio is in the partial state for months, and the preview is
+	// how they check the art they just finished.
+	const spec = ['W', 'H1', 'H2', 'H3', 'H4', 'L1', 'L2', 'L3', 'L4', 'L5', 'S'];
+	const placeholders = Object.fromEntries(spec.map((n) => [n, { static: { assetKey: `${n}_placeholder` } }]));
+	const delivered = Object.fromEntries(
+		['L1', 'L2', 'L3', 'L4', 'L5'].map((n) => [n, { static: { assetKey: `${n}_static` } }]),
+	);
+
+	const merged = mergeSymbolInfoMap(placeholders, delivered);
+	assert.deepEqual(Object.keys(merged).sort(), [...spec].sort(), 'no symbol may be dropped');
+	// delivered art wins...
+	assert.equal(merged.L1.static.assetKey, 'L1_static');
+	// ...and the undelivered keep something renderable rather than nothing.
+	assert.equal(merged.W.static.assetKey, 'W_placeholder');
+	for (const name of spec) {
+		assert.ok(merged[name]?.static, `${name} must still have a static reference`);
+	}
 });
 
 // ── report ──────────────────────────────────────────────────────────────────
