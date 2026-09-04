@@ -76,6 +76,35 @@ import { betModeCriteria } from './mathGenerators.js';
  * `wincapRtpAllocation` is deliberately NOT part of this. Max-win frequency is
  * derived from the cap itself to land on 1-in-20,000,000 whatever the profile,
  * so a tier cannot quietly trade Stake's max-win rule for a steeper curve.
+ *
+ * ── What the tiers MEASURE, so a game can be picked rather than guessed ──────
+ *
+ * One spec — 5x3 lines, 20,000x cap, sticky multiplier wilds + a colossal block
+ * + a per-spin global multiplier — run at three tiers, 100,000 rounds each,
+ * everything else identical. All three pass all 22 rules with no advisories, so
+ * this is a choice about SHAPE, not about correctness:
+ *
+ *   tier        base hit   sub-stake spins   p99      p99.9    270x-1170x rounds
+ *   medium        29.08%             25.2%   86.0x    174.1x                   7
+ *   high          20.33%             16.7%   150.0x   276.7x                  91
+ *   very_high     15.58%             14.6%   201.8x   517.4x                 469
+ *
+ * Two things that table says which are easy to get backwards:
+ *
+ * The MIDDLE of the range is what the tier really buys. Between medium and
+ * very_high the p99.9 roughly triples, but the count of rounds paying 270x-1170x
+ * goes up 67-fold. A medium game with a big cap does not have a thin tail so
+ * much as an empty middle — nothing between the small wins and the rare tail,
+ * which is what leaves a celebration ladder with dead rungs.
+ *
+ * Sub-stake "wins" — a paying round returning LESS than the stake — fall as
+ * volatility rises, 25.2% of spins to 14.6%. They are the most-scrutinised
+ * pattern in slot design, so the drier tiers are also the more honest ones here.
+ *
+ * `very_high` has the best-populated ladder of the three and is still not the
+ * default pick: at 15.58% it sits under the ~18% that published hit-frequency
+ * guidance calls punishing, where `high` clears it and stays well inside Stake's
+ * 1-in-2 to 1-in-10 rule at 1-in-4.9.
  */
 export const VOLATILITY_PROFILES = {
 	low: {
