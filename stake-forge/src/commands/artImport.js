@@ -105,6 +105,18 @@ export function matchFiles(files, jobs) {
  * Returns problems (refuse) and notes (proceed, but say so). The split matters:
  * a wrong size is fixable here, a symbol with no transparency is not.
  */
+/**
+ * Does the opaque subject already reach every edge of its canvas?
+ *
+ * One pixel of tolerance, because a soft edge can leave the outermost row just
+ * under the alpha threshold without the art meaning to stop short.
+ */
+function subjectFillsCanvas(image) {
+	const bounds = opaqueBounds(image);
+	if (!bounds) return false;
+	return bounds.width >= image.width - 1 && bounds.height >= image.height - 1;
+}
+
 export function inspect(image, job) {
 	const problems = [];
 	const notes = [];
@@ -358,19 +370,35 @@ export function artImport({ specPath, guidePath, sdkDir, fromDir, gameDir, dryRu
 			continue;
 		}
 
-		// A cut-out subject is placed on the slot canvas rather than resampled: a
-		// 1024 generation with the subject floating in the middle would resample to
-		// a symbol that is mostly air, and every symbol would land a different
-		// visual size depending on how much room its generation happened to leave.
-		if (cut) {
+		/**
+		 * A subject with room around it is PLACED on the slot canvas rather than
+		 * resampled. Resampling scales the delivered CANVAS, so a symbol's size on
+		 * the reel ends up set by how much empty space its file happened to carry
+		 * rather than by the art.
+		 *
+		 * That reasoning was already here and applied only to cut-out images, so
+		 * art arriving with correct alpha — the well-prepared case — got the worse
+		 * treatment. Measured on a real five-symbol delivery, all 1000x1000 with
+		 * clean alpha, resampled to 200x200:
+		 *
+		 *   10  189x138    J  105x145    Q  141x153    K  142x142    A  164x156
+		 *
+		 * The J landed 56% the width of the 10. They are one set of letterforms and
+		 * would not have read as one on the reels.
+		 *
+		 * Art whose subject already fills its canvas is left alone: delivering
+		 * edge-to-edge is a sizing decision, and trimming would only add a margin
+		 * nobody asked for.
+		 */
+		if (cut || (job.kind === 'symbol' && !subjectFillsCanvas(working))) {
 			const fitted = fitOnCanvas(working, job.width, job.height);
 			if (!dryRun) {
 				const target = path.join(gameDir, job.outputPath);
 				fs.ensureDirSync(path.dirname(target));
 				writePng(target, fitted.image);
 			}
-			imported.push({ file, job, resizedFrom: image });
-			cutout.push({ file, job, removed: cut.removed, subject: fitted.subject });
+			imported.push({ file, job, resizedFrom: image, fitted: fitted.subject });
+			if (cut) cutout.push({ file, job, removed: cut.removed, subject: fitted.subject });
 			if (notes.length) noted.push({ file, job, notes });
 			continue;
 		}

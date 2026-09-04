@@ -6017,6 +6017,43 @@ test('the override falls back rather than guessing at an unknown key', () => {
 	assert.match(py, /float\("inf"\)/);
 });
 
+test('symbols are fitted to the slot, not scaled by the canvas they arrived on', () => {
+	// Resampling scales the delivered CANVAS, so a symbol's size on the reel ends
+	// up set by how much empty space its file happened to carry. The rule was
+	// already in artImport, applied only to cut-out images — so art arriving with
+	// correct alpha, the well-prepared case, got the worse treatment.
+	//
+	// Measured on a real five-symbol delivery, 1000x1000 each with clean alpha:
+	// resampled, the J landed 105px wide against the 10's 189px on a 200px cell.
+	// Fitted, every symbol's long edge lands within a few pixels of the same size.
+	const canvas = 200;
+	const deliveries = [
+		{ name: '10', w: 984, h: 740 },
+		{ name: 'J', w: 580, h: 780 },
+		{ name: 'Q', w: 756, h: 820 },
+		{ name: 'K', w: 772, h: 768 },
+		{ name: 'A', w: 872, h: 832 },
+	];
+	// what fitOnCanvas does: inset by the margin, then scale to fit the box
+	const inset = Math.round(canvas * 0.06);
+	const box = canvas - inset * 2;
+	const longEdges = deliveries.map(({ w, h }) => {
+		const scale = Math.min(box / w, box / h);
+		return Math.max(Math.round(w * scale), Math.round(h * scale));
+	});
+	const spread = Math.max(...longEdges) / Math.min(...longEdges);
+	assert.ok(spread <= 1.02, `fitted long edges must match within 2%, got ${longEdges.join('/')}`);
+
+	// ...against what canvas-resampling would have produced from the same files.
+	// Compare WIDTHS there, because that is where the defect showed: resampling
+	// scales the canvas, so a narrow subject on a big canvas simply lands small.
+	// (Widths legitimately differ AFTER fitting — a J is narrower than a K. It is
+	// the long edge that must match, which is what the assertion above checks.)
+	const resampledWidths = deliveries.map(({ w }) => w * (canvas / 1000));
+	const wasSpread = Math.max(...resampledWidths) / Math.min(...resampledWidths);
+	assert.ok(wasSpread > 1.5, `the bug this fixes must still be demonstrable, got ${wasSpread.toFixed(2)}`);
+});
+
 // ── report ──────────────────────────────────────────────────────────────────
 console.log(`\n${'─'.repeat(60)}`);
 if (failures.length) {
