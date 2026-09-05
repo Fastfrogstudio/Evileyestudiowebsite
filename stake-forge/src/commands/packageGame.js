@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 
 import { loadGameSpec } from '../lib/loadSpec.js';
+import { externalResources } from '../lib/externalResources.js';
 import { mathGameId } from './mathScaffold.js';
 
 /**
@@ -630,6 +631,36 @@ export async function packageGame({ specPath, sdkDir, mathSdkDir, outDir, skipBu
 			`play events the RGS never sends.\n`,
 		'utf8',
 	);
+
+	/**
+	 * The last check, run on the BUILT artifact rather than on source.
+	 *
+	 * Stake's approval notes: a build must be static files only, and an external
+	 * resource beyond their CDN raises console errors and fails approval. `audit`
+	 * reports this against src/, but src/ is not what gets uploaded — a bundler
+	 * can inline, rewrite or drop a URL on the way through. Verified against a
+	 * real build: the sample's use.typekit.net stylesheet survives into the
+	 * shipped index.html unchanged.
+	 *
+	 * Reported, not fatal. The font it provides is used by the SDK's own buttons
+	 * and popups, so the fix is a brand decision rather than a deletion, and
+	 * refusing to package would leave nothing to inspect while making it.
+	 */
+	const external = externalResources(frontendOut);
+	if (external.length) {
+		log('');
+		log(chalk.yellow(`  ! ${external.length} external resource(s) in the built frontend`));
+		for (const res of external.slice(0, 5)) {
+			log(chalk.dim(`      ${res.file}:${res.line}  ${res.url}`));
+		}
+		log(
+			chalk.dim(
+				'    Stake approval requires a build of static files only; anything fetched\n' +
+					'    from outside their CDN raises console errors and fails. Self-host it\n' +
+					'    under static/, or remove it and let the declared fallback apply.',
+			),
+		);
+	}
 
 	const ok = inspection.ok && fs.existsSync(path.join(frontendOut, 'index.html'));
 	log('');
