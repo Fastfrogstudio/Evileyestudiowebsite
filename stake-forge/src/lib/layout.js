@@ -33,6 +33,19 @@
  * 140 fills portrait the way a mobile slot is expected to while keeping a
  * margin either side, and takes desktop with it.
  */
+/**
+ * The share of the tightest stage a board should fill.
+ *
+ * Chosen from the portrait-first research and then verified by rendering: at
+ * 0.88 a 5x3 board fills portrait edge to edge with a visible margin either
+ * side, which is where mobile slots sit.
+ */
+export const TARGET_COVERAGE = 0.88;
+
+/**
+ * Kept for the 5x3 case this was originally measured on, and as the ceiling no
+ * grid may exceed — past this the art is being upscaled rather than fitted.
+ */
 export const DEFAULT_SYMBOL_SIZE = 140;
 
 /** The logical stages the SDK scales to fit, per layout type. */
@@ -56,13 +69,40 @@ export function boardCoverage(symbolSize, { reels, rows }) {
 }
 
 /**
+ * The largest cell size that keeps EVERY stage inside the coverage target.
+ *
+ * ── Why this is derived and not a constant ──────────────────────────────────
+ * The first version of this shipped a flat 140, chosen by measuring a 5x3 board.
+ * That silently only works for 5-reel games. Checked against the grids the
+ * reference corpus actually records:
+ *
+ *   5x3 / 5x4 lines    88% of portrait — the shape it was measured on
+ *   6x5 scatter       105% of portrait — CLIPPED
+ *   7x7 cluster       123% of desktop  — CLIPPED
+ *   8x8 cluster       140% of desktop  — CLIPPED
+ *
+ * 6x5 is the Sweet Bonanza / Gates of Olympus shape and 7x7 is Sugar Rush and
+ * Reactoonz, so the two most common non-lines boards in the market were both
+ * broken. Note the binding stage CHANGES with the grid — portrait runs out of
+ * width on a 6-reel board, desktop runs out of HEIGHT on a 7-row one — which is
+ * why a single measured number could never have covered it.
+ */
+export function fitSymbolSize({ reels, rows, coverage = TARGET_COVERAGE } = {}) {
+	let limit = Infinity;
+	for (const stage of Object.values(MAIN_STAGES)) {
+		limit = Math.min(limit, (stage.width * coverage) / reels, (stage.height * coverage) / rows);
+	}
+	return Math.max(1, Math.min(DEFAULT_SYMBOL_SIZE, Math.floor(limit)));
+}
+
+/**
  * The size to draw at, and why. Refuses a value that would overflow the
  * narrowest stage — a board wider than portrait is clipped, not just tight.
  */
 export function symbolSizeFor(spec) {
 	const reels = spec.game.reels.count;
 	const rows = Math.max(...spec.game.reels.rows);
-	const requested = Number(spec.game.symbolSize) || DEFAULT_SYMBOL_SIZE;
+	const requested = Number(spec.game.symbolSize) || fitSymbolSize({ reels, rows });
 
 	const coverage = boardCoverage(requested, { reels, rows });
 	const widest = Math.max(...Object.values(coverage).map((c) => c.width));

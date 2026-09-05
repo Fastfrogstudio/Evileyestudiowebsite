@@ -71,8 +71,8 @@ import { retriggerSafety, RETRIGGER_LIMIT, CASCADE_LIMITS, featureLoad, FEATURE_
 import { BOARD_MECHANICS, boardMechanicFor } from '../src/lib/boardMechanics.js';
 import { mergeSymbolInfoMap } from '../src/commands/importAssets.js';
 import { syncBooks } from '../src/commands/mathSync.js';
-import { symbolSizeFor, DEFAULT_SYMBOL_SIZE } from '../src/lib/layout.js';
-import { mechanicDemand, opportunities, densityGrid, pairGaps } from '../src/lib/marketGaps.js';
+import { symbolSizeFor, DEFAULT_SYMBOL_SIZE, fitSymbolSize, boardCoverage } from '../src/lib/layout.js';
+import { mechanicDemand, opportunities, densityGrid, pairGaps, gridConventions, gridCheck } from '../src/lib/marketGaps.js';
 import { stripProfileFor, placeScatters, VOLATILITY_ALPHA } from '../src/lib/reelDesign.js';
 import {
 	bannerThresholds,
@@ -6202,6 +6202,47 @@ test('pairings the library declares in conflict are not offered as gaps', () => 
 		(MECHANIC_LIBRARY[a].conflictsWith ?? []).some((c) => (c.id ?? c) === b),
 	);
 	assert.equal(conflicting.length, 0, 'a refused combination is not a market gap');
+});
+
+test('no board shape the market actually uses gets clipped', () => {
+	// The first version of this shipped a flat 140, measured on a 5x3. That only
+	// works for 5-reel games: 6x5 came out at 105% of portrait and 7x7 at 123% of
+	// desktop. 6x5 is the Sweet Bonanza / Gates of Olympus shape and 7x7 is Sugar
+	// Rush and Reactoonz, so the two commonest non-lines boards were both broken.
+	for (const [reels, rows] of [[5, 3], [5, 4], [6, 5], [7, 7], [8, 8], [6, 4], [5, 5]]) {
+		const size = fitSymbolSize({ reels, rows });
+		const coverage = boardCoverage(size, { reels, rows });
+		for (const [stage, c] of Object.entries(coverage)) {
+			assert.ok(c.width <= 1, `${reels}x${rows} overflows ${stage} width at size ${size}`);
+			assert.ok(c.height <= 1, `${reels}x${rows} overflows ${stage} height at size ${size}`);
+		}
+	}
+});
+
+test('the binding stage changes with the grid, which is why one number could not work', () => {
+	// Portrait runs out of WIDTH on a wide board; desktop runs out of HEIGHT on a
+	// tall one. A single measured constant cannot straddle that.
+	const wide = boardCoverage(fitSymbolSize({ reels: 8, rows: 3 }), { reels: 8, rows: 3 });
+	const tall = boardCoverage(fitSymbolSize({ reels: 5, rows: 8 }), { reels: 5, rows: 8 });
+	assert.ok(wide.portrait.width > wide.portrait.height, 'a wide board is width-bound in portrait');
+	assert.ok(tall.desktop.height > tall.desktop.width, 'a tall board is height-bound on desktop');
+});
+
+test('a 5x3 still lands where it was measured', () => {
+	// The shape the 88% target was chosen on by rendering it. If this moves, the
+	// number was refactored rather than derived.
+	assert.equal(fitSymbolSize({ reels: 5, rows: 3 }), DEFAULT_SYMBOL_SIZE);
+});
+
+test('two games is not a convention', () => {
+	// gridCheck must stay silent rather than telling somebody their board is
+	// wrong on the strength of a two-game sample.
+	for (const [winType, c] of Object.entries(gridConventions())) {
+		assert.ok(c.sample >= 1);
+		if (c.sample < 3) assert.equal(c.confident, false, `${winType} claims confidence at n=${c.sample}`);
+	}
+	const spec = { game: { mechanic: 'cluster', reels: { count: 5, rows: [3, 3, 3, 3, 3] } } };
+	assert.equal(gridCheck(spec), null, 'not enough recorded grids to judge a spec yet');
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

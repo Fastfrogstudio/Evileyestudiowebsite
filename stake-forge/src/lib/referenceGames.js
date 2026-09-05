@@ -66,6 +66,7 @@ export const REFERENCE_GAMES = {
 	// ── Tumbling scatter-pays: the dominant shape of the last five years ─────
 	sweet_bonanza: {
 		id: 'sweet_bonanza',
+		grid: { reels: 6, rows: 5 },
 		title: 'Sweet Bonanza',
 		studio: 'Pragmatic Play',
 		winType: 'scatter',
@@ -80,6 +81,7 @@ export const REFERENCE_GAMES = {
 	},
 	gates_of_olympus: {
 		id: 'gates_of_olympus',
+		grid: { reels: 6, rows: 5 },
 		title: 'Gates of Olympus',
 		studio: 'Pragmatic Play',
 		winType: 'scatter',
@@ -93,6 +95,7 @@ export const REFERENCE_GAMES = {
 	},
 	sugar_rush: {
 		id: 'sugar_rush',
+		grid: { reels: 7, rows: 7 },
 		title: 'Sugar Rush',
 		studio: 'Pragmatic Play',
 		winType: 'cluster',
@@ -117,6 +120,7 @@ export const REFERENCE_GAMES = {
 	},
 	reactoonz: {
 		id: 'reactoonz',
+		grid: { reels: 7, rows: 7 },
 		title: 'Reactoonz',
 		studio: "Play'n GO",
 		winType: 'cluster',
@@ -341,12 +345,18 @@ export const REFERENCE_GAMES = {
 	},
 	razor_shark: {
 		id: 'razor_shark',
+		grid: { reels: 5, rows: 4 },
 		title: 'Razor Shark',
 		studio: 'Push Gaming',
-		winType: 'ways',
+		winType: 'lines',
 		mechanics: ['mystery_stack', 'nudging_reel', 'progressive_global_multiplier', 'freespins'],
 		maxWin: 50000,
 		volatility: 'extreme',
+		confidence: 'disputed',
+		disputed: {
+			winType: 'recorded here as ways; published reviews describe a 5x4 board with 20 FIXED PAYLINES paying left to right, which is lines. Corrected to lines — flagged so the change is visible.',
+			maxWin: 'recorded here as 50,000x; reviews also quote 85,475x. Neither verified against a certification document.',
+		},
 		whyItMatters:
 			'Mystery stacks that nudge into view and reveal as one symbol type, feeding a global ' +
 			'multiplier that never resets within the round. The clearest example of an uncapped ' +

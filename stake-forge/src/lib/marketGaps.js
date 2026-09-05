@@ -167,3 +167,63 @@ export function pairGaps({ games = REFERENCE_GAMES, library = MECHANIC_LIBRARY }
 	}
 	return { gaps, shippable: shippable.length, sample: all.length, seenPairs: seen.size };
 }
+
+/**
+ * Board shapes, by win type — the sizing half of the reference corpus.
+ *
+ * Only games with a RECORDED grid count. A win type with one recorded board is
+ * not a convention, so `sample` travels with every row and callers are expected
+ * to say so rather than presenting n=1 as "the standard".
+ */
+export function gridConventions({ games = REFERENCE_GAMES } = {}) {
+	const byType = {};
+	for (const game of Object.values(games)) {
+		if (!game.grid) continue;
+		const key = `${game.grid.reels}x${game.grid.rows}`;
+		byType[game.winType] ??= { shapes: {}, sample: 0 };
+		byType[game.winType].shapes[key] = (byType[game.winType].shapes[key] ?? 0) + 1;
+		byType[game.winType].sample += 1;
+	}
+
+	return Object.fromEntries(
+		Object.entries(byType).map(([winType, { shapes, sample }]) => {
+			const ranked = Object.entries(shapes).sort((a, b) => b[1] - a[1]);
+			return [
+				winType,
+				{
+					shapes: ranked.map(([shape, count]) => ({ shape, count })),
+					typical: ranked[0]?.[0] ?? null,
+					sample,
+					// One game is an example. Say which it is.
+					confident: sample >= 3,
+				},
+			];
+		}),
+	);
+}
+
+/**
+ * Is this spec's board an unusual shape for its win type?
+ *
+ * Cluster pays on a 5x3 is the case worth catching: the mechanic needs room for
+ * five adjacent symbols to form, and every cluster game with a recorded grid
+ * here is 7x7. Returns null when there is not enough recorded evidence to say
+ * anything, which is most win types on a 40-game corpus.
+ */
+export function gridCheck(spec, opts = {}) {
+	const winType = spec?.game?.mechanic;
+	const reels = spec?.game?.reels?.count;
+	const rows = Math.max(...(spec?.game?.reels?.rows ?? [0]));
+	const convention = gridConventions(opts)[winType];
+	if (!convention || !convention.confident) return null;
+
+	const shape = `${reels}x${rows}`;
+	const known = convention.shapes.some((s) => s.shape === shape);
+	return {
+		shape,
+		winType,
+		typical: convention.typical,
+		sample: convention.sample,
+		unusual: !known,
+	};
+}
