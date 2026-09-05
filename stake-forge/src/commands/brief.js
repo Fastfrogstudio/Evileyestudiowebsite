@@ -123,12 +123,15 @@ function renderMarkdown(d) {
 	L.push(
 		'Only levels 6-10 render a banner; levels 1-5 are count-ups with no art. ' +
 			'**The same banner plays on two different scales**: `standard` for a single win during a ' +
-			'spin, `endFeature` for the total of a whole free-spin round. Level 7 means 30x-50x in one ' +
-			'and 100x-500x in the other, so pitch the animation to cover both.\n',
+			'spin, `endFeature` for the total of a whole free-spin round — and a whole round pays far ' +
+			'more than one spin, so the same banner covers two different amounts. Both are in the ' +
+			'table, so pitch the animation to cover the pair.\n',
 	);
 	L.push(
-		`The bands are fixed multiples of the bet — they do NOT slide with the cap. Only level 9's ` +
-			`ceiling and level 10's floor track this game's ${num(d.game.maxWin)}x max win.\n`,
+		`The bands SCALE with this game's ${num(d.game.maxWin)}x max win. The engine's own table is ` +
+			`anchored to its 5,000x default, where the top band needs an exact max-win round and never ` +
+			`plays; stake-forge generates a ladder for the real cap instead, so every banner below is ` +
+			`one a player can actually reach.\n`,
 	);
 	L.push('| Level | Name | Single win | Feature total | Animations |');
 	L.push('|---|---|---|---|---|');
