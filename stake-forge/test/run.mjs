@@ -72,6 +72,7 @@ import { BOARD_MECHANICS, boardMechanicFor } from '../src/lib/boardMechanics.js'
 import { mergeSymbolInfoMap } from '../src/commands/importAssets.js';
 import { syncBooks } from '../src/commands/mathSync.js';
 import { symbolSizeFor, DEFAULT_SYMBOL_SIZE } from '../src/lib/layout.js';
+import { mechanicDemand, opportunities, densityGrid, pairGaps } from '../src/lib/marketGaps.js';
 import { stripProfileFor, placeScatters, VOLATILITY_ALPHA } from '../src/lib/reelDesign.js';
 import {
 	bannerThresholds,
@@ -6152,6 +6153,55 @@ test('a scalar export can be patched, not just objects and arrays', () => {
 	assert.ok(out.replaced);
 	assert.match(out.source, /export const SYMBOL_SIZE = 140;/);
 	assert.match(out.source, /export const OTHER = 7;/, 'the next const must survive');
+});
+
+// ── market gaps ─────────────────────────────────────────────────────────────
+
+test('a gap we cannot build is not an opportunity', () => {
+	// The whole point of the join: rare AND buildable. A mechanic nobody ships
+	// because the engine cannot hold it is a reason, not a lead.
+	for (const lead of opportunities()) {
+		assert.ok(lead.buildable, `${lead.id} is offered as a lead but is "${lead.status}"`);
+		assert.equal(lead.trademark, null, `${lead.id} is trademarked and must not be a lead`);
+	}
+});
+
+test('structural entries are kept out of the opportunity list', () => {
+	// Win types, wincap and buy menus are in every game and tagged in almost
+	// none, so a zero against them reads as "nobody has done this" when it means
+	// "nobody would tag this". They stay in the demand table where the count is
+	// honest.
+	const leadIds = opportunities().map((m) => m.id);
+	for (const structural of ['wincap', 'lines_pays', 'ways_pays', 'buy_bonus', 'freespins']) {
+		assert.ok(!leadIds.includes(structural), `${structural} must not be offered as a market gap`);
+	}
+	assert.ok(mechanicDemand().some((m) => m.id === 'wincap'), 'but it stays in the demand table');
+});
+
+test('an absent mechanic is reported as absent from the CORPUS, not the market', () => {
+	// Forty hand-tagged games is a reading list. Dressing a zero up as a finding
+	// is how a tool talks somebody into a quarter of work.
+	for (const lead of opportunities()) {
+		assert.ok(['absent-from-corpus', 'rare-in-corpus'].includes(lead.evidence));
+		if (lead.used === 0) assert.equal(lead.evidence, 'absent-from-corpus');
+		assert.ok(lead.sample > 0, 'every finding must carry its sample size');
+	}
+});
+
+test('the density grid counts every game or says why not', () => {
+	const { grid, winTypes, bands, sample, unrecorded } = densityGrid();
+	let counted = 0;
+	for (const w of winTypes) for (const b of bands) counted += grid[w][b.id];
+	assert.equal(counted + unrecorded, sample, 'games must not vanish between the bands');
+	assert.ok(unrecorded >= 0);
+});
+
+test('pairings the library declares in conflict are not offered as gaps', () => {
+	const { gaps } = pairGaps();
+	const conflicting = gaps.filter(({ pair: [a, b] }) =>
+		(MECHANIC_LIBRARY[a].conflictsWith ?? []).some((c) => (c.id ?? c) === b),
+	);
+	assert.equal(conflicting.length, 0, 'a refused combination is not a market gap');
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

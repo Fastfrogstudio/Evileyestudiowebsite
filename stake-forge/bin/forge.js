@@ -12,6 +12,7 @@ import { mathReport } from '../src/commands/mathReport.js';
 import { mathBalance } from '../src/commands/mathBalanceCmd.js';
 import { mathValidate } from '../src/commands/mathValidateCmd.js';
 import { mechanics } from '../src/commands/mechanics.js';
+import { market } from '../src/commands/market.js';
 import { brief } from '../src/commands/brief.js';
 import { depsLink } from '../src/commands/depsLink.js';
 import { mathOptimise } from '../src/commands/mathOptimise.js';
@@ -435,6 +436,14 @@ program
 			});
 		}),
 	);
+
+program
+	.command('market')
+	.description('Where the market is crowded and where it is thin — crossed with what we can build')
+	.option('--rare-below <share>', 'treat a mechanic as thin below this share of the corpus', (v) => Number(v), 0.1)
+	.option('--pairs', 'also list mechanic pairings no recorded game uses', false)
+	.option('--json', 'machine-readable output', false)
+	.action(run((opts) => market({ json: opts.json, rareBelow: opts.rareBelow, pairs: opts.pairs })));
 
 program
 	.command('mechanics')

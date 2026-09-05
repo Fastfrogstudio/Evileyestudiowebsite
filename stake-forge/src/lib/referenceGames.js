@@ -450,6 +450,168 @@ export const REFERENCE_GAMES = {
 			'10 fixed paylines — a reminder that a high advertised RTP is a marketing lever ' +
 			'available at any volatility, and that few paylines is not the same as low volatility.',
 	},
+
+	// ── Added from a second research pass. Same rule as everything above: public
+	// rules, public specs, attribution. maxWin figures drift between markets and
+	// versions, so `confidence` records how firm the number is rather than
+	// pretending they are all equally solid.
+	buffalo_king_megaways: {
+		id: 'buffalo_king_megaways',
+		title: 'Buffalo King Megaways',
+		studio: 'Pragmatic Play',
+		winType: 'ways',
+		mechanics: ['megaways', 'ways_pays', 'tumble', 'freespins', 'sticky_multiplier', 'buy_bonus'],
+		maxWin: 5000,
+		volatility: 'high',
+		confidence: 'reported',
+		whyItMatters:
+			'The counter-example to "more ways means more win". It reaches 200,704 ways and still ' +
+			'caps at 5,000x — the ways count buys hit frequency and spectacle, not ceiling. Anyone ' +
+			'assuming a Megaways-class board implies a huge cap should read this one first. Note the ' +
+			'Megaways name is BTG-licensed and carries a US patent.',
+	},
+	dog_house_megaways: {
+		id: 'dog_house_megaways',
+		title: 'The Dog House Megaways',
+		studio: 'Pragmatic Play',
+		winType: 'ways',
+		mechanics: ['megaways', 'ways_pays', 'tumble', 'freespins', 'sticky_wild', 'sticky_multiplier', 'buy_bonus'],
+		maxWin: 12000,
+		volatility: 'high',
+		confidence: 'reported',
+		whyItMatters:
+			'Sticky wilds carrying their own multipliers on a Megaways board, with two separate ' +
+			'free-spin bonuses to choose between. The closest widely-played reference for the ' +
+			'sticky-multiplier-wild shape we generate, one board class over.',
+	},
+	extra_chilli: {
+		id: 'extra_chilli',
+		title: 'Extra Chilli',
+		studio: 'Big Time Gaming',
+		winType: 'ways',
+		mechanics: ['megaways', 'ways_pays', 'tumble', 'freespins', 'gamble', 'buy_bonus'],
+		maxWin: 20000,
+		volatility: 'extreme',
+		confidence: 'reported',
+		whyItMatters:
+			'The title that put Megaways into the mainstream. Its free-spin gamble — risking spins ' +
+			'to win more spins — is the mechanic we cannot build: it needs cross-round state the ' +
+			'books and lookup-table contract does not hold, and gamble features are separately not ' +
+			'permitted on Stake Engine.',
+	},
+	blood_suckers: {
+		id: 'blood_suckers',
+		title: 'Blood Suckers',
+		studio: 'NetEnt',
+		winType: 'lines',
+		mechanics: ['lines_pays', 'freespins', 'expanding_wild'],
+		maxWin: 1000,
+		volatility: 'low',
+		confidence: 'reported',
+		whyItMatters:
+			'98% RTP at LOW volatility, and still on high-RTP lists a decade on. The proof that a ' +
+			'small cap is a product position rather than a failure — it competes on how long a ' +
+			'balance lasts, which is the opposite axis to every extreme title in this file.',
+	},
+	mega_joker: {
+		id: 'mega_joker',
+		title: 'Mega Joker',
+		studio: 'NetEnt',
+		winType: 'lines',
+		mechanics: ['lines_pays', 'network_jackpot'],
+		volatility: 'high',
+		confidence: 'reported',
+		whyItMatters:
+			'A 3x3 classic carrying a progressive jackpot and a famously high RTP. Recorded as the ' +
+			'shape we deliberately cannot build: a network jackpot is cross-player state, which the ' +
+			'RGS round contract has nowhere to put.',
+	},
+	razor_ways: {
+		id: 'razor_ways',
+		title: 'Razor Ways',
+		studio: 'Push Gaming',
+		winType: 'ways',
+		mechanics: ['ways_pays', 'mystery_stack', 'freespins', 'progressive_global_multiplier', 'buy_bonus'],
+		maxWin: 50000,
+		volatility: 'extreme',
+		confidence: 'reported',
+		whyItMatters:
+			'Mystery stacks plus a climbing multiplier on a 5x4. The sequel shape to Razor Shark, ' +
+			'and the pairing to study if a global multiplier is meant to carry the feature rather ' +
+			'than decorate it.',
+	},
+	rip_city: {
+		id: 'rip_city',
+		title: 'R.I.P. City',
+		studio: 'Hacksaw Gaming',
+		winType: 'lines',
+		mechanics: ['lines_pays', 'freespins', 'multi_mode_feature', 'tiered_buy_menu', 'buy_bonus'],
+		maxWin: 12500,
+		volatility: 'extreme',
+		confidence: 'reported',
+		whyItMatters:
+			'Two distinct bonus rounds rather than one, chosen at entry. The clearest reference for ' +
+			'multi_mode_feature — the thing that makes a buy menu worth having, because the tiers ' +
+			'buy different games and not just more of the same one.',
+	},
+	dork_unit: {
+		id: 'dork_unit',
+		title: 'Dork Unit',
+		studio: 'Hacksaw Gaming',
+		winType: 'lines',
+		mechanics: ['lines_pays', 'expanding_special_symbol', 'sticky_wild', 'freespins', 'buy_bonus'],
+		maxWin: 10000,
+		volatility: 'high',
+		confidence: 'reported',
+		whyItMatters:
+			'Expanding symbols and sticky wilds on an ordinary lines board — no cascade, no ways ' +
+			'explosion — reaching 10,000x. Useful evidence that a big cap does not require an ' +
+			'exotic board, which is the assumption that makes people over-build.',
+	},
+	money_train_3: {
+		id: 'money_train_3',
+		title: 'Money Train 3',
+		studio: 'Relax Gaming',
+		winType: 'lines',
+		mechanics: ['lines_pays', 'hold_and_win', 'money_symbol', 'collector_symbol', 'payer_symbol', 'special_symbol_roles', 'buy_bonus'],
+		maxWin: 100000,
+		volatility: 'extreme',
+		confidence: 'reported',
+		whyItMatters:
+			'The middle entry of the series that defined symbol-role hold-and-win. Collectors, ' +
+			'payers and a widening cast of roles interacting on a locked board — the pattern our ' +
+			'collector/payer generators implement, with the ordering fixed for the same reason.',
+	},
+	iron_bank: {
+		id: 'iron_bank',
+		title: 'Iron Bank',
+		studio: 'Relax Gaming',
+		winType: 'lines',
+		mechanics: ['lines_pays', 'hold_and_win', 'money_symbol', 'collector_symbol', 'freespins', 'buy_bonus'],
+		maxWin: 40000,
+		volatility: 'extreme',
+		confidence: 'reported',
+		whyItMatters:
+			'The Money Train shape at a lower ceiling, from the same studio. A useful pair with ' +
+			'Money Train 3 for seeing what changes between a 40,000x and a 100,000x build of the ' +
+			'same mechanic set — mostly the prize ladder, not the mechanics.',
+	},
+	bonanza_megaways: {
+		id: 'bonanza_megaways',
+		title: 'Bonanza Megaways',
+		studio: 'Big Time Gaming',
+		winType: 'ways',
+		mechanics: ['megaways', 'ways_pays', 'tumble', 'freespins', 'progressive_cascade_multiplier'],
+		maxWin: 26000,
+		volatility: 'high',
+		confidence: 'disputed',
+		whyItMatters:
+			'The original Megaways title. Recorded separately from the `bonanza` entry above ' +
+			'because published max-win figures for it disagree — roughly 12,000x and 26,000x both ' +
+			'appear in reputable coverage. Kept as two entries with the disagreement visible ' +
+			'rather than silently picking one, since this is exactly the sort of number a business ' +
+			'case gets built on.',
+	},
 };
 
 export const REFERENCE_GAME_IDS = Object.keys(REFERENCE_GAMES);

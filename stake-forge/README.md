@@ -116,7 +116,7 @@ the game still renders, it just plays the sample's maths.
 ## Workflow
 
 ```
-     forge mechanics ──> what to build: 56 mechanics, 29 reference games,
+     forge mechanics ──> what to build: 56 mechanics, 40 reference games,
                          what each costs the art team, what conflicts with what
 
 inspiration.yaml ──forge inspire──> game-spec.yaml ──┬──forge brief──────────> what to DRAW,
@@ -751,6 +751,7 @@ the 1-in-20,000,000 frequency in every tier because that frequency is *chosen*
 | `forge art:prompts --spec <yaml> [--guide <yaml>] [--sdk <path>] [--out <json>] [--only <kinds>]` | One prompt per asset part, at the exact size this game needs |
 | `forge art:accept --manifest <json> --id <id> --file <png> [--guide <yaml>] [--game <dir>]` | Promote a generated candidate and make it a style anchor |
 | `forge mechanics [--id <id>] [--win-type <t>] [--volatility <v>] [--games] [--combine <ids>] [--art <ids>]` | Browse the researched mechanics library |
+| `forge market [--rare-below <share>] [--pairs] [--json]` | Where the market is crowded and where it is thin, crossed with what we can build |
 | `forge package --spec <yaml> --sdk <path> --math-sdk <path> [--out <dir>] [--skip-build]` | Build and assemble both upload halves |
 | `forge preview --sdk <path> [--spec <yaml>\|--name <app>] [--port <n>]` | Look at the game — real books through the real renderer, in your browser |
 
