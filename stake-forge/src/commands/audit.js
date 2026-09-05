@@ -3,6 +3,7 @@ import path from 'node:path';
 import chalk from 'chalk';
 
 import { loadGameSpec, loadAssetsManifest } from '../lib/loadSpec.js';
+import { externalResources } from '../lib/externalResources.js';
 import { defaultAnimationStates } from '../lib/taxonomy.js';
 import { requiredStatesForSymbol, getRecipe } from '../lib/behaviorRecipes.js';
 import { SCREEN_SLOTS, slotsForMechanic, flattenScreens } from '../lib/screens.js';
@@ -260,6 +261,24 @@ export function audit({ specPath, manifestPath, sdkDir, json }) {
 		if (!fs.existsSync(appDir)) {
 			add('info', 'sound', `apps/${spec.game.name} not scaffolded yet — skipped the sound check`);
 		} else {
+			// Stake's approval notes: a build must be static files only, and an
+			// external resource raises console errors and fails approval. The
+			// sample every game is cloned from loads a font from use.typekit.net,
+			// so this is inherited rather than introduced — and it resolves fine
+			// in development, which is why it survives to submission.
+			for (const res of externalResources(appDir)) {
+				add(
+					'error',
+					'approval',
+					`${res.file}:${res.line} fetches ${res.url} — external resources beyond ` +
+						`Stake's CDN fail approval`,
+					'Self-host it under static/, or remove it and let the declared fallback apply. ' +
+						'proxima-nova comes from the sample and is used by the SDK\'s own buttons, ' +
+						'popups and amounts, so removing the link changes UI typography — pick a ' +
+						'face you can host before submitting.',
+				);
+			}
+
 			// Sprite frames first: an invisible symbol is more obviously wrong than
 			// a silent sound, and both fail the same silent way.
 			const frames = auditSpriteFrames(appDir);
