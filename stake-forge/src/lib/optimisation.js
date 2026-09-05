@@ -36,6 +36,7 @@
  */
 
 import { betModeCriteria } from './mathGenerators.js';
+import { OPERATIVE_WINCAP_HIT_RATE, wincapRtpAllocation } from './approvalCriteria.js';
 
 /**
  * Volatility profiles.
@@ -168,14 +169,13 @@ export const VOLATILITY_IDS = Object.keys(VOLATILITY_PROFILES);
  * Verified against math-sdk docs (1% of RTP at 5000x = 1-in-500k) and against
  * 0_0_lines' own setup (rtp=0.001 at av_win=5000 = 1-in-5M).
  */
-export const TARGET_WINCAP_HIT_RATE = 20_000_000;
-
-export function wincapRtpAllocation(maxWin, { hitRate = TARGET_WINCAP_HIT_RATE } = {}) {
-	const raw = maxWin / hitRate;
-	// Never let the cap eat a meaningful share of the game's RTP: above ~2% the
-	// rest of the paytable has nothing left to pay with.
-	return Math.min(Math.round(raw * 1e5) / 1e5, 0.02);
-}
+/**
+ * Re-exported, not defined here. The threshold is CONTESTED — two readings of
+ * Stake's guidelines disagree by a factor of two — and it used to be duplicated
+ * between this file and mathValidate.js with no sign that it was in doubt.
+ * src/lib/approvalCriteria.js owns it and records both readings.
+ */
+export { OPERATIVE_WINCAP_HIT_RATE as TARGET_WINCAP_HIT_RATE, wincapRtpAllocation };
 
 /**
  * Split a mode's RTP across its criteria so the parts sum EXACTLY to the whole.

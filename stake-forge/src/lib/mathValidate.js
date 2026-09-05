@@ -35,8 +35,19 @@
  */
 
 import { VOLATILITY_PROFILES } from './optimisation.js';
+import {
+	OPERATIVE_WINCAP_HIT_RATE,
+	WINCAP_FREQUENCY_READINGS,
+	failedReadings,
+} from './approvalCriteria.js';
 
-export const TARGET_WINCAP_HIT_RATE = 20_000_000;
+/**
+ * Re-exported from the single source of truth. The threshold is CONTESTED and
+ * this file used to hard-code it independently of optimisation.js, so a game
+ * could in principle have been built to one number and validated against
+ * another. See src/lib/approvalCriteria.js.
+ */
+export { OPERATIVE_WINCAP_HIT_RATE as TARGET_WINCAP_HIT_RATE };
 
 /**
  * How far a measured wincap frequency may sit from 1-in-20M.
@@ -254,15 +265,24 @@ export function validateMode({ name, mode, rows, rawRows, summary, spec, baseRtp
 		// "0.01x the target" when nothing was wrong with it.
 		const cost = mode.cost ?? 1;
 		const perUnitStaked = summary.wincapHitRate * cost;
-		const ratio = perUnitStaked / TARGET_WINCAP_HIT_RATE;
+		const ratio = perUnitStaked / OPERATIVE_WINCAP_HIT_RATE;
+		// A tick here is a claim about a threshold two sources disagree on, so it
+		// passes only when EVERY reading is satisfied — and names any that are not.
+		const failed = failedReadings(perUnitStaked, { tolerance: WINCAP_TOLERANCE });
 		add(
 			'wincap-frequency',
-			ratio >= 1 / WINCAP_TOLERANCE && ratio <= WINCAP_TOLERANCE,
-			`max win pays about once per ${TARGET_WINCAP_HIT_RATE.toLocaleString('en-US')} staked`,
+			failed.length === 0,
+			`max win pays often enough for every reading of the rule ` +
+				`(target 1 in ${OPERATIVE_WINCAP_HIT_RATE.toLocaleString('en-US')} staked)`,
 			`measured 1 in ${fmt(summary.wincapHitRate)} rounds` +
 				(cost === 1 ? '' : ` at ${cost}x cost = 1 in ${fmt(perUnitStaked)} staked`) +
 				` (${fmt(ratio)}x the target). The frequency is chosen, not discovered: it is ` +
-				`maxWin ÷ the RTP allocated to the wincap distribution.`,
+				`maxWin ÷ the RTP allocated to the wincap distribution. ` +
+				(failed.length
+					? `FAILS ${failed.length} of ${WINCAP_FREQUENCY_READINGS.length} readings: ` +
+						failed.map((r) => `${r.claim} (${r.source.split('.')[0]})`).join('; ') + '.'
+					: `Satisfies all ${WINCAP_FREQUENCY_READINGS.length} readings of the rule. ` +
+						`Neither is verified against a document from Stake — CONFIRM before submitting.`),
 		);
 	} else {
 		add('wincap-frequency', false, 'max win pays at a certifiable frequency', 'no round pays the cap at all');
@@ -443,7 +463,10 @@ export function validateMode({ name, mode, rows, rawRows, summary, spec, baseRtp
 export const RULE_PROVENANCE = {
 	'max-win-reached': 'arithmetic — a cap no round reaches cannot be paid',
 	'rtp-on-target': 'arithmetic — this is what the optimiser is for',
-	'wincap-frequency': 'Stake approval criteria (researched, CONFIRM before submitting)',
+	'wincap-frequency':
+		'Stake approval criteria — CONTESTED. Two readings disagree by a factor of two ' +
+		'(1-in-20M vs more often than 1-in-10M); this checks against BOTH. See ' +
+		'src/lib/approvalCriteria.js. CONFIRM with Stake before submitting.',
 	'hit-rate': 'Stake approval criteria (researched, CONFIRM before submitting)',
 	'no-gaps': 'Stake approval criteria (researched, CONFIRM before submitting)',
 	'modes-agree': 'Stake approval criteria (researched, CONFIRM before submitting)',

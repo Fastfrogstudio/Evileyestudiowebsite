@@ -73,6 +73,11 @@ import { mergeSymbolInfoMap } from '../src/commands/importAssets.js';
 import { syncBooks } from '../src/commands/mathSync.js';
 import { symbolSizeFor, DEFAULT_SYMBOL_SIZE, fitSymbolSize, boardCoverage } from '../src/lib/layout.js';
 import { mechanicDemand, opportunities, densityGrid, pairGaps, gridConventions, gridCheck } from '../src/lib/marketGaps.js';
+import {
+	OPERATIVE_WINCAP_HIT_RATE,
+	WINCAP_FREQUENCY_READINGS,
+	failedReadings,
+} from '../src/lib/approvalCriteria.js';
 import { stripProfileFor, placeScatters, VOLATILITY_ALPHA } from '../src/lib/reelDesign.js';
 import {
 	bannerThresholds,
@@ -1550,10 +1555,20 @@ test('a game with no free spins puts all of the RTP in the base game', () => {
 	assert.equal(free.rtp, 0, 'a game with no free spins cannot pay through them');
 	assert.equal(free.searchSymbol, null, 'nothing to search for without a scatter trigger');
 	// Everything except the cap's own allocation, which is derived from the max
-	// win: 5000x at a 1-in-20M target hit rate is 0.00025 of RTP.
+	// win and from the operative frequency target — a number that MOVED once the
+	// threshold turned out to be contested, so this reads it rather than
+	// restating it. See src/lib/approvalCriteria.js.
 	const capRtp = base.conditions.find((c) => c.criteria === 'wincap').rtp;
-	assert.equal(capRtp, 0.00025);
-	assert.equal(base.conditions.find((c) => c.criteria === 'basegame').rtp, 0.965 - capRtp);
+	assert.equal(capRtp, wincapRtpAllocation(5000));
+	// Rounded to 5dp because that is what the planner emits: the shares must sum
+	// EXACTLY to the mode's RTP and the SDK asserts it, so 0.965 - 0.00053 cannot
+	// be left as the 0.9644699999999999 that floating point produces.
+	const baseRtp = base.conditions.find((c) => c.criteria === 'basegame').rtp;
+	assert.equal(baseRtp, Math.round((0.965 - capRtp) * 1e5) / 1e5);
+	// Compared at 5dp: the SHARES are exact to 5 decimals, which is what the SDK
+	// asserts on. Their float sum is 0.9650000000000001, which is a property of
+	// binary arithmetic and not of the split.
+	assert.equal(Math.round((baseRtp + capRtp) * 1e5) / 1e5, 0.965);
 });
 
 test('generated Python quotes hr="x" rather than emitting a bare name', () => {
@@ -2419,9 +2434,19 @@ test('a recipe that replaces the reader decides the mult_values shape', () => {
 test('the wincap RTP allocation lands on the target hit rate', () => {
 	// hit_rate = max_win / rtp_allocated. Verified against math-sdk docs (1% of
 	// RTP at 5000x = 1-in-500k) and 0_0_lines (rtp=0.001, av_win=5000 = 1-in-5M).
+	//
+	// The allocation is rounded to five decimals because that is what goes into
+	// game_config.py, so the realised frequency cannot land exactly on the target
+	// — 5000x allocates 0.00053 and comes back as 1-in-9,433,962. Asserting
+	// equality would be asserting that the rounding does not happen. What matters
+	// is that the rounding error stays well inside the headroom the operative
+	// target carries, so a game never rounds its way past a threshold.
 	for (const maxWin of [5000, 20000, 100000]) {
 		const rtp = wincapRtpAllocation(maxWin);
-		assert.equal(Math.round(maxWin / rtp), TARGET_WINCAP_HIT_RATE, `${maxWin}x`);
+		const realised = maxWin / rtp;
+		const drift = Math.abs(realised - OPERATIVE_WINCAP_HIT_RATE) / OPERATIVE_WINCAP_HIT_RATE;
+		assert.ok(drift < 0.02, `${maxWin}x realises 1-in-${Math.round(realised)}, ${(100 * drift).toFixed(1)}% off target`);
+		assert.equal(failedReadings(realised).length, 0, `${maxWin}x must satisfy every reading after rounding`);
 	}
 });
 
@@ -2803,9 +2828,12 @@ function healthyRows(maxWin) {
 		[1500, maxWin * 0.05],
 		[100, maxWin * 0.3],
 	];
-	// Weight chosen so the cap lands at 1-in-20,000,000 by weight.
+	// Weight chosen so the cap lands at the operative target by weight. Read from
+	// approvalCriteria rather than written as a literal: the threshold is
+	// contested and moved once already, and a fixture hard-coding the old number
+	// would fail for the wrong reason.
 	const total = rows.reduce((s, [w]) => s + w, 0);
-	rows.push([total / (20_000_000 - 1), maxWin]);
+	rows.push([total / (OPERATIVE_WINCAP_HIT_RATE - 1), maxWin]);
 	return lut(rows);
 }
 
@@ -2847,15 +2875,15 @@ test('a cap no round reaches is caught, and the message says what to do', () => 
 });
 
 test('cap frequency is judged per unit STAKED, not per round', () => {
-	// A 100x bonus buy reaching its cap once in 200,000 rounds is reaching it once
-	// in 20,000,000 units staked — the same frequency as the base mode. Judging
-	// rounds against rounds failed that mode at "0.01x the target" when nothing
-	// was wrong with it.
+	// A 100x bonus buy reaching its cap once in N rounds is reaching it once in
+	// 100N units staked — the same frequency as the base mode. Judging rounds
+	// against rounds failed that mode at "0.01x the target" when nothing was
+	// wrong with it.
 	const rows = healthyRows(5000);
 	// Re-weight so the cap lands 100x more often per ROUND.
 	const total = rows.reduce((s, r) => s + r.weight, 0);
 	const capRow = rows[rows.length - 1];
-	capRow.weight = total / 200_000;
+	capRow.weight = total / (OPERATIVE_WINCAP_HIT_RATE / 100);
 
 	const judge = (cost) =>
 		validateMode({
@@ -3857,17 +3885,21 @@ test('an unreachable cap is caught by arithmetic, not by an overnight simulation
 	assert.ok(verdict.headroom < 1);
 });
 
-test('raising the cap moves the RTP allocated to reaching it, holding 1-in-20,000,000', () => {
+test('raising the cap moves the RTP allocated to reaching it, holding the target frequency', () => {
 	// The cap is not just a number in a config: hit_rate = max_win / rtp_allocated,
 	// so choosing the cap IS choosing the allocation. This is what makes max win a
 	// knob that adjusts the maths rather than a label on top of it — and why the
 	// frequency stays put while the cap moves across an order of magnitude.
+	// The target itself is contested and may move again, so this asserts the
+	// INVARIANT — frequency holds while the cap moves across an order of
+	// magnitude — against whatever the operative target currently is, rather than
+	// against a literal that would have to be edited in two places.
 	for (const cap of [5000, 10000, 25000, 50000, 100000]) {
 		const allocated = wincapRtpAllocation(cap);
 		const frequency = cap / allocated;
 		assert.ok(
-			Math.abs(frequency - 20_000_000) / 20_000_000 < 0.01,
-			`${cap}x allocates ${allocated}, giving 1-in-${Math.round(frequency)} rather than 1-in-20,000,000`,
+			Math.abs(frequency - OPERATIVE_WINCAP_HIT_RATE) / OPERATIVE_WINCAP_HIT_RATE < 0.01,
+			`${cap}x allocates ${allocated}, giving 1-in-${Math.round(frequency)} rather than 1-in-${OPERATIVE_WINCAP_HIT_RATE}`,
 		);
 	}
 });
