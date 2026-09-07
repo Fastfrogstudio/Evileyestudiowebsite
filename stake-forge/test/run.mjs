@@ -115,6 +115,8 @@ import { STEPS, STEP_ORDER } from '../app/lib/runner.js';
 import YAML from 'yaml';
 import { addDictEntry, insertAfterLineInMethod, insertAfterImports } from '../src/lib/pyPatch.js';
 import { auditSpriteFrames, readSpriteFrames, readSpriteAssetKeys } from '../src/lib/spriteFrames.js';
+import { desample, displayName } from '../src/lib/desample.js';
+import { placeholderArt } from '../src/commands/placeholderArt.js';
 
 /** A pristine sample app, for the checks that need real source to read. */
 const LINES_APP = process.env.FORGE_WEB_SDK
@@ -6322,6 +6324,243 @@ test('build output is not scanned twice', () => {
 	assert.equal(found.length, 1, 'only the source copy counts');
 	assert.match(found[0].file, /^src[\\/]/);
 	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ── placeholder art must not eat delivered art ──────────────────────────────
+
+test('art:placeholder leaves delivered sprites alone and marks its own', () => {
+	// Delivered flat art and placeholder tiles live in the SAME manifest section
+	// with the SAME shape. Only the marker distinguishes them, so this is the
+	// check that stops a regenerate from wiping real art the studio has shipped.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-ph-'));
+	const specPath = path.join(dir, 'game-spec.yaml');
+	const manifestPath = path.join(dir, 'assets-manifest.yaml');
+	const outDir = path.join(dir, 'assets-source', 'symbols');
+
+	const spec = {
+		game: {
+			name: 'ph-test', providerName: 'p', gameId: '0_0_ph_test', workingName: 'Ph',
+			rtp: 0.96, volatility: 'medium', mechanic: 'lines',
+			reels: { count: 5, rows: [3, 3, 3, 3, 3] },
+			betModes: { base: { cost: 1, rtp: 0.96, feature: true, buyBonus: false } },
+		},
+		paylines: 'default_20',
+		symbols: [
+			{ name: 'H1', role: 'high', order: 1, label: 'H1', paytable: { 3: 5, 4: 10, 5: 20 } },
+			{ name: 'L1', role: 'low', order: 1, label: 'L1', paytable: { 3: 0.5, 4: 1, 5: 5 } },
+			{ name: 'W', role: 'wild', order: 1, label: 'W', special: ['wild'], paytable: { 3: 5, 4: 10, 5: 20 } },
+			{ name: 'S', role: 'scatter', order: 1, label: 'S' },
+		],
+		freeSpins: { triggerSymbol: 'S', triggerCount: 3, awardedSpins: 8, retrigger: true },
+	};
+	fs.writeFileSync(specPath, YAML.stringify(spec));
+
+	// L1 has already been delivered by the art team — no marker.
+	fs.mkdirSync(outDir, { recursive: true });
+	fs.writeFileSync(path.join(outDir, 'real-l1.png'), 'not-a-real-png');
+	fs.writeFileSync(
+		manifestPath,
+		YAML.stringify({ assetsSourceDir: './assets-source/symbols', spriteSymbols: { L1: { sprite: 'real-l1.png' } } }),
+	);
+
+	placeholderArt({ specPath, outDir, manifestPath, force: false });
+	const after = YAML.parse(fs.readFileSync(manifestPath, 'utf8'));
+
+	assert.equal(after.spriteSymbols.L1.sprite, 'real-l1.png', 'delivered art must survive a placeholder run');
+	assert.ok(!after.spriteSymbols.L1.placeholder, 'delivered art must not be marked as a placeholder');
+	assert.ok(after.spriteSymbols.H1.placeholder, 'generated tiles must be marked so they can be replaced later');
+	assert.match(after.spriteSymbols.H1.sprite, /h1\.png$/);
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('art:placeholder writes paths relative to assetsSourceDir, not to --out', () => {
+	// Once real art lands in a subfolder, --out points deeper than
+	// assetsSourceDir. Writing the bare filename then yields an entry that
+	// resolves to the wrong path — the audit reports a missing file that is
+	// sitting on disk one directory down.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-ph-path-'));
+	const specPath = path.join(dir, 'game-spec.yaml');
+	const manifestPath = path.join(dir, 'assets-manifest.yaml');
+	const outDir = path.join(dir, 'assets-source', 'symbols');
+
+	fs.writeFileSync(
+		specPath,
+		YAML.stringify({
+			game: {
+				name: 'ph-path', providerName: 'p', gameId: '0_0_ph_path', workingName: 'Ph',
+				rtp: 0.96, volatility: 'medium', mechanic: 'lines',
+				reels: { count: 5, rows: [3, 3, 3, 3, 3] },
+				betModes: { base: { cost: 1, rtp: 0.96, feature: true, buyBonus: false } },
+			},
+			paylines: 'default_20',
+			symbols: [
+				{ name: 'H1', role: 'high', order: 1, label: 'H1', paytable: { 3: 5, 4: 10, 5: 20 } },
+				{ name: 'L1', role: 'low', order: 1, label: 'L1', paytable: { 3: 0.5, 4: 1, 5: 5 } },
+				{ name: 'W', role: 'wild', order: 1, label: 'W', special: ['wild'], paytable: { 3: 5, 4: 10, 5: 20 } },
+				{ name: 'S', role: 'scatter', order: 1, label: 'S' },
+			],
+			freeSpins: { triggerSymbol: 'S', triggerCount: 3, awardedSpins: 8, retrigger: true },
+		}),
+	);
+	fs.writeFileSync(manifestPath, YAML.stringify({ assetsSourceDir: './assets-source' }));
+
+	placeholderArt({ specPath, outDir, manifestPath, force: false });
+	const after = YAML.parse(fs.readFileSync(manifestPath, 'utf8'));
+
+	assert.equal(after.spriteSymbols.H1.sprite, 'symbols/h1.png', 'the entry must carry the subfolder');
+	const resolved = path.resolve(dir, after.assetsSourceDir, after.spriteSymbols.H1.sprite);
+	assert.ok(fs.existsSync(resolved), `the entry must resolve to a real file, got ${resolved}`);
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('art:placeholder does not overwrite a delivered FILE on disk', () => {
+	// The bug this exists for: the first version of the guard protected the
+	// manifest ENTRY but ran after the write loop, so `l1.png` — the same path
+	// the art team delivers into — was overwritten with a tile while the entry
+	// still pointed at it. The manifest looked correct and the art was gone.
+	// Asserting the manifest alone cannot catch that; assert the bytes.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-ph-disk-'));
+	const specPath = path.join(dir, 'game-spec.yaml');
+	const manifestPath = path.join(dir, 'assets-manifest.yaml');
+	const outDir = path.join(dir, 'assets-source');
+
+	fs.writeFileSync(
+		specPath,
+		YAML.stringify({
+			game: {
+				name: 'ph-disk', providerName: 'p', gameId: '0_0_ph_disk', workingName: 'Ph',
+				rtp: 0.96, volatility: 'medium', mechanic: 'lines',
+				reels: { count: 5, rows: [3, 3, 3, 3, 3] },
+				betModes: { base: { cost: 1, rtp: 0.96, feature: true, buyBonus: false } },
+			},
+			paylines: 'default_20',
+			symbols: [
+				{ name: 'H1', role: 'high', order: 1, label: 'H1', paytable: { 3: 5, 4: 10, 5: 20 } },
+				{ name: 'L1', role: 'low', order: 1, label: 'L1', paytable: { 3: 0.5, 4: 1, 5: 5 } },
+				{ name: 'W', role: 'wild', order: 1, label: 'W', special: ['wild'], paytable: { 3: 5, 4: 10, 5: 20 } },
+				{ name: 'S', role: 'scatter', order: 1, label: 'S' },
+			],
+			freeSpins: { triggerSymbol: 'S', triggerCount: 3, awardedSpins: 8, retrigger: true },
+		}),
+	);
+
+	// Delivered art at exactly the path a tile for L1 would be written to.
+	fs.mkdirSync(outDir, { recursive: true });
+	const deliveredPath = path.join(outDir, 'l1.png');
+	const deliveredBytes = Buffer.from('DELIVERED-ART-BYTES');
+	fs.writeFileSync(deliveredPath, deliveredBytes);
+	fs.writeFileSync(
+		manifestPath,
+		YAML.stringify({ assetsSourceDir: './assets-source', spriteSymbols: { L1: { sprite: 'l1.png' } } }),
+	);
+
+	placeholderArt({ specPath, outDir, manifestPath, force: false });
+
+	assert.deepEqual(
+		fs.readFileSync(deliveredPath),
+		deliveredBytes,
+		'the delivered file itself must be byte-identical after a placeholder run',
+	);
+	assert.ok(fs.existsSync(path.join(outDir, 'h1.png')), 'undelivered symbols must still get a tile');
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ── desample ────────────────────────────────────────────────────────────────
+
+/** A miniature of the shape all four SDK samples share. */
+function sampleApp(gameLabel = 'LINES GAME') {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-desample-'));
+	const components = path.join(dir, 'src', 'components');
+	fs.mkdirSync(components, { recursive: true });
+	fs.writeFileSync(
+		path.join(components, 'Game.svelte'),
+		[
+			'<script lang="ts">',
+			"\timport Transition from './Transition.svelte';",
+			"\timport I18nTest from './I18nTest.svelte';",
+			'</script>',
+			'',
+			'<App>',
+			'\t<UI>',
+			'\t\t{#snippet gameName()}',
+			`\t\t\t<UiGameName name="${gameLabel}" />`,
+			'\t\t{/snippet}',
+			'\t\t{#snippet logo()}',
+			'\t\t\t<Text text="ADD YOUR LOGO" />',
+			'\t\t{/snippet}',
+			'\t</UI>',
+			'\t<Transition />',
+			'',
+			'\t<I18nTest />',
+			'</App>',
+			'',
+		].join('\n'),
+	);
+	fs.writeFileSync(path.join(components, 'I18nTest.svelte'), '<Text text={"TRANSLATIONS TEST"} />\n');
+	return dir;
+}
+
+test('desample removes the debug overlay, its import, and its file', () => {
+	// <I18nTest /> is not dev-only: it sits unconditionally in Game.svelte's
+	// loaded branch, so "TRANSLATIONS TEST" renders over the reels for players
+	// and survives into the production bundle.
+	const dir = sampleApp();
+	const result = desample(dir, { game: { name: 'vol-medium', workingName: 'Vol Medium' } });
+	const source = fs.readFileSync(path.join(dir, 'src', 'components', 'Game.svelte'), 'utf8');
+
+	assert.ok(!source.includes('<I18nTest />'), 'the usage must go');
+	assert.ok(!source.includes("import I18nTest"), 'the import must go with it, or the build fails on an unused import');
+	assert.ok(!fs.existsSync(path.join(dir, 'src', 'components', 'I18nTest.svelte')), 'the file must go too');
+	assert.ok(source.includes('<Transition />'), 'nothing else may be removed');
+	assert.equal(result.missed.length, 0, `nothing should be missed: ${result.missed.join(', ')}`);
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('desample replaces the sample name and logo with the game name', () => {
+	const dir = sampleApp();
+	desample(dir, { game: { name: 'vol-medium', workingName: 'Vol Medium' } });
+	const source = fs.readFileSync(path.join(dir, 'src', 'components', 'Game.svelte'), 'utf8');
+
+	assert.ok(source.includes('<UiGameName name="Vol Medium" />'), 'the title must be the game, not the sample');
+	assert.ok(!source.includes('LINES GAME'), 'the sample title must not survive');
+	assert.ok(!source.includes('ADD YOUR LOGO'), 'the logo placeholder must not survive');
+	assert.ok(source.includes('text="Vol Medium"'), 'the logo slot falls back to the game name');
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('desample works on every sample, not just lines', () => {
+	// All four carry the same leftovers, so a fix that only matched "LINES GAME"
+	// would silently do nothing for three quarters of scaffolded games.
+	for (const label of ['LINES GAME', 'WAYS GAME', 'CLUSTER GAME', 'SCATTER GAME']) {
+		const dir = sampleApp(label);
+		const result = desample(dir, { game: { name: 'g', workingName: 'Gee' } });
+		const source = fs.readFileSync(path.join(dir, 'src', 'components', 'Game.svelte'), 'utf8');
+		assert.ok(!source.includes(label), `${label} must not survive`);
+		assert.equal(result.missed.length, 0, `${label}: ${result.missed.join(', ')}`);
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('desample reports what it could not find instead of throwing', () => {
+	// A future SDK sample may drop one of these on its own. Scaffolding must not
+	// fail because there was nothing left to clean up — but a skipped
+	// replacement has to be visible, not assumed.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-desample-bare-'));
+	fs.mkdirSync(path.join(dir, 'src', 'components'), { recursive: true });
+	fs.writeFileSync(path.join(dir, 'src', 'components', 'Game.svelte'), '<App />\n');
+
+	const result = desample(dir, { game: { name: 'g', workingName: 'Gee' } });
+	assert.equal(result.changed.length, 0);
+	assert.equal(result.missed.length, 3, `all three must be reported: ${result.missed.join(', ')}`);
+	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('displayName prefers workingName over the kebab-case directory name', () => {
+	// game.name doubles as the app directory, so it is kebab-case and wrong to
+	// draw on screen.
+	assert.equal(displayName({ game: { name: 'vol-medium', workingName: 'Scroll Keeper' } }), 'Scroll Keeper');
+	assert.equal(displayName({ game: { name: 'vol-medium' } }), 'vol-medium');
+	assert.equal(displayName({ game: { name: 'vol-medium', workingName: '   ' } }), 'vol-medium');
 });
 
 // ── report ──────────────────────────────────────────────────────────────────

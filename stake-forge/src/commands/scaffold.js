@@ -14,6 +14,7 @@ import { tsStringify } from '../lib/tsSerialize.js';
 import { replaceExportConst } from '../lib/patchExport.js';
 import { getRecipe, isGenerable } from '../lib/behaviorRecipes.js';
 import { applyWebRecipe } from '../lib/webRecipePatch.js';
+import { desample } from '../lib/desample.js';
 
 const SKIP_DIRS = new Set(['node_modules', '.svelte-kit', '.turbo', 'dist', 'storybook-static']);
 
@@ -131,6 +132,15 @@ export function scaffoldGame({ specPath, sdkDir, force }) {
 
 	patchPackageJson(appDir, spec);
 	console.log(chalk.green('✓'), 'set package.json name');
+
+	// The clone carries the sample's identity, not just its behaviour. Strip it
+	// here, before anything else reads the app: these three strings ship into the
+	// production bundle, so leaving them is a real defect and not a cosmetic one.
+	const stripped = desample(appDir, spec);
+	for (const change of stripped.changed) console.log(chalk.green('✓'), `de-sampled: ${change}`);
+	for (const name of stripped.missed) {
+		console.log(chalk.yellow('  !'), `de-sample: could not find ${name} — check it by hand`);
+	}
 
 	fs.writeFileSync(path.join(appDir, 'src', 'game', 'config.ts'), renderConfigTs(spec), 'utf8');
 	console.log(

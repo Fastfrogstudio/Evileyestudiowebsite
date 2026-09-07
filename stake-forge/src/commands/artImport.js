@@ -203,6 +203,10 @@ function wireManifest({ gameDir, imported, spineWired, dryRun }) {
 		if (riggedSymbols.has(name)) continue; // handled as staticSprite below
 		manifest.spriteSymbols = manifest.spriteSymbols ?? {};
 		manifest.spriteSymbols[name] = { ...(manifest.spriteSymbols[name] ?? {}), sprite: rel };
+		// This symbol is now real art. Clearing the placeholder marker is what
+		// stops the next `art:placeholder` run from overwriting it with a tile —
+		// the spread above would otherwise carry the flag forward forever.
+		delete manifest.spriteSymbols[name].placeholder;
 		changed.sprites.push(name);
 	}
 

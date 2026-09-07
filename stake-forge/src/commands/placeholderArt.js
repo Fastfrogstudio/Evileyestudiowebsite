@@ -30,11 +30,38 @@ export function placeholderArt({ specPath, outDir, manifestPath, force, size }) 
 		roleCounts[symbol.role] = (roleCounts[symbol.role] ?? 0) + 1;
 	}
 
+	// ── which symbols are already real, decided BEFORE anything is written ──
+	//
+	// This has to happen up here, not at the manifest merge below. The tile for
+	// "L1" is written to `l1.png` in the SAME directory the art team delivers
+	// into, so a symbol whose art has landed gets its file overwritten by the
+	// write loop long before the merge decides to keep its manifest entry. The
+	// result is the worst possible outcome: the manifest still points at the
+	// delivered filename, and that file is now a placeholder tile. Found by
+	// running this command on a game with five delivered symbols and watching
+	// their checksums change.
+	//
+	// A manifest entry without the `placeholder` marker is the art team's.
+	const existingManifest = fs.existsSync(manifestPath)
+		? (YAML.parse(fs.readFileSync(manifestPath, 'utf8')) ?? {})
+		: {};
+	const delivered = new Set(
+		Object.entries(existingManifest.spriteSymbols ?? {})
+			.filter(([, entry]) => entry && !entry.placeholder)
+			.map(([name]) => name),
+	);
+	for (const name of Object.keys(existingManifest.spineSymbols ?? {})) delivered.add(name);
+
 	const spriteSymbols = {};
+	const protectedSymbols = [];
 	let files = 0;
 	let variants = 0;
 
 	for (const symbol of spec.symbols) {
+		if (delivered.has(symbol.name) && !force) {
+			protectedSymbols.push(symbol.name);
+			continue;
+		}
 		const base = `${symbol.name.toLowerCase()}.png`;
 		fs.writeFileSync(
 			path.join(outDir, base),
@@ -102,6 +129,18 @@ export function placeholderArt({ specPath, outDir, manifestPath, force, size }) 
 	manifest.assetsSourceDir =
 		manifest.assetsSourceDir ?? `./${path.relative(path.dirname(manifestPath), outDir) || '.'}`;
 
+	// Manifest paths are relative to assetsSourceDir, NOT to --out.
+	//
+	// When a manifest already exists its assetsSourceDir wins, and --out can sit
+	// anywhere underneath it (`assets-source` vs `assets-source/symbols` is the
+	// normal case once real art has landed in a subfolder). Writing the bare
+	// filename then produces an entry that resolves to the wrong path and an
+	// audit failure for a file that is sitting right there. Prefix by the actual
+	// offset between the two.
+	const sourceRoot = path.resolve(path.dirname(manifestPath), manifest.assetsSourceDir);
+	const prefix = path.relative(sourceRoot, path.resolve(outDir)).split(path.sep).filter(Boolean);
+	const withPrefix = (file) => [...prefix, file].join('/');
+
 	const alreadySpine = Object.keys(manifest.spineSymbols ?? {});
 	const kept = [];
 	manifest.spriteSymbols = manifest.spriteSymbols ?? {};
@@ -113,7 +152,16 @@ export function placeholderArt({ specPath, outDir, manifestPath, force, size }) 
 			}
 			delete manifest.spineSymbols[name];
 		}
-		manifest.spriteSymbols[name] = entry;
+		// Marked so a later run can tell its own tiles from delivered art. The
+		// skip itself already happened in the write loop above.
+		manifest.spriteSymbols[name] = {
+			...entry,
+			sprite: withPrefix(entry.sprite),
+			...(entry.states
+				? { states: Object.fromEntries(Object.entries(entry.states).map(([k, v]) => [k, withPrefix(v)])) }
+				: {}),
+			placeholder: true,
+		};
 	}
 	if (manifest.spineSymbols && !Object.keys(manifest.spineSymbols).length) {
 		delete manifest.spineSymbols;
@@ -134,10 +182,11 @@ export function placeholderArt({ specPath, outDir, manifestPath, force, size }) 
 	fs.writeFileSync(manifestPath, header + YAML.stringify(manifest, { lineWidth: 0 }), 'utf8');
 	console.log(chalk.green('✓'), `updated ${path.basename(manifestPath)} with ${Object.keys(spriteSymbols).length} spriteSymbols entr(ies)`);
 
-	if (kept.length) {
+	const untouched = [...new Set([...protectedSymbols, ...kept])];
+	if (untouched.length) {
 		console.log(
 			chalk.cyan('  ·'),
-			`left existing spineSymbols entries alone for: ${kept.join(', ')} (use --force to replace them)`,
+			`left delivered art alone for: ${untouched.join(', ')} (use --force to overwrite it with tiles)`,
 		);
 	}
 
