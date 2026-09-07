@@ -110,6 +110,7 @@ export const REFERENCE_GAMES = {
 	},
 	fruit_party: {
 		id: 'fruit_party',
+		grid: { reels: 7, rows: 7 },
 		title: 'Fruit Party',
 		studio: 'Pragmatic Play',
 		winType: 'cluster',
@@ -158,6 +159,7 @@ export const REFERENCE_GAMES = {
 	},
 	gonzos_quest: {
 		id: 'gonzos_quest',
+		grid: { reels: 5, rows: 3 },
 		title: "Gonzo's Quest",
 		studio: 'NetEnt',
 		winType: 'lines',
@@ -242,6 +244,7 @@ export const REFERENCE_GAMES = {
 	},
 	big_bass_bonanza: {
 		id: 'big_bass_bonanza',
+		grid: { reels: 5, rows: 3 },
 		title: 'Big Bass Bonanza',
 		studio: 'Reel Kingdom / Pragmatic Play',
 		winType: 'lines',
@@ -270,6 +273,7 @@ export const REFERENCE_GAMES = {
 	// ── Nolimit City: the mechanic-density school ────────────────────────────
 	mental: {
 		id: 'mental',
+		grid: { reels: 5, rows: null, variable: true, note: 'irregular 3-2-3-2-3 base, rows expand to 20' },
 		title: 'Mental',
 		studio: 'Nolimit City',
 		winType: 'ways',
@@ -282,6 +286,7 @@ export const REFERENCE_GAMES = {
 	},
 	fire_in_the_hole: {
 		id: 'fire_in_the_hole',
+		grid: { reels: 6, rows: null, variable: true, note: 'starts at 3 rows, expands to 6 (486 -> 46,656 ways)' },
 		title: 'Fire in the Hole xBomb',
 		studio: 'Nolimit City',
 		winType: 'ways',
@@ -295,6 +300,7 @@ export const REFERENCE_GAMES = {
 	},
 	san_quentin: {
 		id: 'san_quentin',
+		grid: { reels: 5, rows: null, variable: true, note: 'starts at 3 rows, expands to 5' },
 		title: 'San Quentin xWays',
 		studio: 'Nolimit City',
 		winType: 'ways',
@@ -309,6 +315,7 @@ export const REFERENCE_GAMES = {
 	// ── Hacksaw: the Stake-native school ─────────────────────────────────────
 	wanted_dead_or_a_wild: {
 		id: 'wanted_dead_or_a_wild',
+		grid: { reels: 5, rows: 5 },
 		title: 'Wanted Dead or a Wild',
 		studio: 'Hacksaw Gaming',
 		winType: 'lines',
@@ -379,6 +386,7 @@ export const REFERENCE_GAMES = {
 	},
 	dead_or_alive_2: {
 		id: 'dead_or_alive_2',
+		grid: { reels: 5, rows: 3 },
 		title: 'Dead or Alive 2',
 		studio: 'NetEnt',
 		winType: 'lines',
@@ -392,6 +400,7 @@ export const REFERENCE_GAMES = {
 	},
 	starburst: {
 		id: 'starburst',
+		grid: { reels: 5, rows: 3 },
 		title: 'Starburst',
 		studio: 'NetEnt',
 		winType: 'lines',
@@ -418,6 +427,7 @@ export const REFERENCE_GAMES = {
 	},
 	jack_and_the_beanstalk: {
 		id: 'jack_and_the_beanstalk',
+		grid: { reels: 5, rows: 3 },
 		title: 'Jack and the Beanstalk',
 		studio: 'NetEnt',
 		winType: 'lines',
@@ -449,6 +459,7 @@ export const REFERENCE_GAMES = {
 	},
 	big_bass_rock_and_roll: {
 		id: 'big_bass_rock_and_roll',
+		grid: { reels: 5, rows: 3 },
 		title: 'Big Bass Rock and Roll Enhanced',
 		studio: 'Pragmatic Play',
 		winType: 'lines',
@@ -511,6 +522,7 @@ export const REFERENCE_GAMES = {
 	},
 	blood_suckers: {
 		id: 'blood_suckers',
+		grid: { reels: 5, rows: 3 },
 		title: 'Blood Suckers',
 		studio: 'NetEnt',
 		winType: 'lines',

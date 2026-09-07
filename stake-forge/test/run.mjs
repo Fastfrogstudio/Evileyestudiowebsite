@@ -6272,12 +6272,25 @@ test('a 5x3 still lands where it was measured', () => {
 test('two games is not a convention', () => {
 	// gridCheck must stay silent rather than telling somebody their board is
 	// wrong on the strength of a two-game sample.
-	for (const [winType, c] of Object.entries(gridConventions())) {
-		assert.ok(c.sample >= 1);
-		if (c.sample < 3) assert.equal(c.confident, false, `${winType} claims confidence at n=${c.sample}`);
-	}
+	//
+	// Tested against a FIXTURE, not the live corpus. The first version asserted
+	// that the real corpus was too thin to judge a cluster spec, which made the
+	// test a snapshot of how little research had been done — it started failing
+	// the moment a third cluster grid was verified, even though the rule it meant
+	// to protect still held.
+	const games = {
+		a: { id: 'a', title: 'A', winType: 'cluster', grid: { reels: 7, rows: 7 } },
+		b: { id: 'b', title: 'B', winType: 'cluster', grid: { reels: 7, rows: 7 } },
+	};
+	assert.equal(gridConventions({ games }).cluster.confident, false, 'n=2 is not a convention');
+
 	const spec = { game: { mechanic: 'cluster', reels: { count: 5, rows: [3, 3, 3, 3, 3] } } };
-	assert.equal(gridCheck(spec), null, 'not enough recorded grids to judge a spec yet');
+	assert.equal(gridCheck(spec, { games }), null, 'two games is not enough to judge a spec');
+
+	// The threshold is real: a third fixed board turns the same call into advice.
+	games.c = { id: 'c', title: 'C', winType: 'cluster', grid: { reels: 7, rows: 7 } };
+	assert.equal(gridConventions({ games }).cluster.confident, true);
+	assert.equal(gridCheck(spec, { games })?.typical, '7x7');
 });
 
 // ── approval: external resources ────────────────────────────────────────────
@@ -6463,6 +6476,51 @@ test('art:placeholder does not overwrite a delivered FILE on disk', () => {
 	);
 	assert.ok(fs.existsSync(path.join(outDir, 'h1.png')), 'undelivered symbols must still get a tile');
 	fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// ── grid conventions with variable-height boards ────────────────────────────
+
+test('a variable-height board does not vote on the typical fixed shape', () => {
+	// Pinning a fixed shape on a board that changes height would be a fabricated
+	// number, and it would then outvote the real ones.
+	const games = {
+		a: { id: 'a', title: 'A', winType: 'ways', grid: { reels: 6, rows: null, variable: true } },
+		b: { id: 'b', title: 'B', winType: 'ways', grid: { reels: 5, rows: null, variable: true } },
+		c: { id: 'c', title: 'C', winType: 'ways', grid: { reels: 5, rows: 3 } },
+	};
+	const ways = gridConventions({ games }).ways;
+	assert.equal(ways.sample, 3);
+	assert.equal(ways.variable, 2);
+	assert.equal(ways.fixed, 1);
+	assert.equal(ways.typical, '5x3', 'only the fixed board may set a typical shape');
+	assert.equal(ways.confident, false, 'one fixed board is an example, not a convention');
+	assert.equal(ways.mostlyVariable, true);
+	assert.deepEqual(ways.variableTitles, ['A', 'B']);
+});
+
+test('gridCheck reports a mostly-variable win type even when no fixed shape is confident', () => {
+	// "The market's boards here change height and our engine cannot" is the
+	// finding. Staying silent because the fixed sample is thin buries it — and
+	// this is exactly the state the real corpus is in for ways.
+	const games = {
+		a: { id: 'a', title: 'A', winType: 'ways', grid: { reels: 6, rows: null, variable: true } },
+		b: { id: 'b', title: 'B', winType: 'ways', grid: { reels: 5, rows: null, variable: true } },
+	};
+	const spec = { game: { mechanic: 'ways', reels: { count: 5, rows: [3, 3, 3, 3, 3] } } };
+	const check = gridCheck(spec, { games });
+	assert.ok(check, 'must not be silent');
+	assert.equal(check.mostlyVariable, true);
+	assert.equal(check.unusual, true, 'a fixed board is unusual where the market varies');
+	assert.deepEqual(check.variableTitles, ['A', 'B']);
+});
+
+test('the real corpus now backs the lines convention with more than one game', () => {
+	// The whole point of the corpus is that a claim about the market is checkable.
+	// Before this pass "typical for lines" rested on a single reference game.
+	const lines = gridConventions().lines;
+	assert.ok(lines.fixed >= 3, `lines needs a real sample, got ${lines.fixed}`);
+	assert.equal(lines.confident, true);
+	assert.equal(lines.typical, '5x3');
 });
 
 // ── desample ────────────────────────────────────────────────────────────────

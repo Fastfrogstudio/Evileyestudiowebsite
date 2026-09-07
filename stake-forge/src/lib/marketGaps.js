@@ -179,23 +179,45 @@ export function gridConventions({ games = REFERENCE_GAMES } = {}) {
 	const byType = {};
 	for (const game of Object.values(games)) {
 		if (!game.grid) continue;
-		const key = `${game.grid.reels}x${game.grid.rows}`;
-		byType[game.winType] ??= { shapes: {}, sample: 0 };
-		byType[game.winType].shapes[key] = (byType[game.winType].shapes[key] ?? 0) + 1;
+		byType[game.winType] ??= { shapes: {}, sample: 0, variable: 0, variableTitles: [] };
 		byType[game.winType].sample += 1;
+
+		// A variable-height board has no single shape, and pinning a fixed one on
+		// it would be a fabricated number that then votes on "typical". Count it
+		// separately: whether the market's boards for a win type CAN change height
+		// is a more consequential fact than which fixed shape is most common,
+		// because our engine cannot build one — num_rows is a static array read at
+		// board creation (board.py:26,41,89), in both SDKs.
+		if (game.grid.variable || game.grid.rows == null) {
+			byType[game.winType].variable += 1;
+			byType[game.winType].variableTitles.push(game.title ?? game.id);
+			continue;
+		}
+
+		const key = `${game.grid.reels}x${game.grid.rows}`;
+		byType[game.winType].shapes[key] = (byType[game.winType].shapes[key] ?? 0) + 1;
 	}
 
 	return Object.fromEntries(
-		Object.entries(byType).map(([winType, { shapes, sample }]) => {
+		Object.entries(byType).map(([winType, { shapes, sample, variable, variableTitles }]) => {
 			const ranked = Object.entries(shapes).sort((a, b) => b[1] - a[1]);
+			const fixed = sample - variable;
 			return [
 				winType,
 				{
 					shapes: ranked.map(([shape, count]) => ({ shape, count })),
 					typical: ranked[0]?.[0] ?? null,
 					sample,
-					// One game is an example. Say which it is.
-					confident: sample >= 3,
+					fixed,
+					variable,
+					variableTitles,
+					// Whether the DOMINANT board for this win type changes height.
+					// When it does, a fixed-grid game of that type is structurally
+					// unlike the market's, whatever shape we pick.
+					mostlyVariable: sample > 0 && variable > sample / 2,
+					// A "typical" shape needs enough FIXED boards to mean anything;
+					// one game is an example, not a convention.
+					confident: fixed >= 3,
 				},
 			];
 		}),
@@ -215,15 +237,35 @@ export function gridCheck(spec, opts = {}) {
 	const reels = spec?.game?.reels?.count;
 	const rows = Math.max(...(spec?.game?.reels?.rows ?? [0]));
 	const convention = gridConventions(opts)[winType];
-	if (!convention || !convention.confident) return null;
+	if (!convention) return null;
 
 	const shape = `${reels}x${rows}`;
+
+	// Report a mostly-variable win type even when no fixed shape is confident:
+	// "the market's boards here change height and ours cannot" is the finding,
+	// and staying silent because the fixed sample is thin buries it.
+	if (convention.mostlyVariable) {
+		return {
+			shape,
+			winType,
+			typical: convention.typical,
+			sample: convention.sample,
+			unusual: true,
+			mostlyVariable: true,
+			variableTitles: convention.variableTitles,
+		};
+	}
+
+	if (!convention.confident) return null;
+
 	const known = convention.shapes.some((s) => s.shape === shape);
 	return {
 		shape,
 		winType,
 		typical: convention.typical,
 		sample: convention.sample,
+		fixed: convention.fixed,
 		unusual: !known,
+		mostlyVariable: false,
 	};
 }
