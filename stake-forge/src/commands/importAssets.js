@@ -10,6 +10,8 @@ import { tsStringify, RawExpr } from '../lib/tsSerialize.js';
 import { replaceExportConst } from '../lib/patchExport.js';
 import { buildSymbolInfoMap } from '../lib/generators.js';
 import { readSpriteFrames } from '../lib/spriteFrames.js';
+import { renderBackdrop, renderBoardFrame } from '../lib/placeholderScreens.js';
+import { patchScreenComponents, SCREEN_PLACEHOLDER_KEYS } from '../lib/screenPatch.js';
 
 function copyOnce(seen, srcDir, destDir, filename) {
 	if (!filename || seen.has(filename)) return;
@@ -179,9 +181,68 @@ export function importAssets({ manifestPath, sdkDir, gameName, specPath }) {
 		newEntries[key] = entry;
 	}
 
+	// ── screens with no delivered art ───────────────────────────────────────
+	//
+	// Without this the game does not fall back to nothing, it falls back to the
+	// sample app it was cloned from — its mine, its reel frame — and reads as
+	// that game. Generate a neutral stand-in, register it, and rewrite the
+	// component to draw a sprite instead of a spine. Reversible: deliver the
+	// spine and assets:import puts the original component back.
+	const screenPlaceholderDir = path.join(appDir, 'static', 'assets', 'sprites', 'placeholder');
+	const backgroundsDelivered =
+		Boolean(manifest.screens?.['background.basegame']) && Boolean(manifest.screens?.['background.freegame']);
+	const boardFrameDelivered = Boolean(manifest.screens?.boardFrame);
+
+	if (!backgroundsDelivered || !boardFrameDelivered) {
+		fs.ensureDirSync(screenPlaceholderDir);
+	}
+	if (!backgroundsDelivered) {
+		fs.writeFileSync(
+			path.join(screenPlaceholderDir, 'backdrop-base.png'),
+			renderBackdrop({ variant: 'basegame' }),
+		);
+		fs.writeFileSync(
+			path.join(screenPlaceholderDir, 'backdrop-feature.png'),
+			renderBackdrop({ variant: 'freegame' }),
+		);
+		newEntries[SCREEN_PLACEHOLDER_KEYS.basegame] = {
+			type: 'sprite',
+			src: new RawExpr(`new URL('../../assets/sprites/placeholder/backdrop-base.png', import.meta.url).href`),
+		};
+		newEntries[SCREEN_PLACEHOLDER_KEYS.freegame] = {
+			type: 'sprite',
+			src: new RawExpr(`new URL('../../assets/sprites/placeholder/backdrop-feature.png', import.meta.url).href`),
+		};
+	}
+	if (!boardFrameDelivered) {
+		fs.writeFileSync(
+			path.join(screenPlaceholderDir, 'board-frame.png'),
+			// --spec is optional on this command. The frame is stretched to the
+			// board at runtime either way; the spec only sets the source aspect so
+			// the corner ticks are not distorted. 5x3 is the SDK's own default.
+			renderBoardFrame({
+				reels: spec?.game?.reels?.count ?? 5,
+				rows: spec?.game?.reels?.rows ? Math.max(...spec.game.reels.rows) : 3,
+				label: 'placeholder - boardframe',
+			}),
+		);
+		newEntries[SCREEN_PLACEHOLDER_KEYS.boardFrame] = {
+			type: 'sprite',
+			src: new RawExpr(`new URL('../../assets/sprites/placeholder/board-frame.png', import.meta.url).href`),
+		};
+	}
+
 	assetsSource = injectAssetKeys(assetsSource, newEntries);
 	fs.writeFileSync(assetsPath, assetsSource, 'utf8');
 	console.log(chalk.green('✓'), `patched src/game/assets.ts with ${Object.keys(newEntries).length} asset key(s)`);
+
+	const screens = patchScreenComponents(appDir, manifest);
+	for (const file of screens.swapped) {
+		console.log(chalk.green('✓'), `${file} -> placeholder sprite (the sample's art is stashed, not lost)`);
+	}
+	for (const file of screens.restored) {
+		console.log(chalk.green('✓'), `${file} -> restored to the spine version, your art is delivered`);
+	}
 
 	// ── src/game/constants.ts (SYMBOL_INFO_MAP) ─────────────────────────────
 	const constantsPath = path.join(appDir, 'src', 'game', 'constants.ts');

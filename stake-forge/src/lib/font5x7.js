@@ -88,3 +88,19 @@ export function drawTextCentred(canvas, text, x, y, width, colour, scale = 1, tr
 	const w = measureText(text, scale, tracking);
 	drawText(canvas, text, x + Math.round((width - w) / 2), y, colour, scale, tracking);
 }
+
+/**
+ * Characters in `text` this font has no glyph for.
+ *
+ * drawText falls back to '?' for anything unknown, which is right at runtime and
+ * wrong at authoring time: a label written with a colon renders as
+ * "PLACEHOLDER? BOARDFRAME" and nothing anywhere says why. Callers that build
+ * labels from constants use this to fail their own tests instead.
+ */
+export function unsupportedChars(text) {
+	const missing = new Set();
+	for (const ch of String(text).toUpperCase()) {
+		if (!GLYPHS[ch]) missing.add(ch);
+	}
+	return [...missing];
+}
