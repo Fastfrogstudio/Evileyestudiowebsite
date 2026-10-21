@@ -22,8 +22,8 @@
 (function () {
 	'use strict';
 
-	/* ─── SET THIS ─── Replace with your GA4 measurement ID (G-XXXXXXXXXX). */
-	var MEASUREMENT_ID = 'G-XXXXXXXXXX';
+	/* GA4 measurement ID — property "evil eye studio", web stream. */
+	var MEASUREMENT_ID = 'G-BL9CQ4CVWP';
 
 	var PLACEHOLDER = 'G-XXXXXXXXXX';
 
